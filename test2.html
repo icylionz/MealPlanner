@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Meal Planner</title>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.13.5/cdn.min.js"
+      defer
+    ></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/luxon/3.4.4/luxon.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    <script src="test2.js"></script>
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+  </head>
+
+  <body class="bg-gray-100">
+    <div x-data="mealPlanner()" class="container mx-auto px-4 py-8">
+      <!-- Navigation Tabs -->
+      <div class="mb-8">
+        <nav class="flex border-b border-gray-200">
+          <button
+            @click="activeTab = 'calendar'"
+            :class="{'border-b-2 border-blue-500': activeTab === 'calendar'}"
+            class="px-4 py-2 font-medium"
+          >
+            Calendar
+          </button>
+          <button
+            @click="activeTab = 'meals'"
+            :class="{'border-b-2 border-blue-500': activeTab === 'meals'}"
+            class="px-4 py-2 font-medium"
+          >
+            Meal Database
+          </button>
+          <button
+            @click="activeTab = 'ingredients'"
+            :class="{'border-b-2 border-blue-500': activeTab === 'ingredients'}"
+            class="px-4 py-2 font-medium"
+          >
+            Recipe Ingredients
+          </button>
+        </nav>
+      </div>
+      <!-- Calendar View -->
+      <div x-show="activeTab === 'calendar'">
+        <!-- Calendar Navigation -->
+        <div class="mb-8 flex items-center justify-between">
+          <button
+            @click="previousMonth()"
+            class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            &larr; Previous
+          </button>
+          <h2 class="text-2xl font-bold" x-text="currentMonthYear"></h2>
+          <button
+            @click="nextMonth()"
+            class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            Next &rarr;
+          </button>
+        </div>
+        <!-- Calendar Grid -->
+        <div class="grid grid-cols-7 gap-2 mb-8">
+          <!-- Day headers -->
+          <template
+            x-for="day in ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']"
+          >
+            <div
+              class="text-center font-bold py-2 bg-gray-200"
+              x-text="day"
+            ></div>
+          </template>
+          <!-- Calendar days -->
+          <template x-for="(day, index) in calendarDays" :key="index">
+            <div
+              :class="{'bg-white': day.isCurrentMonth, 'bg-gray-100': !day.isCurrentMonth}"
+              class="p-2 min-h-32 border rounded"
+            >
+              <div class="flex justify-between items-center mb-2">
+                <span
+                  x-text="day.date.toFormat('d')"
+                  :class="{'text-gray-400': !day.isCurrentMonth}"
+                ></span>
+                <button
+                  @click="openScheduleMealModal(day.date)"
+                  class="text-sm px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600"
+                >
+                  Add Meal
+                </button>
+              </div>
+              <!-- Scheduled Meals for the day -->
+              <template
+                x-for="schedule in getScheduledMealsForDate(day.date)"
+                :key="schedule.id"
+              >
+                <div
+                  class="text-sm p-2 mb-1 bg-blue-100 rounded cursor-pointer hover:bg-blue-200"
+                  @click.prevent.stop="openMealDetails(schedule)"
+                >
+                  <div class="flex justify-between items-start">
+                    <span
+                      x-text="schedule.time"
+                      class="inline-block mb-1"
+                    ></span>
+                    <button
+                      @click.stop="deleteScheduledMeal(schedule.id)"
+                      class="text-red-500 hover:text-red-700"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                  <div
+                    class="font-semibold truncate"
+                    x-text="getMealById(schedule.mealId)?.name"
+                  ></div>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+        <!-- Shopping List Generator -->
+        <div class="mb-8 bg-white p-4 rounded shadow">
+          <h3 class="text-xl font-bold mb-4">Generate Shopping List</h3>
+          <div class="flex gap-4 mb-4">
+            <div>
+              <label class="block text-sm font-medium mb-1">Start Date</label>
+              <input
+                type="date"
+                x-model="shoppingListStartDate"
+                class="border rounded p-2"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">End Date</label>
+              <input
+                type="date"
+                x-model="shoppingListEndDate"
+                class="border rounded p-2"
+              />
+            </div>
+            <button
+              @click="generateShoppingList()"
+              class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 self-end"
+            >
+              Generate List
+            </button>
+          </div>
+          <!-- Shopping List Results -->
+          <div x-show="shoppingList.length > 0" class="mt-4">
+            <h4 class="font-bold mb-2">Shopping List:</h4>
+            <ul class="list-disc pl-5">
+              <template x-for="(item, index) in shoppingList" :key="index">
+                <li>
+                  <span x-text="item.ingredient"></span>:
+                  <span x-text="item.amount"></span>
+                  <span x-text="item.unit"></span>
+                </li>
+              </template>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <!-- Meals Database View -->
+      <div x-show="activeTab === 'meals'" class="bg-white p-4 rounded shadow">
+        <div class="flex justify-between mb-4">
+          <h2 class="text-2xl font-bold">Meal Database</h2>
+          <button
+            @click="openCreateMealModal()"
+            class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+          >
+            Create New Meal
+          </button>
+        </div>
+        <!-- Meals List -->
+        <div class="space-y-4">
+          <template x-for="meal in meals" :key="meal.id">
+            <div class="border rounded p-4">
+              <div class="flex justify-between items-start mb-2">
+                <div>
+                  <h3 x-text="meal.name" class="text-lg font-bold"></h3>
+                  <a
+                    x-show="meal.recipeUrl"
+                    :href="meal.recipeUrl"
+                    target="_blank"
+                    class="text-blue-500 hover:underline text-sm"
+                  >
+                    View Recipe
+                  </a>
+                </div>
+                <div class="space-x-2">
+                  <button
+                    @click="loadMealForEditing(meal)"
+                    class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    @click="deleteMeal(meal.id)"
+                    class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+              <div class="mt-2">
+                <h4 class="font-medium mb-1">Ingredients:</h4>
+                <ul class="list-disc pl-5">
+                  <template x-for="ing in meal.ingredients" :key="ing.name">
+                    <li>
+                      <span x-text="ing.amount"></span>
+                      <span x-text="ing.unit"></span>
+                      <span x-text="ing.name"></span>
+                    </li>
+                  </template>
+                </ul>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+      <div
+        x-show="activeTab === 'ingredients'"
+        class="bg-white p-4 rounded shadow"
+      >
+        <div class="flex justify-between mb-4">
+          <h2 class="text-2xl font-bold">Recipe Ingredients</h2>
+          <button
+            @click="openCreateIngredientModal()"
+            class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+          >
+            Create New Recipe Ingredient
+          </button>
+        </div>
+        <!-- Ingredients List -->
+        <div class="space-y-4">
+          <template x-for="ingredient in ingredients" :key="ingredient.id">
+            <div class="border rounded p-4">
+              <div class="flex justify-between items-start mb-2">
+                <div>
+                  <h3 x-text="ingredient.name" class="text-lg font-bold"></h3>
+                  <p class="text-sm text-gray-600">
+                    Yields:
+                    <span x-text="ingredient.yield.amount"></span>
+                    <span x-text="ingredient.yield.unit"></span>
+                  </p>
+                  <a
+                    x-show="ingredient.recipeUrl"
+                    :href="ingredient.recipeUrl"
+                    target="_blank"
+                    class="text-blue-500 hover:underline text-sm"
+                  >
+                    View Recipe
+                  </a>
+                </div>
+                <div class="space-x-2">
+                  <button
+                    @click="editIngredient(ingredient)"
+                    class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    @click="deleteIngredient(ingredient.id)"
+                    class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+              <div class="mt-2">
+                <h4 class="font-medium mb-1">Ingredients:</h4>
+                <ul class="list-disc pl-5">
+                  <template
+                    x-for="ing in ingredient.ingredients"
+                    :key="ing.name"
+                  >
+                    <li>
+                      <span x-text="ing.amount"></span>
+                      <span x-text="ing.unit"></span>
+                      <span x-text="ing.name"></span>
+                    </li>
+                  </template>
+                </ul>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Recipe Ingredient Modal -->
+      <div
+        x-show="showIngredientModal"
+        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
+      >
+        <div
+          class="bg-white p-6 rounded-lg w-full max-w-2xl"
+          @click.away="showIngredientModal = false"
+        >
+          <h3
+            class="text-xl font-bold mb-4"
+            x-text="editingIngredientId ? 'Edit Recipe Ingredient' : 'Create Recipe Ingredient'"
+          ></h3>
+
+          <!-- Ingredient Form -->
+          <div class="space-y-4">
+            <!-- Ingredient Name -->
+            <div>
+              <label class="block text-sm font-medium mb-1"
+                >Ingredient Name</label
+              >
+              <input
+                type="text"
+                x-model="newIngredient.name"
+                class="border rounded p-2 w-full"
+              />
+            </div>
+
+            <!-- Recipe URL -->
+            <div>
+              <label class="block text-sm font-medium mb-1"
+                >Recipe URL (optional)</label
+              >
+              <input
+                type="url"
+                x-model="newIngredient.recipeUrl"
+                class="border rounded p-2 w-full"
+              />
+            </div>
+
+            <!-- Yield -->
+            <div class="flex gap-4">
+              <div class="flex-1">
+                <label class="block text-sm font-medium mb-1"
+                  >Yield Amount</label
+                >
+                <input
+                  type="number"
+                  x-model="newIngredient.yield.amount"
+                  class="border rounded p-2 w-full"
+                  min="0"
+                  step="0.1"
+                />
+              </div>
+              <div class="flex-1">
+                <label class="block text-sm font-medium mb-1">Yield Unit</label>
+                <input
+                  type="text"
+                  x-model="newIngredient.yield.unit"
+                  class="border rounded p-2 w-full"
+                  placeholder="e.g., cups, servings"
+                />
+              </div>
+            </div>
+
+            <!-- Sub-ingredients -->
+            <div>
+              <label class="block text-sm font-medium mb-1">Ingredients</label>
+              <template
+                x-for="(ing, index) in newIngredient.ingredients"
+                :key="index"
+              >
+                <div class="flex gap-2 mb-2">
+                  <select x-model="ing.type" class="border rounded p-2 w-32">
+                    <option value="basic">Basic Ingredient</option>
+                    <option value="recipe">Recipe Ingredient</option>
+                  </select>
+
+                  <!-- Basic Ingredient Fields -->
+                  <template x-if="ing.type === 'basic'">
+                    <div class="flex gap-2 flex-1">
+                      <input
+                        type="text"
+                        x-model="ing.name"
+                        placeholder="Ingredient"
+                        class="border rounded p-2 flex-1"
+                      />
+                      <input
+                        type="number"
+                        x-model="ing.amount"
+                        placeholder="Amount"
+                        class="border rounded p-2 w-24"
+                        min="0"
+                        step="0.1"
+                      />
+                      <input
+                        type="text"
+                        x-model="ing.unit"
+                        placeholder="Unit"
+                        class="border rounded p-2 w-24"
+                      />
+                    </div>
+                  </template>
+
+                  <!-- Recipe Ingredient Fields -->
+                  <template x-if="ing.type === 'recipe'">
+                    <div class="flex gap-2 flex-1">
+                      <select
+                        x-model="ing.recipeId"
+                        @change="updateRecipeIngredientUnit(index)"
+                        class="border rounded p-2 flex-1"
+                      >
+                        <option value="">Select recipe ingredient...</option>
+                        <template
+                          x-for="recipe in getAvailableRecipeIngredients(ing)"
+                          :key="recipe.id"
+                        >
+                          <option
+                            :value="recipe.id"
+                            x-text="recipe.name"
+                          ></option>
+                        </template>
+                      </select>
+                      <input
+                        type="number"
+                        x-model="ing.amount"
+                        placeholder="Amount"
+                        class="border rounded p-2 w-24"
+                        min="0"
+                        step="0.1"
+                      />
+                      <div
+                        class="border rounded p-2 w-24 bg-gray-100"
+                        x-text="getRecipeIngredientUnit(ing.recipeId) || '-'"
+                      ></div>
+                    </div>
+                  </template>
+
+                  <button
+                    @click="removeRecipeIngredient(index)"
+                    class="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                  >
+                    &times;
+                  </button>
+                </div>
+              </template>
+              <button
+                @click="addRecipeIngredient()"
+                class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+              >
+                Add Ingredient
+              </button>
+            </div>
+
+            <!-- Form Actions -->
+            <div class="flex justify-end gap-4 mt-6">
+              <button
+                @click="showIngredientModal = false"
+                class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                @click="saveIngredient()"
+                class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Save Recipe Ingredient
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Create/Edit Meal Modal -->
+      <div
+        x-show="showMealModal"
+        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
+      >
+        <div
+          class="bg-white p-6 rounded-lg w-full max-w-2xl"
+          @click.away="showMealModal = false"
+        >
+          <h3
+            class="text-xl font-bold mb-4"
+            x-text="editingMealId ? 'Edit Meal' : 'Create New Meal'"
+          ></h3>
+          <!-- Meal Form -->
+          <div class="space-y-4">
+            <!-- Meal Name -->
+            <div>
+              <label class="block text-sm font-medium mb-1">Meal Name</label>
+              <input
+                type="text"
+                x-model="newMeal.name"
+                class="border rounded p-2 w-full"
+              />
+            </div>
+            <!-- Recipe URL -->
+            <div>
+              <label class="block text-sm font-medium mb-1"
+                >Recipe URL (optional)</label
+              >
+              <input
+                type="url"
+                x-model="newMeal.recipeUrl"
+                class="border rounded p-2 w-full"
+              />
+            </div>
+            <!-- Ingredients -->
+            <div>
+              <label class="block text-sm font-medium mb-1">Ingredients</label>
+              <template
+                x-for="(ing, index) in newMeal.ingredients"
+                :key="index"
+              >
+                <div class="flex gap-2 mb-2">
+                  <select x-model="ing.type" class="border rounded p-2 w-32">
+                    <option value="basic">Basic Ingredient</option>
+                    <option value="recipe">Recipe Ingredient</option>
+                  </select>
+                  <template x-if="ing.type === 'basic'">
+                    <div class="flex gap-2 flex-1">
+                      <input
+                        type="text"
+                        x-model="ing.name"
+                        placeholder="Ingredient"
+                        class="border rounded p-2 flex-1"
+                      />
+                      <input
+                        type="number"
+                        x-model="ing.amount"
+                        placeholder="Amount"
+                        class="border rounded p-2 w-24"
+                        min="0"
+                        step="0.1"
+                      />
+                      <input
+                        type="text"
+                        x-model="ing.unit"
+                        placeholder="Unit"
+                        class="border rounded p-2 w-24"
+                      />
+                    </div>
+                  </template>
+                  <template x-if="ing.type === 'recipe'">
+                    <div class="flex gap-2 flex-1">
+                      <select
+                        x-model="ing.recipeId"
+                        class="border rounded p-2 flex-1"
+                        @change="ing.name = $event.target.selectedOptions[0].dataset.name"
+                      >
+                        <option value="">Select recipe ingredient...</option>
+                        <template
+                          x-for="recipe in ingredients"
+                          :key="recipe.id"
+                        >
+                          <!-- :selected Makes sure that the selected option is shown if it is already apart of the recipe -->
+                          <option
+                            :value="recipe.id"
+                            :data-name="recipe.name"
+                            x-text="recipe.name"
+                            :selected="Number(ing.recipeId) === recipe.id"
+                          ></option>
+                        </template>
+                      </select>
+                      <input
+                        type="number"
+                        x-model="ing.amount"
+                        placeholder="Amount"
+                        class="border rounded p-2 w-24"
+                        min="0"
+                        step="0.1"
+                      />
+                      <div
+                        class="border rounded p-2 w-24 bg-gray-100"
+                        x-text="ingredients.find(r => r.id === Number(ing.recipeId))?.yield?.unit || '-'"
+                      ></div>
+                    </div>
+                  </template>
+                  <button
+                    @click="removeMealIngredient(index)"
+                    class="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                  >
+                    &times;
+                  </button>
+                </div>
+              </template>
+              <button
+                @click="addMealIngredient()"
+                class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+              >
+                Add Ingredient
+              </button>
+            </div>
+
+            <!-- Meal Yield section -->
+            <div class="mt-4">
+              <label class="block text-sm font-medium mb-1">Recipe Yield</label>
+              <div class="flex gap-4">
+                <div class="flex-1">
+                  <input
+                    type="number"
+                    x-model="newMeal.yield.amount"
+                    class="border rounded p-2 w-full"
+                    placeholder="Amount"
+                    min="0"
+                    step="0.1"
+                  />
+                </div>
+                <div class="flex-1">
+                  <input
+                    type="text"
+                    x-model="newMeal.yield.unit"
+                    class="border rounded p-2 w-full"
+                    placeholder="Unit (e.g., servings, portions)"
+                  />
+                </div>
+              </div>
+            </div>
+            <!-- Form Actions -->
+            <div class="flex justify-end gap-4 mt-6">
+              <button
+                @click="showMealModal = false"
+                class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                @click="saveMeal()"
+                class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Save Meal
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Schedule Meal Modal -->
+      <div
+        x-show="showScheduleModal"
+        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
+      >
+        <div
+          class="bg-white p-6 rounded-lg w-full max-w-2xl"
+          @click.away="showScheduleModal = false"
+        >
+          <h3 class="text-xl font-bold mb-4">
+            Schedule Meal for
+            <span x-text="selectedDate?.toFormat('MMM d, yyyy')"></span>
+          </h3>
+          <!-- Schedule Form -->
+          <div class="space-y-4">
+            <!-- Time Selection -->
+            <div>
+              <label class="block text-sm font-medium mb-1">Time</label>
+              <input
+                type="time"
+                x-model="newSchedule.time"
+                class="border rounded p-2 w-full"
+              />
+            </div>
+            <!-- Meal Selection -->
+            <div>
+              <label class="block text-sm font-medium mb-1">Select Meal</label>
+              <select
+                x-model="newSchedule.mealId"
+                class="border rounded p-2 w-full"
+              >
+                <option value="">Choose a meal...</option>
+                <template x-for="meal in meals" :key="meal.id">
+                  <option :value="meal.id" x-text="meal.name"></option>
+                </template>
+              </select>
+            </div>
+            <!-- Form Actions -->
+            <div class="flex justify-end gap-4 mt-6">
+              <button
+                @click="showScheduleModal = false"
+                class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                @click="saveSchedule()"
+                class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Schedule Meal
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Meal Details Modal -->
+      <template x-if="true">
+        <div
+          x-show="showMealDetailsModal"
+          x-transition:enter="transition ease-out duration-200"
+          x-transition:enter-start="opacity-0"
+          x-transition:enter-end="opacity-100"
+          x-transition:leave="transition ease-in duration-150"
+          x-transition:leave-start="opacity-100"
+          x-transition:leave-end="opacity-0"
+          class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          style="display: none"
+        >
+          <div
+            class="bg-white p-6 rounded-lg w-full max-w-2xl"
+            @click.away="showMealDetailsModal = false"
+          >
+            <div class="flex justify-between items-start mb-4">
+              <div>
+                <h3
+                  class="text-xl font-bold"
+                  x-text="selectedMealDetails?.name"
+                ></h3>
+                <p class="text-gray-600">
+                  Scheduled for
+                  <span
+                    x-text="selectedMealSchedule?.date ? DateTime.fromISO(selectedMealSchedule.date).toFormat('MMM d, yyyy') : ''"
+                  ></span>
+                  at
+                  <span x-text="selectedMealSchedule?.time"></span>
+                </p>
+              </div>
+              <button
+                @click="showMealDetailsModal = false"
+                class="text-gray-500 hover:text-gray-700 text-xl"
+              >
+                &times;
+              </button>
+            </div>
+            <!-- Recipe URL -->
+            <div x-show="selectedMealDetails?.recipeUrl" class="mb-4">
+              <h4 class="font-medium mb-2">Recipe Link:</h4>
+              <a
+                :href="selectedMealDetails?.recipeUrl"
+                target="_blank"
+                class="text-blue-500 hover:underline"
+                x-text="selectedMealDetails?.recipeUrl"
+              ></a>
+            </div>
+            <!-- Ingredients -->
+            <div class="mb-4">
+              <h4 class="font-medium mb-2">Ingredients:</h4>
+              <ul class="list-disc pl-5">
+                <template
+                  x-for="(ing, index) in selectedMealDetails?.ingredients"
+                  :key="index"
+                >
+                  <li>
+                    <span x-text="ing.amount"></span>
+                    <span x-text="ing.unit"></span>
+                    <span x-text="ing.name"></span>
+                  </li>
+                </template>
+              </ul>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex justify-end gap-4 mt-6">
+              <button
+                @click="loadMealForEditing(selectedMealDetails)"
+                class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Edit Meal
+              </button>
+              <button
+                @click="showMealDetailsModal = false"
+                class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </body>
+</html>
