@@ -47,17 +47,6 @@ document.addEventListener("alpine:init", () => {
       this.showOptions(day, event);
     },
 
-    showOptions(day, event) {
-      if (event) {
-        this.contextMenuPosition = {
-          x: event.clientX,
-          y: event.clientY,
-        };
-      }
-      this.selectedDay = day;
-      this.showContextMenu = true;
-    },
-
     // Computed properties
     get daysOfWeek() {
       return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -99,7 +88,14 @@ document.addEventListener("alpine:init", () => {
     get weekDays() {
       const store = this.$store.mealPlanner;
       const startOfWeek = store.currentDate.startOf("week");
-      return Array.from({ length: 7 }, (_, i) => startOfWeek.plus({ days: i }));
+      return Array.from({ length: 7 }, (_, i) => {
+        const date = startOfWeek.plus({ days: i });
+        return {
+          date,
+          isCurrentMonth: date.hasSame(store.currentDate, 'month'),
+          schedules: this.getSchedulesForDay(date)
+        };
+      });
     },
 
     get formattedCurrentRange() {
@@ -124,7 +120,7 @@ document.addEventListener("alpine:init", () => {
         })
         .map((schedule) => ({
           ...schedule,
-          meal: store.getMealById(schedule.mealId),
+          food: this.$store.foodManager.getFoodById(schedule.foodId),
           style: this.getEventStyle(schedule.time),
         }))
         .sort((a, b) => a.time.localeCompare(b.time));
@@ -158,7 +154,9 @@ document.addEventListener("alpine:init", () => {
 
     switchToWeekView(date) {
       const store = this.$store.mealPlanner;
-      store.currentDate = date.startOf("week");
+      // Handle both cases - when date is passed directly or as an object property
+      const dateToUse = date.date || date;
+      store.currentDate = dateToUse.startOf("week");
       store.viewMode = "week";
     },
 
@@ -234,50 +232,169 @@ document.addEventListener("alpine:init", () => {
       return `${hour.toString().padStart(2, "0")}:00`;
     },
 
-    // Calculate event position and height
     calculateEventStyle(schedule) {
       const [hours, minutes] = schedule.time.split(":").map(Number);
-      const top = (hours + minutes / 60) * 5; // Changed from 4 to 5 for 5rem height
-      return `top: ${top}rem; height: 4.5rem;`; // Adjusted event height
+      return `top: ${(hours + minutes / 60) * 10}rem; height: 10rem;`; // Match grid height
     },
 
     // Get events for a specific day, sorted by time
     getEventsForDay(date) {
-      return this.$store.mealPlanner.schedules
-        .filter((schedule) => {
-          const scheduleDate = this.$store.mealPlanner.DateTime.fromISO(
-            schedule.date,
-          );
-          return scheduleDate.hasSame(date, "day");
+      // Get events for this day
+      const events = this.$store.mealPlanner.schedules
+        .filter(schedule => {
+          const scheduleDate = this.$store.mealPlanner.DateTime.fromISO(schedule.date);
+          return scheduleDate.hasSame(date, 'day');
         })
-        .map((schedule) => ({
+        .map(schedule => ({
           ...schedule,
-          meal: this.$store.mealPlanner.getMealById(schedule.mealId),
-          style: this.calculateEventStyle(schedule),
+          food: this.$store.foodManager.getFoodById(schedule.foodId),
         }))
         .sort((a, b) => a.time.localeCompare(b.time));
-    },
     
+      // Group events by time slot
+      const timeSlots = {};
+      events.forEach(event => {
+        if (!timeSlots[event.time]) {
+          timeSlots[event.time] = [];
+        }
+        timeSlots[event.time].push(event);
+      });
+    
+      // Calculate positions for overlapping events
+      return events.map(event => {
+        const eventsInSlot = timeSlots[event.time];
+        const index = eventsInSlot.indexOf(event);
+        const width = 100 / eventsInSlot.length;
+        const left = index * width;
+    
+        return {
+          ...event,
+          style: `${this.calculateEventStyle(event)} width: ${width}%; left: ${left}%;`
+        };
+      });
+    },
+
     get currentTimePosition() {
       const now = this.$store.mealPlanner.DateTime.local();
       const totalMinutes = now.hour * 60 + now.minute;
       // h-40 = 10rem, so divide hour slot by 60 minutes
-      return `${(totalMinutes * (10/60))}rem`;
-    },
-    
-    get currentTimeFormatted() {
-      const now = this.$store.mealPlanner.DateTime.local();
-      return now.toFormat('HH:mm');
-    },
-    
-    isWithinToday() {
-      const now = this.$store.mealPlanner.DateTime.local();
-      return this.$store.mealPlanner.currentDate.hasSame(now, 'day');
+      return `${totalMinutes * (10 / 60)}rem`;
     },
 
-    openEventDetails(event) {
-      // Implement event details modal logic here
-      console.log("Opening event details:", event);
+    get currentTimeFormatted() {
+      const now = this.$store.mealPlanner.DateTime.local();
+      return now.toFormat("HH:mm");
     },
+
+    isWithinToday() {
+      const now = this.$store.mealPlanner.DateTime.local();
+      return this.$store.mealPlanner.currentDate.hasSame(now, "day");
+    },
+
+    openEventDetails(schedule) {
+      window.dispatchEvent(new CustomEvent('show-meal-details', {
+        detail: schedule
+      }));
+    },
+    showDeleteScheduleOptions(schedules) {
+        if (schedules.length === 1) {
+            // Direct delete for single schedule
+            this.confirmDeleteSchedule(schedules[0]);
+        } else {
+            // Show additional modal or expand context menu for multiple schedules
+            const food = this.$store.foodManager.getFoodById(schedules[0].foodId);
+            window.dispatchEvent(new CustomEvent('show-confirmation', {
+                detail: {
+                    title: 'Delete Schedules',
+                    message: `Delete all ${schedules.length} scheduled meals for this day?`,
+                    confirmText: 'Delete All',
+                    onConfirm: () => this.deleteSchedules(schedules)
+                }
+            }));
+        }
+        this.showContextMenu = false;
+    },
+    
+    confirmDeleteSchedule(schedule) {
+        const food = this.$store.foodManager.getFoodById(schedule.foodId);
+        window.dispatchEvent(new CustomEvent('show-confirmation', {
+            detail: {
+                title: 'Delete Schedule',
+                message: `Are you sure you want to delete ${food?.name || 'this meal'} scheduled for ${schedule.time}?`,
+                confirmText: 'Delete',
+                onConfirm: () => this.deleteSchedule(schedule.id)
+            }
+        }));
+    },
+    
+    deleteSchedule(scheduleId) {
+        this.$store.mealPlanner.schedules = this.$store.mealPlanner.schedules.filter(
+            schedule => schedule.id !== scheduleId
+        );
+    },
+    
+    deleteSchedules(schedules) {
+        const scheduleIds = schedules.map(s => s.id);
+        this.$store.mealPlanner.schedules = this.$store.mealPlanner.schedules.filter(
+            schedule => !scheduleIds.includes(schedule.id)
+        );
+    },
+    showEventOptions(event) {
+        // Close other open menus
+        this.getEventsForDay(this.$store.mealPlanner.currentDate)
+            .forEach(e => {
+                if (e !== event) e.showOptions = false;
+            });
+        event.showOptions = !event.showOptions;
+    },
+    
+    showOptions(day, event) {
+        // Close any open event menus first
+        this.getEventsForDay(this.$store.mealPlanner.currentDate)
+            .forEach(e => e.showOptions = false);
+            
+        if (event) {
+            this.contextMenuPosition = {
+                x: event.clientX,
+                y: event.clientY,
+            };
+        }
+        this.selectedDay = day;
+        this.showContextMenu = true;
+    },
+    
+    getDayData(date) {
+        return {
+            date: date,
+            isCurrentDay: this.isCurrentDay(date),
+            schedules: this.getSchedulesForDay(date)
+        };
+    },
+  }));
+  
+  Alpine.data("scheduleManager", () => ({
+    selectedFoodId: null,
+    selectedTime: "12:00",
+    errors: {},
+
+    saveSchedule() {
+      if (!this.selectedFoodId) {
+        this.errors = { food: "Please select a food" };
+        return;
+      }
+
+      const schedule = {
+        id: String(Date.now()),
+        foodId: this.selectedFoodId,
+        date: this.$store.mealPlanner.selectedScheduleDate.toISODate(),
+        time: this.selectedTime,
+      };
+
+      this.$store.mealPlanner.schedules.push(schedule);
+      this.$store.mealPlanner.toggleScheduleModal(null);
+    },
+    formatScheduleDate(date) {
+      return date ? date.toFormat('MMMM d, yyyy') : '';
+    }
   }));
 });

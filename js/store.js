@@ -1,15 +1,51 @@
 document.addEventListener("alpine:init", () => {
+  Alpine.data('confirmationModal', () => ({
+      isVisible: false,
+      title: '',
+      message: '',
+      confirmText: 'Confirm',
+      cancelText: 'Cancel',
+      onConfirm: () => {},
+      onCancel: () => {},
+  
+      show({ title, message, confirmText, cancelText, onConfirm, onCancel }) {
+          this.title = title;
+          this.message = message;
+          this.confirmText = confirmText || 'Confirm';
+          this.cancelText = cancelText || 'Cancel';
+          this.onConfirm = onConfirm;
+          this.onCancel = onCancel;
+          this.isVisible = true;
+      },
+  
+      confirm() {
+          this.onConfirm?.();
+          this.isVisible = false;
+      },
+  
+      cancel() {
+          this.onCancel?.();
+          this.isVisible = false;
+      }
+  }));
   Alpine.store("mealPlanner", {
     // Core state
     DateTime: luxon.DateTime,
     currentDate: luxon.DateTime.local(),
     activeTab: "calendar",
-    viewMode: "week",
+    viewMode: "month",
     schedules: [],
     meals: [],
     foods: [], // Just stores the food data
+    showScheduleModal: false,
+    selectedScheduleDate: null,
+    showViewModal: false,
+    viewingFoodId: null,
+    showFoodModal: false,
 
     init() {
+      this.showViewModal = false;
+      this.viewingFoodId = null;
       this.loadFromStorage();
       this.watchStorage();
     },
@@ -53,6 +89,21 @@ document.addEventListener("alpine:init", () => {
         localStorage.setItem("schedules", JSON.stringify(this.schedules));
         localStorage.setItem("foods", JSON.stringify(this.foods));
       });
+    },
+
+    toggleScheduleModal(date) {
+      this.selectedScheduleDate = date;
+      this.showScheduleModal = !this.showScheduleModal;
+    },
+
+    openViewModal(foodId) {
+      this.viewingFoodId = foodId;
+      this.showViewModal = true;
+    },
+
+    closeViewModal() {
+      this.showViewModal = false;
+      this.viewingFoodId = null;
     },
   });
 });

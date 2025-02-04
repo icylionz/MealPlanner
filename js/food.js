@@ -1,7 +1,12 @@
 document.addEventListener("alpine:init", () => {
+  Alpine.store("foodManager", {
+    getFoodById(id) {
+      return Alpine.store('mealPlanner').foods.find((f) => f.id === String(id));
+    },
+  });
+
   Alpine.data("foodManager", () => ({
     // UI State
-    showFoodModal: false,
     editingFood: null,
     searchQuery: "",
     typeFilter: "all",
@@ -35,14 +40,10 @@ document.addEventListener("alpine:init", () => {
     },
 
     // Food Management Methods
-    getFoodById(id) {
-      return this.$store.mealPlanner.foods.find((f) => f.id === String(id));
-    },
-
     validateRecipeDepth(foodId, visited = new Set()) {
       if (visited.size >= 15) return false;
 
-      const food = this.getFoodById(foodId);
+      const food = this.$store.foodManager.getFoodById(foodId);
       if (!food?.isRecipe) return true;
 
       visited.add(foodId);
@@ -156,7 +157,7 @@ document.addEventListener("alpine:init", () => {
     },
 
     getCompatibleUnits(unit, foodId) {
-      const food = this.getFoodById(foodId);
+      const food = this.$store.foodManager.getFoodById(foodId);
       if (!food) return this.getUnitsForType("mass");
       return this.getUnitsForType(food.unitType);
     },
@@ -169,7 +170,7 @@ document.addEventListener("alpine:init", () => {
     openNewFoodModal() {
       this.editingFood = null;
       this.initFormData();
-      this.showFoodModal = true;
+      this.$store.mealPlanner.showFoodModal = true;
     },
 
     openFoodModal(food) {
@@ -196,7 +197,7 @@ document.addEventListener("alpine:init", () => {
             : this.formData.recipe,
         };
       }
-      this.showFoodModal = true;
+      this.$store.mealPlanner.showFoodModal = true;
     },
 
     // Form Submission
@@ -232,19 +233,23 @@ document.addEventListener("alpine:init", () => {
         } else {
           await this.addFood(this.formData);
         }
-        this.showFoodModal = false;
+        this.$store.mealPlanner.showFoodModal = false;
       } catch (error) {
         alert(error.message);
       }
     },
 
     confirmDelete(food) {
-      this.showDeleteModal = true;
-      window.dispatchEvent(
-        new CustomEvent("confirm-delete", {
-          detail: food,
-        }),
-      );
+        window.dispatchEvent(new CustomEvent('show-confirmation', {
+            detail: {
+                title: 'Confirm Deletion',
+                message: food.isRecipe 
+                    ? `Are you sure you want to delete the recipe ${food.name}? This will not delete its ingredients.`
+                    : `Are you sure you want to delete ${food.name}?`,
+                confirmText: 'Delete',
+                onConfirm: () => this.deleteFood(food.id)
+            }
+        }));
     },
 
     async deleteFood(id) {
@@ -279,6 +284,19 @@ document.addEventListener("alpine:init", () => {
         return false;
       }
     },
+    get viewingFood() {
+            return this.$store.foodManager.getFoodById(this.$store.mealPlanner.viewingFoodId);
+        },
     
+        formatIngredient(ing) {
+            const food = this.$store.foodManager.getFoodById(ing.foodId);
+            return `${ing.quantity} ${ing.unit} ${food?.name || 'Unknown Food'}`;
+        },
+    
+        editFromView() {
+            // Close view modal and open edit modal
+            this.$store.mealPlanner.closeViewModal();
+            this.openFoodModal(this.viewingFood);
+        },
   }));
 });
