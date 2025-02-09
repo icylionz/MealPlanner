@@ -1,0 +1,6 @@
+.env
+tmp
+go.sum
+
+*_templ*
+internal/database/db

@@ -573,6 +573,11 @@
                 </template>
             </div>
         </div>
+        <!--        -->
+        <!-- Modals -->
+        <!--        -->
+        
+        <!-- Alerts -->
         <div x-data="{ alerts: [] }" @show-alert.window="alerts.push({...$event.detail, id: Date.now()})">
           <template x-for="alert in alerts" :key="alert.id">
             <div

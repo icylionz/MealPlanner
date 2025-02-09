@@ -1,0 +1,14 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "internal/database/queries/foods.sql"
+    schema: "migrations/"
+    gen:
+      go:
+        package: "db"
+        out: "internal/database/db"
+        emit_json_tags: true
+        emit_interface: true
+        emit_exact_table_names: false
+        emit_result_struct_pointers: true
+        sql_package: "pgx/v5" 

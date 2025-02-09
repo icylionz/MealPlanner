@@ -1,0 +1,19 @@
+package pages
+
+import "mealplanner/internal/views/layouts"
+import "mealplanner/internal/views/components"
+
+
+templ Index() {
+    @layouts.Base() {
+        @components.Navigation()
+        
+        <div id="main-content">
+            <div hx-get="/calendar" hx-trigger="load" hx-swap="innerHTML"></div>
+        </div>
+        
+        // @components.schedule.Modal()
+        // @components.food.Modal()
+        // @components.ConfirmationModal()
+    }
+}
