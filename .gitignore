@@ -4,3 +4,6 @@ go.sum
 
 *_templ*
 internal/database/db
+bin/
+*.exe
+*.out
