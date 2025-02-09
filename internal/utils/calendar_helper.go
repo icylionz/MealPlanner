@@ -12,7 +12,10 @@ type CalendarView struct {
 	ViewMode    string // "day", "week", "month"
 	Schedules   []*models.Schedule
 }
-
+type Position struct {
+	X int
+	Y int
+}
 type DayData struct {
 	Date           *time.Time
 	IsCurrentMonth bool

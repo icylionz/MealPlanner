@@ -6,6 +6,7 @@ import (
 	"mealplanner/internal/models"
 	"mealplanner/internal/services"
 	"mealplanner/internal/utils"
+	"strconv"
 	"time"
 
 	"mealplanner/internal/views/components"
@@ -22,10 +23,10 @@ func (h *CalendarHandler) HandleCalendarView(c echo.Context) error {
 	if viewMode == "" || (viewMode != "day" && viewMode != "week" && viewMode != "month") {
 		viewMode = "month"
 	}
-	
+
 	dateStr := c.QueryParam("date")
 	log.Default().Printf("dateStr: %s", dateStr)
-	
+
 	currentDate := time.Now()
 	if dateStr != "" {
 		parsedDate, err := time.Parse("2006-01-02", dateStr)
@@ -51,6 +52,34 @@ func (h *CalendarHandler) HandleCalendarView(c echo.Context) error {
 	return components.Calendar(view).Render(c.Request().Context(), c.Response())
 }
 
+func (h *CalendarHandler) HandleContextMenu(c echo.Context) error {
+    date := c.QueryParam("date")
+    x := c.QueryParam("x")
+    y := c.QueryParam("y")
+
+    // Parse date
+    parsedDate, err := time.Parse("2006-01-02", date)
+    if err != nil {
+        return err
+    }
+
+    // Get schedules for this day
+    schedules, err := h.scheduleService.GetSchedulesForRange(c.Request().Context(), parsedDate, parsedDate)
+	if err != nil {
+		log.Default().Printf("Error getting schedules: %s", err)
+		return err
+	}
+
+    // Parse coordinates
+    xPos, _ := strconv.Atoi(x)
+    yPos, _ := strconv.Atoi(y)
+
+    // Render context menu
+    return components.ContextMenu(&utils.DayData{
+        Date: &parsedDate,
+        Schedules: toSchedulesModel(schedules),
+    }, utils.Position{X: xPos, Y: yPos}).Render(c.Request().Context(), c.Response())
+}
 func toScheduleModel(schedule *db.GetSchedulesInRangeRow) *models.Schedule {
 
 	return &models.Schedule{

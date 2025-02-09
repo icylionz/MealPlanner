@@ -64,6 +64,7 @@ func main() {
 	// Routes
 	e.GET("/", pageHandler.HandleIndex)
 	e.GET("/calendar", calendarHandler.HandleCalendarView)
+	e.GET("/calendar/context-menu", calendarHandler.HandleContextMenu)
 
 	// Create sub-FS for static files
 	staticFS, err := fs.Sub(staticFiles, "static")

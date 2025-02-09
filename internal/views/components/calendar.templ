@@ -15,6 +15,12 @@ templ Calendar(view *utils.CalendarView) {
         hx-swap="outerHTML"
         id="calendar-container"
     >
+    	<!-- Context Menu Container -->
+    	<div
+            x-ref="contextMenuContainer"
+            @click.away="$refs.contextMenuContainer.innerHTML = ''"
+            class="relative"
+        ></div>
         <!-- Calendar Header -->
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
             <div class="flex items-center gap-4">
@@ -76,15 +82,18 @@ templ renderCalendarContent(view *utils.CalendarView) {
 // Day View
 templ renderDayView(day *utils.DayData) {
     <div class="bg-white rounded-lg shadow">
-        <div class="p-4 border-b flex justify-between items-center">
+        <div
+	        class="p-4 border-b flex justify-between items-center"
+	        @contextmenu.prevent={fmt.Sprintf("showContextMenu($event, { date: '%s' })", day.Date.Format("2006-01-02"))}
+        >
             <h3 class="text-lg font-semibold">{ day.Date.Format("Monday, January 2") }</h3>
             <button
-	            @click="showOptions(getDayData($store.mealPlanner.currentDate), $event)"
-	            class="p-1 hover:bg-gray-100 rounded options-btn"
+                @click={ fmt.Sprintf("showContextMenu($event, { date: '%s' })", day.Date.Format("2006-01-02"))}
+                class="p-1 hover:bg-gray-100 rounded options-btn"
             >
-	            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-	                <path d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-	            </svg>
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                </svg>
             </button>
 
         </div>
@@ -122,24 +131,40 @@ templ renderWeekView(week *utils.WeekData) {
     <div class="bg-white rounded-lg shadow overflow-x-auto">
         <div class="grid grid-cols-7 divide-x" style="min-width: 840px;">
             for _, day := range week.Days {
-                <div class="min-h-[300px] min-w-[120px]">
+                <div
+                	class="min-h-[300px] min-w-[120px]"
+	                @contextmenu.prevent={fmt.Sprintf("showContextMenu($event, { date: '%s' })", day.Date.Format("2006-01-02"))}
+                >
                     <div class="p-3 border-b bg-gray-50 flex justify-between items-center">
                         <div>
                             <div class="text-sm font-medium text-gray-500">{ day.Date.Format("Mon") }</div>
-                            <div class={
-                                "text-lg ",
-                                templ.KV("text-blue-600 font-medium", day.IsToday)
-                            }>{ day.Date.Format("2") }</div>
+                            <button
+								@click.stop.prevent={fmt.Sprintf(`
+							        if (isMobile) {
+							            showContextMenu($event, { date: '%s' });
+							        } else {
+							            htmx.ajax('GET', '/calendar?mode=day&date=%s', { target: '#calendar-container' });
+							        }
+							    `, day.Date.Format("2006-01-02"), day.Date.Format("2006-01-02"))}
+                                class={
+                                    "text-sm font-medium w-7 h-7 flex items-center justify-center rounded-full ",
+                                    templ.KV("bg-blue-100 text-blue-600", day.IsToday)
+                                }
+                            >
+                                <span>{ day.Date.Format("2") }</span>
+                            </button>
                         </div>
+                        <!-- Desktop Options Button -->
                         <button
-                            hx-get={fmt.Sprintf("/schedules/new?date=%s", day.Date.Format("2006-01-02"))}
-                            hx-target="#modal-container"
-                            class="p-1 hover:bg-gray-100 rounded"
+                            x-show="!isMobile"
+                            @click={ fmt.Sprintf("showContextMenu($event, { date: '%s' })", day.Date.Format("2006-01-02"))}
+                            class="p-1 hover:bg-gray-100 rounded options-btn"
                         >
-                            <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                                <path d="M10 5v10M5 10h10"/>
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
                             </svg>
                         </button>
+
                     </div>
 
                     <div class="p-2 space-y-2">
@@ -177,24 +202,36 @@ templ renderMonthView(weeks []*utils.WeekData) {
                                 "bg-white min-h-[80px] sm:min-h-[120px] p-1 sm:p-2 relative group ",
                                 templ.KV("opacity-50", !day.IsCurrentMonth)
                             }
+                            @contextmenu.prevent={fmt.Sprintf("showContextMenu($event, { date: '%s' })", day.Date.Format("2006-01-02"))}
                         >
                             <div class="flex justify-between items-center">
-                                <span
+	                            <button
+									@click.stop.prevent={fmt.Sprintf(`
+								        if (isMobile) {
+								            showContextMenu($event, { date: '%s' });
+								        } else {
+								            htmx.ajax('GET', '/calendar?mode=day&date=%s', { target: '#calendar-container' });
+								        }
+								    `, day.Date.Format("2006-01-02"), day.Date.Format("2006-01-02"))}
                                     class={
                                         "text-sm font-medium w-7 h-7 flex items-center justify-center rounded-full ",
                                         templ.KV("bg-blue-100 text-blue-600", day.IsToday)
                                     }
-                                >{ day.Date.Format("2") }</span>
-
-                                <button
-                                    hx-get={fmt.Sprintf("/schedules/new?date=%s", day.Date.Format("2006-01-02"))}
-                                    hx-target="#modal-container"
-                                    class="hidden group-hover:block p-1 hover:bg-gray-100 rounded"
                                 >
-                                    <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                                        <path d="M10 5v10M5 10h10"/>
+                                    <span>{ day.Date.Format("2") }</span>
+                                </button>
+                                
+                                <!-- Desktop Options Button -->
+                                <button
+                                    x-show="!isMobile"
+                                    @click={ fmt.Sprintf("showContextMenu($event, { date: '%s' })", day.Date.Format("2006-01-02"))}
+                                    class="hidden group-hover:block p-1 hover:bg-gray-100 rounded options-btn"
+                                >
+                                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                        <path d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
                                     </svg>
                                 </button>
+
                             </div>
 
                             <div class="mt-1 space-y-1">
@@ -213,6 +250,46 @@ templ renderMonthView(weeks []*utils.WeekData) {
                         </div>
                     }
                 </div>
+            }
+        </div>
+    </div>
+}
+
+templ ContextMenu(day *utils.DayData, position utils.Position) {
+    <div
+        class="fixed bg-white rounded-lg shadow-lg z-50 context-menu"
+        style={fmt.Sprintf("top: min(%dpx, calc(100vh - 150px)); left: min(%dpx, calc(100vw - 200px));", position.Y, position.X)}
+    >
+        <div class="p-2 min-w-[150px]">
+            <button
+                hx-get={fmt.Sprintf("/calendar?mode=day&date=%s", day.Date.Format("2006-01-02"))}
+                hx-target="#calendar-container"
+                class="w-full text-left px-3 py-2 hover:bg-gray-100 rounded"
+            >
+                View Day
+            </button>
+            <button
+                hx-get={fmt.Sprintf("/calendar?mode=week&date=%s", day.Date.Format("2006-01-02"))}
+                hx-target="#calendar-container"
+                class="w-full text-left px-3 py-2 hover:bg-gray-100 rounded"
+            >
+                View Week
+            </button>
+            <button
+                hx-get={fmt.Sprintf("/schedules/modal?date=%s", day.Date.Format("2006-01-02"))}
+                hx-target="#modal-container"
+                class="w-full text-left px-3 py-2 hover:bg-gray-100 rounded"
+            >
+                Schedule Meal
+            </button>
+            if len(day.Schedules) > 0 {
+                <button
+                    hx-delete={fmt.Sprintf("/schedules?date=%s", day.Date.Format("2006-01-02"))}
+                    hx-confirm="Are you sure you want to delete all schedules for this day?"
+                    class="w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-red-600"
+                >
+                    Delete Schedules
+                </button>
             }
         </div>
     </div>
