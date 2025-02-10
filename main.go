@@ -60,11 +60,14 @@ func main() {
 	// scheduleHandler := handlers.NewScheduleHandler(scheduleService)
 	calendarHandler := handlers.NewCalendarHandler(scheduleService)
 	pageHandler := handlers.NewPageHandler()
-
+	schedulesHandler := handlers.NewSchedulesHandler(scheduleService)
 	// Routes
 	e.GET("/", pageHandler.HandleIndex)
 	e.GET("/calendar", calendarHandler.HandleCalendarView)
 	e.GET("/calendar/context-menu", calendarHandler.HandleContextMenu)
+	e.POST("/schedules", schedulesHandler.HandleAddSchedule)
+	e.DELETE("/schedules/ids", schedulesHandler.HandleDeleteScheduleByIds)
+	e.DELETE("/schedules/date-range", schedulesHandler.HandleDeleteScheduleByDateRange)
 
 	// Create sub-FS for static files
 	staticFS, err := fs.Sub(staticFiles, "static")
