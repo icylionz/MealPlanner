@@ -1,0 +1,110 @@
+package components
+
+import "mealplanner/internal/models"
+import "time"
+import "strconv"
+
+type ModalProps struct {
+    Date     time.Time
+    TimeChosen     time.Time
+    FoodChosen     models.Food
+    Foods    []models.Food
+    Errors   map[string]string
+}
+templ Modal() {
+	<div
+		x-show="$store.mealPlanner.showModal"
+		@click.away="toggleModal(false)"
+		id="modal-container"
+		class="fixed inset-0 z-50 overflow-y-auto"
+	></div>
+}
+templ DeleteConfirmationModal() {
+}
+
+templ CreateScheduleModal(props ModalProps) {
+	<div class="flex items-center justify-center min-h-screen p-4">
+        <div class="fixed inset-0 bg-black opacity-50"></div>
+
+        <div class="relative bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div class="p-6">
+                <h3 class="text-lg font-medium mb-4">{ props.Date.Format("January 2, 2006") }</h3>
+
+                <form
+                    hx-post="/schedules"
+                    hx-target="#modal-container"
+                    hx-swap="innerHTML"
+                    class="space-y-4"
+                >
+                    <input type="hidden" name="date" value={ props.Date.Format("2006-01-02") } />
+
+                    <!-- Food Select -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Food</label>
+                        <select
+                            name="food_id"
+                            class={
+	                            "w-full rounded border p-2",
+	                            templ.KV("border-red-500", props.Errors["food"] != "")
+                            }
+                        >
+                            <option value="">Select Food</option>
+                            for _, food := range props.Foods {
+                                <option value={ strconv.Itoa(food.ID) } selected?={ props.FoodChosen.ID == food.ID }>{ food.Name }</option>
+                            }
+                        </select>
+                        if err := props.Errors["food"]; err != "" {
+                            <div class="text-red-500 text-sm mt-1">{ err }</div>
+                        }
+                    </div>
+                    <!-- Time Select -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium mb-1">Time</label>
+                        <input
+                            type="time"
+                            name="time"
+                            value={
+	                            func(t time.Time) string {
+									if t.IsZero() {
+                                        return ""
+                                    }
+                                    return t.Format("15:04")
+                                }(props.TimeChosen)
+                            }
+                            class={
+	                            "w-full rounded border p-2",
+	                            templ.KV("border-red-500", props.Errors["time"] != "")
+                            }
+                        />
+                        if err := props.Errors["time"]; err != "" {
+                            <div class="text-red-500 text-sm mt-1">{ err }</div>
+                        }
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex justify-end gap-3">
+                        <button
+                            type="button"
+                            class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded"
+                            @click="$store.mealPlanner.toggleModal(false)"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                        >
+                            Schedule
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+}
+
+templ CreateEditFoodModal() {
+}
+
+templ ViewMealModal() {
+}

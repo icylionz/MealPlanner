@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"log"
+	"mealplanner/internal/models"
 	"mealplanner/internal/services"
 	"mealplanner/internal/views/components"
 	"net/http"
@@ -18,30 +19,76 @@ type SchedulesHandler struct {
 }
 
 func (h *SchedulesHandler) HandleAddSchedule(c echo.Context) error {
-	foodId, err := strconv.Atoi(c.Param("foodId"))
-	if err != nil {
+	var input struct {
+		Date   string `form:"date"`
+		Time   string `form:"time"`
+		FoodID string `form:"food_id"`
+	}
+
+	if err := c.Bind(&input); err != nil {
 		return err
 	}
 
-	dateStr := c.QueryParam("date")
-	log.Default().Printf("dateStr: %s", dateStr)
+	errors := make(map[string]string)
+	if input.FoodID == "" {
+		errors["food"] = "Please select a food"
+	}
+	foodId, err := strconv.Atoi(input.FoodID)
+	var selectedFoodId int
+	if err != nil {
+		errors["food"] = "Please select a valid food"
 
-	currentDate := time.Now()
-	if dateStr != "" {
-		parsedDate, err := time.Parse("2006-01-02", dateStr)
-		if err == nil {
-			log.Default().Printf("parsedDate: %s", parsedDate)
-			currentDate = parsedDate
+	} else {
+		selectedFoodId = foodId
+	}
+	var dateOfSchedule time.Time
+	var timeOfSchedule time.Time
+	if input.Time == "" {
+		errors["time"] = "Please select a time"
+	} else {
+		dateOfSchedule, err = time.Parse("2006-01-02", input.Date)
+		if err != nil {
+			return err
+		}
+		timeOfSchedule, err = time.Parse("15:04", input.Time)
+		if err != nil {
+			log.Default().Printf("err: %v", err)
+			return err
 		}
 	}
 
-	schedule, err := h.scheduleService.CreateSchedule(c.Request().Context(), foodId, currentDate)
+	if len(errors) > 0 {
+		// Re-render form with errors
+		date, _ := time.Parse("2006-01-02", input.Date)
+		// TODO: Get foods
+		// foods, _ := h.foodService.ListFoods()
+
+		props := components.ModalProps{
+			Date:   date,
+			Foods:  []models.Food{},
+			Errors: errors,
+			FoodChosen: models.Food{
+				ID: selectedFoodId,
+			},
+			TimeChosen: timeOfSchedule,
+		}
+
+		// TODO: Figure out why dis no work
+		c.Response().Status = http.StatusBadRequest
+		
+		return components.CreateScheduleModal(props).Render(c.Request().Context(), c.Response().Writer)
+	}
+
+	scheduleAt := time.Date(dateOfSchedule.Year(), dateOfSchedule.Month(), dateOfSchedule.Day(), timeOfSchedule.Hour(), timeOfSchedule.Minute(), timeOfSchedule.Second(), 0, time.UTC)
+
+	_, err = h.scheduleService.CreateSchedule(c.Request().Context(), foodId, scheduleAt)
 	if err != nil {
 		log.Default().Printf("Error creating schedule: %s", err)
 		return err
 	}
 
-	return components.ScheduleComponent(schedule).Render(c.Request().Context(), c.Response())
+	// Return updated calendar view
+	return c.Redirect(http.StatusFound, "/calendar")
 }
 
 func (h *SchedulesHandler) HandleDeleteScheduleByIds(c echo.Context) error {
@@ -66,7 +113,7 @@ func (h *SchedulesHandler) HandleDeleteScheduleByIds(c echo.Context) error {
 }
 
 func (h *SchedulesHandler) HandleDeleteScheduleByDateRange(c echo.Context) error {
-	start, end :=c.QueryParam("start"), c.QueryParam("end")
+	start, end := c.QueryParam("start"), c.QueryParam("end")
 	startTime, err := time.Parse("2006-01-02 15:04:05", start)
 	if err != nil {
 		return err
@@ -82,6 +129,22 @@ func (h *SchedulesHandler) HandleDeleteScheduleByDateRange(c echo.Context) error
 	}
 
 	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *SchedulesHandler) HandleScheduleModal(c echo.Context) error {
+	dateStr := c.QueryParam("date")
+	date, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		log.Default().Printf("Error parsing date: %s", err)
+		return errors.New("Invalid date")
+	}
+	// TODO: Get foods
+
+	return components.CreateScheduleModal(components.ModalProps{
+		Date:   date,
+		Foods:  []models.Food{},
+		Errors: map[string]string{},
+	}).Render(c.Request().Context(), c.Response())
 }
 
 func NewSchedulesHandler(scheduleService *services.ScheduleService) *SchedulesHandler {

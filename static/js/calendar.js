@@ -20,17 +20,22 @@ document.addEventListener("alpine:init", () => {
     },
 
     showContextMenu(event, day) {
-            const container = this.$refs.contextMenuContainer;
-            if (!container) return;
-            
-            container.innerHTML = '';
-            
-            // Load context menu via HTMX
-            htmx.ajax('GET', `/calendar/context-menu?date=${day.date}&x=${event.clientX}&y=${event.clientY}`, {
-                target: this.$refs.contextMenuContainer,
-                swap: 'innerHTML'
-            });
-        }
+      const container = this.$refs.contextMenuContainer;
+      if (!container) return;
+
+      container.innerHTML = "";
+
+      // Load context menu via HTMX
+      htmx.ajax(
+        "GET",
+        `/calendar/context-menu?date=${day.date}&x=${event.clientX}&y=${event.clientY}`,
+        {
+          target: this.$refs.contextMenuContainer,
+          swap: "innerHTML",
+        },
+      );
+    },
+    
   }));
 });
 

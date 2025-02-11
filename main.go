@@ -68,6 +68,7 @@ func main() {
 	e.POST("/schedules", schedulesHandler.HandleAddSchedule)
 	e.DELETE("/schedules/ids", schedulesHandler.HandleDeleteScheduleByIds)
 	e.DELETE("/schedules/date-range", schedulesHandler.HandleDeleteScheduleByDateRange)
+	e.GET("/schedules/modal", schedulesHandler.HandleScheduleModal)
 
 	// Create sub-FS for static files
 	staticFS, err := fs.Sub(staticFiles, "static")

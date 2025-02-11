@@ -1,5 +1,6 @@
 package layouts
 
+import "mealplanner/internal/views/components"
 
 templ Base() {
     <!doctype html>
@@ -12,19 +13,20 @@ templ Base() {
             <script src="https://cdnjs.cloudflare.com/ajax/libs/luxon/3.4.4/luxon.min.js"></script>
             <script defer src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.13.5/cdn.min.js"></script>
             <script src="https://cdn.tailwindcss.com"></script>
-        </head>
-        <body class="bg-gray-100 h-screen">
-            <div 
-				class="container mx-auto px-4 py-8"
-			    x-data="{}" 
-	            x-init="$store.mealPlanner.init()"
-            >
-                { children... }
-            </div>
-            // TODO: add modals
-            //
             <script src="/static/js/app.js"></script>
             <script src="/static/js/calendar.js"></script>
+        </head>
+        <body 
+        	class="bg-gray-100 h-screen"
+	        x-init="$store.mealPlanner.init()"
+			x-data="{}"
+        >
+            <div class="container mx-auto px-4 py-8">
+                { children... }
+            </div>
+            
+            @components.Modal()
+            
         </body>
     </html>
 }

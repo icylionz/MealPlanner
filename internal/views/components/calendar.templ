@@ -258,8 +258,7 @@ templ ContextMenu(day *utils.DayData, position utils.Position) {
                 View Week
             </button>
             <button
-                hx-get={fmt.Sprintf("/schedules/modal?date=%s", day.Date.Format("2006-01-02"))}
-                hx-target="#modal-container"
+            	@click={fmt.Sprintf("$store.mealPlanner.showScheduleModal({ date: '%s' })", day.Date.Format("2006-01-02"))}
                 class="w-full text-left px-3 py-2 hover:bg-gray-100 rounded"
             >
                 Schedule Meal
