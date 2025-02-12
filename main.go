@@ -54,6 +54,7 @@ func main() {
 	}
 	// foodService := service.NewFoodService(db)
 	scheduleService := service.NewScheduleService(db)
+	foodService := service.NewFoodService(db)
 
 	// Handlers
 	// foodHandler := handlers.NewFoodHandler(foodService)
@@ -61,15 +62,23 @@ func main() {
 	calendarHandler := handlers.NewCalendarHandler(scheduleService)
 	pageHandler := handlers.NewPageHandler()
 	schedulesHandler := handlers.NewSchedulesHandler(scheduleService)
+	foodHandler := handlers.NewFoodHandler(foodService)
 	// Routes
 	e.GET("/", pageHandler.HandleIndex)
+	// Calendar Routes
 	e.GET("/calendar", calendarHandler.HandleCalendarView)
 	e.GET("/calendar/context-menu", calendarHandler.HandleContextMenu)
+	// Schedules Routes
 	e.POST("/schedules", schedulesHandler.HandleAddSchedule)
 	e.DELETE("/schedules/ids", schedulesHandler.HandleDeleteScheduleByIds)
 	e.DELETE("/schedules/date-range", schedulesHandler.HandleDeleteScheduleByDateRange)
 	e.GET("/schedules/modal", schedulesHandler.HandleScheduleModal)
-
+	// Food Routes
+	e.GET("/foods", foodHandler.HandleFoodsPage)
+	// e.GET("/foods/modal/new", foodHandler.HandleAddFoodModal)
+	e.GET("/foods/search", foodHandler.HandleSearchFoods)
+	e.GET("/foods/modal/details", foodHandler.HandleViewFoodDetailsModal)
+    e.DELETE("/foods/:id", foodHandler.HandleDeleteFood)
 	// Create sub-FS for static files
 	staticFS, err := fs.Sub(staticFiles, "static")
 	if err != nil {

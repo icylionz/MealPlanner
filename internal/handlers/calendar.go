@@ -19,7 +19,7 @@ type CalendarHandler struct {
 func (h *CalendarHandler) HandleCalendarView(c echo.Context) error {
 	viewMode := c.QueryParam("mode")
 	if viewMode == "" || (viewMode != "day" && viewMode != "week" && viewMode != "month") {
-		viewMode = "month"
+		viewMode = "week"
 	}
 
 	dateStr := c.QueryParam("date")

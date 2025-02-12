@@ -1,5 +1,6 @@
 package components
 
+import "fmt"
 import "mealplanner/internal/models"
 import "time"
 import "strconv"
@@ -106,5 +107,114 @@ templ CreateScheduleModal(props ModalProps) {
 templ CreateEditFoodModal() {
 }
 
-templ ViewMealModal() {
+templ ViewFoodDetailsModal(food *models.Food) {
+	<div 
+        id="food-details-modal" 
+        class="fixed inset-0 z-50 overflow-y-auto"
+        hx-target="this"
+        @keydown.escape.window="$store.mealPlanner.toggleModal(false)">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="fixed inset-0 bg-black opacity-50"></div>
+            <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full">
+                <div class="p-6">
+                    <div class="mb-6">
+                        <div class="flex justify-between items-start">
+                            <h2 class="text-xl font-semibold">{ food.Name }</h2>
+                            <button 
+                                hx-get="/foods"
+                                hx-target="#food-details-modal"
+                                class="p-2 hover:bg-gray-100 rounded">
+                                <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"/>
+                                </svg>
+                            </button>
+                        </div>
+                        <p class="text-sm text-gray-600 mt-1">
+                        	if food.IsRecipe {
+	                            "Recipe"
+	                        } else {
+	                            "Basic Food"
+	                        }
+	                        • { food.BaseUnit }
+                        </p>
+                    </div>
+
+                    if food.IsRecipe && food.Recipe != nil {
+                        <div class="space-y-4">
+                            if food.Recipe.URL != "" {
+                                <div>
+                                    <h3 class="font-medium mb-2">Recipe URL</h3>
+                                    <a href={ templ.SafeURL(food.Recipe.URL) } 
+                                       target="_blank"
+                                       class="text-blue-600 hover:underline break-all">
+                                        { food.Recipe.URL }
+                                    </a>
+                                </div>
+                            }
+
+                            <div>
+                                <h3 class="font-medium mb-2">Ingredients</h3>
+                                <ul class="divide-y divide-gray-200">
+                                    for _, ing := range food.Recipe.Ingredients {
+                                        @ingredientRow(ing)
+                                    }
+                                </ul>
+                            </div>
+
+                            if food.Recipe.Instructions != "" {
+                                <div>
+                                    <h3 class="font-medium mb-2">Instructions</h3>
+                                    <p class="whitespace-pre-line">
+                                        { food.Recipe.Instructions }
+                                    </p>
+                                </div>
+                            }
+
+                            <div>
+                                <h3 class="font-medium mb-2">Yield</h3>
+                                <p>
+                                    { fmt.Sprintf("%.2f %s", food.Recipe.YieldQuantity, food.Recipe.YieldUnit) }
+                                </p>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="flex justify-end gap-3 mt-6">
+                        <button
+                            :click="$store.mealPlanner.toggleModal(false)"
+                            class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded">
+                            Close
+                        </button>
+                        <button
+                            hx-get={ fmt.Sprintf("/foods/%d/edit", food.ID) }
+                            hx-target="#food-details-modal"
+                            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                            Edit
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+// Helper template for ingredient rows
+templ ingredientRow(ing models.RecipeItem) {
+    <li class="flex items-center justify-between py-2">
+        <div class="flex items-center">
+            <span>{ fmt.Sprintf("%.2f %s %s", ing.Quantity, ing.Unit, ing.Food.Name) }</span>
+        </div>
+        if ing.Food.IsRecipe {
+            <button 
+                hx-get={ fmt.Sprintf("/foods/%d", ing.Food.ID) }
+                hx-target="#food-details-modal"
+                class="text-blue-600 hover:text-blue-800 text-sm flex items-center"
+            >
+                View Recipe
+                <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+            </button>
+        }
+    </li>
 }
