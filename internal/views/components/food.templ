@@ -10,7 +10,7 @@ templ FoodsPage() {
 	        class="bg-white rounded-lg shadow overflow-hidden"
 	        hx-get="/foods/search"
             hx-target="#food-list"
-            hx-trigger="load"
+            hx-trigger="load, refreshFoodView from:body"
         >
         </div>
     </div>
@@ -41,8 +41,7 @@ templ SearchBar() {
             // </select>
             <button 
                 class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                hx-get="/foods/new"
-                hx-target="#modal-content"
+               	@click={fmt.Sprintf("$store.mealPlanner.showAddFoodModal()")}
             >
                 Add Food
             </button>

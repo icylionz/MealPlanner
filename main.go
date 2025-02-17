@@ -13,12 +13,12 @@ import (
 	"os"
 	"strings"
 
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/golang-migrate/migrate/v4"
-    _ "github.com/golang-migrate/migrate/v4/database/postgres"
-    _ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
 //go:embed static/*
@@ -52,6 +52,41 @@ func main() {
 	if err != nil {
 		e.Logger.Fatal(err)
 	}
+
+	//test data
+	// sandwich, err := db.Queries.CreateFood(context.Background(), dblib.CreateFoodParams{
+	// 	Name:     "sandwich",
+	// 	UnitType: "Count",
+	// 	BaseUnit: "Servings",
+	// 	IsRecipe: true,
+	// })
+	// if err != nil {
+	// 	log.Default().Println(err)
+	// }
+	// fmt.Println(sandwich)
+	// bread, err := db.Queries.CreateFood(context.Background(), dblib.CreateFoodParams{
+	// 	Name:     "bread",
+	// 	UnitType: "Count",
+	// 	BaseUnit: "Pieces",
+	// 	IsRecipe: true,
+	// })
+	// if err != nil {
+	// 	log.Default().Println(err)
+	// }
+	// fmt.Println(bread)
+
+	// recipe, err := db.Queries.CreateRecipe(context.Background(), dblib.CreateRecipeParams{
+	// 	FoodID:        sandwich.ID,
+	// 	YieldUnit:     "Servings",
+	// 	YieldQuantity: pgtype.Numeric{Int: big.NewInt(1)},
+	// })
+	// db.Queries.AddRecipeIngredient(context.Background(), dblib.AddRecipeIngredientParams{
+	// 	RecipeID: recipe.,
+	// 	IngredientID:   bread.ID,
+	// 	Quantity: pgtype.Numeric{Int: big.NewInt(1)},
+	// 	Unit:     "Pieces",
+	// })
+
 	// foodService := service.NewFoodService(db)
 	scheduleService := service.NewScheduleService(db)
 	foodService := service.NewFoodService(db)
@@ -78,7 +113,14 @@ func main() {
 	// e.GET("/foods/modal/new", foodHandler.HandleAddFoodModal)
 	e.GET("/foods/search", foodHandler.HandleSearchFoods)
 	e.GET("/foods/modal/details", foodHandler.HandleViewFoodDetailsModal)
-    e.DELETE("/foods/:id", foodHandler.HandleDeleteFood)
+	e.DELETE("/foods/:id", foodHandler.HandleDeleteFood)
+
+	e.GET("/foods/new", foodHandler.HandleCreateFoodModal)
+	e.POST("/foods/new", foodHandler.HandleCreateFoodModal)
+	e.GET("/foods/:id/edit", foodHandler.HandleEditFoodModal)
+	e.PUT("/foods/:id/edit", foodHandler.HandleEditFoodModal)
+	e.GET("/foods/recipe-fields", foodHandler.GetRecipeFields)
+
 	// Create sub-FS for static files
 	staticFS, err := fs.Sub(staticFiles, "static")
 	if err != nil {

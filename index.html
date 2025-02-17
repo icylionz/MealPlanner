@@ -155,7 +155,7 @@
                                                 class="absolute right-0 mt-1 bg-white rounded-lg shadow-lg z-50 min-w-[150px]"
                                               >
                                                 <button
-                                                  @click="$store.mealPlanner.openViewModal(event.foodId); event.showOptions = false"
+                                                  @click="$store.mealPlanner.toggleViewModal(event.foodId); event.showOptions = false"
                                                   class="w-full text-left px-3 py-2 hover:bg-gray-100 rounded"
                                                 >
                                                   View Meal
@@ -387,7 +387,7 @@
                         <div class="bg-white rounded-lg shadow overflow-hidden">
                             <div class="divide-y divide-gray-200">
                                 <template x-for="food in filteredFoods" :key="food.id">
-                                    <div class="p-4 hover:bg-gray-50 cursor-pointer" @click="$store.mealPlanner.openViewModal(food.id)">
+                                    <div class="p-4 hover:bg-gray-50 cursor-pointer" @click="$store.mealPlanner.toggleViewModal(food.id)">
                                         <div class="flex justify-between items-start">
                                             <div>
                                                 <h3 class="font-medium" x-text="food.name"></h3>
@@ -469,7 +469,7 @@
                                                 </button>
                                                 <div>
                                                     <button 
-                                                        @click="$store.mealPlanner.openViewModal(meal.foodId)" 
+                                                        @click="$store.mealPlanner.toggleViewModal(meal.foodId)" 
                                                         class="font-medium hover:text-blue-600"
                                                         x-text="meal.food.name"
                                                     ></button>
@@ -508,7 +508,7 @@
                                                             
                                                             <!-- Ingredient info -->
                                                             <button 
-                                                                @click="$store.mealPlanner.openViewModal(ing.foodId)"
+                                                                @click="$store.mealPlanner.toggleViewModal(ing.foodId)"
                                                                 class="hover:text-blue-600 text-left"
                                                             >
                                                                 <span x-text="`${ing.quantity} ${ing.unit}`"></span>
@@ -543,7 +543,7 @@
                                                                             
                                                                             <!-- Sub-ingredient info -->
                                                                             <button 
-                                                                                @click="$store.mealPlanner.openViewModal(subIng.foodId)"
+                                                                                @click="$store.mealPlanner.toggleViewModal(subIng.foodId)"
                                                                                 class="hover:text-blue-600 text-left"
                                                                             >
                                                                                 <span x-text="`${subIng.quantity} ${subIng.unit}`"></span>

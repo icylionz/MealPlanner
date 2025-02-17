@@ -21,8 +21,10 @@ func NewFoodService(db *database.DB) *FoodService {
 }
 
 func (s *FoodService) CreateFood(ctx context.Context, params db.CreateFoodParams) (*db.Food, error) {
+	log.Default().Printf("Creating food: %v", params.Name)
     var food *db.Food
     err := s.db.WithTx(ctx, func(q *db.Queries) error {
+    	log.Default().Printf("Add food to db: %v", params.Name)
         var err error
         food, err = q.CreateFood(ctx, params)
         return err
@@ -32,12 +34,13 @@ func (s *FoodService) CreateFood(ctx context.Context, params db.CreateFoodParams
 
 func (s *FoodService) CreateRecipeWithIngredients(ctx context.Context, recipeParams db.CreateRecipeParams, ingredients []db.AddRecipeIngredientParams) error {
     return s.db.WithTx(ctx, func(q *db.Queries) error {
-        _, err := q.CreateRecipe(ctx, recipeParams)
+        recipe, err := q.CreateRecipe(ctx, recipeParams)
         if err != nil {
             return err
         }
 
         for _, ing := range ingredients {
+        	ing.RecipeID = recipe.FoodID
             if err := q.AddRecipeIngredient(ctx, ing); err != nil {
                 return err
             }
@@ -47,7 +50,7 @@ func (s *FoodService) CreateRecipeWithIngredients(ctx context.Context, recipePar
 }
 
 func (s *FoodService) GetFoods(ctx context.Context, queryString string) ([]*models.Food, error) {
-	dbFoods, err := s.db.Queries.SearchFoods(ctx, pgtype.Text{String: queryString})
+	dbFoods, err := s.db.Queries.SearchFoods(ctx, queryString)
 	if err != nil {
 		return nil, err
 	}
@@ -82,14 +85,14 @@ func (s *FoodService) DeleteFood(ctx context.Context, id string) error {
 	})
 }
 
-func (s *FoodService) GetFoodDetails(ctx context.Context, id string) (*models.Food, error) {
+func (s *FoodService) GetFoodDetails(ctx context.Context, id string, depth int) (*models.Food, error) {
 	idNum, err := strconv.ParseInt(id, 10, 32)
 	if err != nil {
 		return nil, err
 	}
 	dbFoods, err := s.db.Queries.SearchFoodsWithDependencies(ctx, db.SearchFoodsWithDependenciesParams{
 		SearchID: int32(idNum),
-		MaxDepth: 1,
+		MaxDepth: int32(depth),
 	})
 	if err != nil {
 		return nil, err
@@ -102,6 +105,36 @@ func (s *FoodService) GetFoodDetails(ctx context.Context, id string) (*models.Fo
 
 
 	return foods[0], nil
+}
+
+func (s *FoodService) UpdateFood(ctx context.Context, updateParams db.UpdateFoodWithRecipeParams, ingredients []db.AddRecipeIngredientParams, returnUpdated bool) (*models.Food, error) {
+	
+    err := s.db.WithTx(ctx, func(q *db.Queries) error {
+        var err error
+        updatedFood, err := q.UpdateFoodWithRecipe(ctx, updateParams)
+        if err != nil {
+            return err
+        }
+
+        for _, ing := range ingredients {
+           	ing.RecipeID = updatedFood.ID
+            if err := q.AddRecipeIngredient(ctx, ing); err != nil {
+                return err
+            }
+        }
+        return nil
+    })
+    if err != nil {
+    	return nil, err
+    }
+    if returnUpdated {
+	    updatedFood, err := s.GetFoodDetails(ctx, strconv.Itoa(int(updateParams.ID)), 0)
+        if err != nil {
+        	return nil, err
+        }
+        return updatedFood, nil
+    }
+    return nil, nil
 }
 
 func SearchResultToFoods(rows []*db.SearchFoodsWithDependenciesRow) []*models.Food {
@@ -128,7 +161,7 @@ func SearchResultToFoods(rows []*db.SearchFoodsWithDependenciesRow) []*models.Fo
         if row.IsRecipe {
             food.Recipe = &models.Recipe{
                 Instructions: "",  // Will be filled in second pass
-                Ingredients: make([]models.RecipeItem, 0),
+                Ingredients: make([]*models.RecipeItem, 0),
             }
         }
 
@@ -141,7 +174,7 @@ func SearchResultToFoods(rows []*db.SearchFoodsWithDependenciesRow) []*models.Fo
             if parent, exists := foodMap[parentID]; exists && parent.Recipe != nil {
                 quantity, _ := row.Quantity.Float64Value()
 
-                ingredient := models.RecipeItem{
+                ingredient := &models.RecipeItem{
                     FoodID:   int(row.ID),
                     Food:     foodMap[row.ID],
                     Quantity: quantity.Float64,

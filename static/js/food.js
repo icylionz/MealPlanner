@@ -37,7 +37,7 @@ document.addEventListener('alpine:init', () => {
             this.foods = this.foods.filter(f => f.id !== foodId);
         },
 
-        openViewModal(foodId) {
+        toggleViewModal(foodId) {
             htmx.trigger('body', 'showFoodModal', { foodId });
         },
 

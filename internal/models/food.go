@@ -15,7 +15,7 @@ type Recipe struct {
     URL           string       `json:"url,omitempty"`
     YieldQuantity float64      `json:"yieldQuantity"`
     YieldUnit     string       `json:"yieldUnit"`
-    Ingredients   []RecipeItem `json:"ingredients"`
+    Ingredients   []*RecipeItem `json:"ingredients"`
 }
 
 type RecipeItem struct {

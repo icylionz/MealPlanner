@@ -9,7 +9,8 @@ templ Base() {
             <meta charset="UTF-8" />
             <meta name="viewport" content="width=device-width, initial-scale=1.0" />
             <title>Meal Planner</title>
-            <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+            <script src="https://unpkg.com/htmx.org@2.0.4"  crossorigin="anonymous"></script>
+            <script src="https://unpkg.com/htmx-ext-response-targets@2.0.2"  crossorigin="anonymous"></script>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/luxon/3.4.4/luxon.min.js"></script>
             <script defer src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.13.5/cdn.min.js"></script>
             <script src="https://cdn.tailwindcss.com"></script>
@@ -20,6 +21,7 @@ templ Base() {
         	class="bg-gray-100 h-screen"
 	        x-init="$store.mealPlanner.init()"
 			x-data="{}"
+			hx-ext="response-targets"
         >
             <div class="container mx-auto px-4 py-8">
                 { children... }

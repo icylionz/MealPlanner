@@ -96,9 +96,9 @@ document.addEventListener("alpine:init", () => {
       this.showScheduleModal = !this.showScheduleModal;
     },
 
-    openViewModal(foodId) {
+    toggleViewModal(foodId) {
       this.viewingFoodId = foodId;
-      this.showViewModal = true;
+      this.showViewModal = !this.showViewModal;
     },
 
     closeViewModal() {

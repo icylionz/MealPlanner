@@ -9,7 +9,11 @@ SELECT * FROM foods WHERE id = $1;
 
 -- name: SearchFoods :many
 SELECT * FROM foods
-WHERE (name ILIKE '%' || $1 || '%') OR (CAST(id AS TEXT) LIKE '%' || $1 || '%')
+WHERE 
+    CASE 
+        WHEN COALESCE(TRIM($1), '') = '' THEN TRUE
+        ELSE (name ILIKE '%' || $1 || '%') OR (CAST(id AS TEXT) LIKE '%' || $1 || '%')
+    END
 ORDER BY name;
 
 -- name: SearchFoodsWithDependencies :many
@@ -30,7 +34,8 @@ WITH RECURSIVE recipe_tree AS (
     WHERE 
         CASE 
             WHEN @search_id::int > 0 THEN f.id = @search_id
-            ELSE f.name ILIKE '%' || @search_name::text || '%'
+            WHEN COALESCE(TRIM(@search_name), '') <> '' THEN f.name ILIKE '%' || @search_name::text || '%'
+            ELSE TRUE
         END
     
     UNION ALL
@@ -72,6 +77,48 @@ UPDATE foods
 SET name = $2, unit_type = $3, base_unit = $4, density = $5, is_recipe = $6
 WHERE id = $1
 RETURNING *;
+
+-- name: UpdateFoodWithRecipe :one
+WITH updated_food AS (
+    UPDATE foods
+    SET 
+        name = $2,
+        unit_type = $3,
+        base_unit = $4,
+        density = $5,
+        is_recipe = $6,
+        updated_at = NOW()
+    WHERE id = $1
+    RETURNING *
+),
+updated_recipe AS (
+    UPDATE recipes
+    SET 
+        instructions = $7,
+        url = $8,
+        yield_quantity = $9,
+        yield_unit = $10,
+        updated_at = NOW()
+    WHERE food_id = $1
+    RETURNING *
+),
+deleted_ingredients AS (
+    DELETE FROM recipe_ingredients
+    WHERE recipe_id = $1
+)
+SELECT 
+    f.*,
+    COALESCE(
+        json_build_object(
+            'instructions', r.instructions,
+            'url', r.url,
+            'yield_quantity', r.yield_quantity,
+            'yield_unit', r.yield_unit
+        ),
+        NULL
+    ) as recipe
+FROM updated_food f
+LEFT JOIN updated_recipe r ON f.id = r.food_id;
 
 -- name: DeleteFood :exec
 DELETE FROM foods WHERE id = $1;

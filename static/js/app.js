@@ -9,9 +9,9 @@ document.addEventListener("alpine:init", () => {
       this.viewMode = "month";
       this.showModal = false;
     },
-    
+
     showScheduleModal(date) {
-      this.showModal = true;
+      this.toggleModal(true);
       const container = document.getElementById("modal-container");
       if (!container) return;
       container.innerHTML = "";
@@ -22,6 +22,18 @@ document.addEventListener("alpine:init", () => {
       });
     },
     
+    showAddFoodModal() {
+      this.toggleModal(true);
+      const container = document.getElementById("modal-container");
+      if (!container) return;
+      container.innerHTML = "";
+
+      htmx.ajax("GET", `/foods/new`, {
+        target: "#modal-container",
+        swap: "innerHTML",
+      });
+    },
+
     toggleModal(value) {
       this.showModal = value;
       if (!value) {
@@ -29,7 +41,6 @@ document.addEventListener("alpine:init", () => {
         if (!container) return;
         container.innerHTML = "";
       }
-      
     },
   });
 });

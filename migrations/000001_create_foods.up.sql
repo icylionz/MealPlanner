@@ -1,1 +1,1 @@
-CREATE TABLE foods ( id SERIAL PRIMARY KEY, name TEXT NOT NULL, unit_type TEXT NOT NULL CHECK (unit_type IN ('mass', 'volume', 'count')), base_unit TEXT NOT NULL, density NUMERIC NULL, is_recipe BOOLEAN NOT NULL DEFAULT false, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW() );
+CREATE TABLE foods ( id SERIAL PRIMARY KEY, name TEXT NOT NULL, unit_type TEXT NOT NULL, base_unit TEXT NOT NULL, density NUMERIC NULL, is_recipe BOOLEAN NOT NULL DEFAULT false, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW() );

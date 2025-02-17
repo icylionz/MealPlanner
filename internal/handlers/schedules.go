@@ -5,6 +5,7 @@ import (
 	"log"
 	"mealplanner/internal/models"
 	"mealplanner/internal/services"
+	"mealplanner/internal/utils"
 	"mealplanner/internal/views/components"
 	"net/http"
 	"strconv"
@@ -63,7 +64,7 @@ func (h *SchedulesHandler) HandleAddSchedule(c echo.Context) error {
 		// TODO: Get foods
 		// foods, _ := h.foodService.ListFoods()
 
-		props := components.ModalProps{
+		props := &utils.ModalProps{
 			Date:   date,
 			Foods:  []models.Food{},
 			Errors: errors,
@@ -73,9 +74,8 @@ func (h *SchedulesHandler) HandleAddSchedule(c echo.Context) error {
 			TimeChosen: timeOfSchedule,
 		}
 
-		// TODO: Figure out why dis no work
-		c.Response().Status = http.StatusBadRequest
-		
+
+		c.Response().Writer.WriteHeader(http.StatusBadRequest)
 		return components.CreateScheduleModal(props).Render(c.Request().Context(), c.Response().Writer)
 	}
 
@@ -88,7 +88,7 @@ func (h *SchedulesHandler) HandleAddSchedule(c echo.Context) error {
 	}
 
 	// Return updated calendar view
-	return c.Redirect(http.StatusFound, "/calendar")
+	return c.NoContent(http.StatusOK)
 }
 
 func (h *SchedulesHandler) HandleDeleteScheduleByIds(c echo.Context) error {
@@ -101,7 +101,7 @@ func (h *SchedulesHandler) HandleDeleteScheduleByIds(c echo.Context) error {
 		}
 		ids = append(ids, idStr)
 	}
-	log.Default().Printf("ids: %s", ids)
+	log.Default().Printf("ids: %v", ids)
 
 	err := h.scheduleService.DeleteSchedules(c.Request().Context(), ids)
 	if err != nil {
@@ -140,7 +140,7 @@ func (h *SchedulesHandler) HandleScheduleModal(c echo.Context) error {
 	}
 	// TODO: Get foods
 
-	return components.CreateScheduleModal(components.ModalProps{
+	return components.CreateScheduleModal(&utils.ModalProps{
 		Date:   date,
 		Foods:  []models.Food{},
 		Errors: map[string]string{},
