@@ -35,7 +35,6 @@ type FoodForm struct {
 	Instructions  string           `form:"instructions"`   // Matches name="instructions"
 	Ingredients   []IngredientForm `form:"-"`              // Handled specially due to array indexing
 	YieldQuantity float64          `form:"yield_quantity"` // Matches name="yield_quantity"
-	YieldUnit     string           `form:"yield_unit"`     // Matches name="yield_unit"
 }
 
 // Special binding method needed for ingredients array
@@ -83,9 +82,6 @@ func (f *FoodForm) Validate() *ValidationError {
 	if f.IsRecipe {
 		if f.YieldQuantity <= 0 {
 			errors["yield_quantity"] = "Yield quantity must be greater than 0"
-		}
-		if !isValidUnit(f.UnitType, f.YieldUnit) {
-			errors["yield_unit"] = "Invalid yield unit"
 		}
 
 		// Ingredient validation
