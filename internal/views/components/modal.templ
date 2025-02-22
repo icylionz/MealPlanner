@@ -161,7 +161,7 @@ templ ViewFoodDetailsModal(food *models.Food) {
                         <div>
                             <h3 class="font-medium mb-2">Yield</h3>
                             <p>
-                                { fmt.Sprintf("%.2f %s", food.Recipe.YieldQuantity, food.Recipe.YieldUnit) }
+                                { fmt.Sprintf("%.2f %s", food.Recipe.YieldQuantity, food.BaseUnit) }
                             </p>
                         </div>
                     </div>

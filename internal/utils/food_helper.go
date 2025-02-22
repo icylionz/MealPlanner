@@ -121,7 +121,6 @@ func (f *FoodForm) ToModel() *models.Food {
 			URL:           f.RecipeURL,
 			Instructions:  f.Instructions,
 			YieldQuantity: f.YieldQuantity,
-			YieldUnit:     f.YieldUnit,
 			Ingredients:   make([]*models.RecipeItem, len(f.Ingredients)),
 		}
 
@@ -217,7 +216,7 @@ func ValidateAndFilterDependencies(foods []*models.Food, targetID int) []*models
 }
 
 func isValidUnitType(unitType string) bool {
-	return len(GetUnitsByType(unitType)) == 0
+	return len(GetUnitsByType(unitType)) > 0
 }
 
 func isValidUnit(unitType, unit string) bool {

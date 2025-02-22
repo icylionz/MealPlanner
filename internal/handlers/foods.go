@@ -282,7 +282,6 @@ func (h *FoodHandler) GetRecipeFields(c echo.Context) error {
 			Recipe: &models.Recipe{
 				Ingredients:   make([]*models.RecipeItem, 0),
 				YieldQuantity: 1,
-				YieldUnit:     "servings",
 			},
 		},
 		Foods: validFoods,
