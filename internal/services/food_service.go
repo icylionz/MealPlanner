@@ -171,7 +171,7 @@ func SearchResultToFoods(rows []*db.SearchFoodsWithDependenciesRow) []*models.Fo
 	}
 
 	for _, row := range rows {
-		if row.Depth > 0 && row.Unit.Valid && row.Quantity.Valid {
+		if row.Depth > 0 && row.Quantity.Valid {
 			parentID := rows[0].ID
 			if parent, exists := foodMap[parentID]; exists && parent.Recipe != nil {
 				quantity, _ := row.Quantity.Float64Value()
@@ -180,7 +180,6 @@ func SearchResultToFoods(rows []*db.SearchFoodsWithDependenciesRow) []*models.Fo
 					FoodID:   int(row.ID),
 					Food:     foodMap[row.ID],
 					Quantity: quantity.Float64,
-					Unit:     row.Unit.String,
 				}
 
 				parent.Recipe.Ingredients = append(parent.Recipe.Ingredients, ingredient)

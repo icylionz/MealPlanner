@@ -46,21 +46,21 @@ document.addEventListener("alpine:init", () => {
     openNewFoodModal() {
       htmx.trigger("body", "showFoodModal", { foodId: null });
     },
-
-    changeUnitType(unitType) {
-      console.log(unitType);
-      htmx.ajax("GET", `/foods/units?unit_type=${unitType}`, {
-        handler: (_, xhr) => {
-          if (xhr.xhr.status === 200) {
-            response = xhr.xhr.response;
-            baseUnitSelect = document.getElementById("base-unit-select");
-            if (baseUnitSelect != null) baseUnitSelect.innerHTML = response;
-            
-            yieldUnitSelect = document.getElementById("yield-unit-select");
-            if (yieldUnitSelect != null) yieldUnitSelect.innerHTML = response;
-          }
-        },
-      });
-    },
+    
+    // This section of code will remain in remembrance of the time wasted doing this. only to realize as soon as i finished, that i didn't need the yield unit select
+    // changeUnitType(unitType) {
+    //   console.log(unitType);
+    //   htmx.ajax("GET", `/foods/units?unit_type=${unitType}`, {
+    //     handler: (_, xhr) => {
+    //       if (xhr.xhr.status === 200) {
+    //         response = xhr.xhr.response;
+    //         baseUnitSelect = document.getElementById("base-unit-select");
+    //         if (baseUnitSelect != null) baseUnitSelect.innerHTML = response;
+    //         yieldUnitSelect = document.getElementById("yield-unit-select");
+    //         if (yieldUnitSelect != null) yieldUnitSelect.innerHTML = response;
+    //       }
+    //     },
+    //   });
+    // },
   }));
 });

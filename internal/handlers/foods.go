@@ -119,7 +119,6 @@ func (h *FoodHandler) HandleCreateFoodModal(c echo.Context) error {
 				dbIngredients[i] = db.AddRecipeIngredientParams{
 					IngredientID: int32(ingredientID),
 					Quantity:     utils.Float64ToNumeric(ing.Quantity),
-					Unit:         ing.Unit,
 				}
 			}
 			err = h.service.CreateRecipeWithIngredients(c.Request().Context(), db.CreateRecipeParams{
@@ -127,7 +126,6 @@ func (h *FoodHandler) HandleCreateFoodModal(c echo.Context) error {
 				Url:           pgtype.Text{String: form.RecipeURL},
 				Instructions:  pgtype.Text{String: form.Instructions},
 				YieldQuantity: utils.Float64ToNumeric(form.YieldQuantity),
-				YieldUnit:     form.YieldUnit,
 			}, dbIngredients)
 			if err != nil {
 				return err
@@ -213,7 +211,6 @@ func (h *FoodHandler) HandleEditFoodModal(c echo.Context) error {
 			dbIngredients[i] = db.AddRecipeIngredientParams{
 				IngredientID: int32(ingredientID),
 				Quantity:     utils.Float64ToNumeric(ing.Quantity),
-				Unit:         ing.Unit,
 			}
 		}
 

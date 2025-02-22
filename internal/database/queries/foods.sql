@@ -97,7 +97,6 @@ updated_recipe AS (
         instructions = $7,
         url = $8,
         yield_quantity = $9,
-        yield_unit = $10,
         updated_at = NOW()
     WHERE food_id = $1
     RETURNING *
@@ -112,8 +111,7 @@ SELECT
         json_build_object(
             'instructions', r.instructions,
             'url', r.url,
-            'yield_quantity', r.yield_quantity,
-            'yield_unit', r.yield_unit
+            'yield_quantity', r.yield_quantity
         ),
         NULL
     ) as recipe
@@ -142,8 +140,8 @@ WHERE r.food_id = $1
 GROUP BY r.food_id;
 
 -- name: CreateRecipe :one
-INSERT INTO recipes (food_id, instructions, url, yield_quantity, yield_unit)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO recipes (food_id, instructions, url, yield_quantity)
+VALUES ($1, $2, $3, $4)
 RETURNING *;
 
 -- name: AddRecipeIngredient :exec
