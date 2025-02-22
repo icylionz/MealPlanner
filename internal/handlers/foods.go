@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"log"
 	"mealplanner/internal/database/db"
 	"mealplanner/internal/models"
@@ -26,6 +27,7 @@ func (h *FoodHandler) HandleViewFoodDetailsModal(c echo.Context) error {
 	id := c.QueryParam("id")
 	food, err := h.service.GetFoodDetails(c.Request().Context(), id, 1)
 	if err != nil {
+		log.Default().Printf("Error getting food details: %v", err)
 		return c.String(500, "Error getting food")
 	}
 	return components.ViewFoodDetailsModal(food).Render(c.Request().Context(), c.Response().Writer)
@@ -141,6 +143,7 @@ func (h *FoodHandler) HandleCreateFoodModal(c echo.Context) error {
 	props := utils.FoodFormProps{
 		IsEdit: false,
 		Food: &models.Food{
+			ID:       -1,
 			UnitType: "mass",
 			BaseUnit: "grams",
 			Recipe:   &models.Recipe{},
@@ -249,18 +252,35 @@ func (h *FoodHandler) HandleEditFoodModal(c echo.Context) error {
 
 func (h *FoodHandler) GetRecipeFields(c echo.Context) error {
 	isRecipe := c.QueryParam("is_recipe") == "true"
-    if !isRecipe {
-        return c.HTML(http.StatusOK, "")
-    }
-    
-	availableFoods, err := h.service.GetFoods(c.Request().Context(), "")
-	if err != nil {
+	if !isRecipe {
+		return c.HTML(http.StatusOK, "")
+	}
+
+	idAsString := c.QueryParam("id")
+	id, err := strconv.Atoi(c.QueryParam("id"))
+	// just make sure its a valid int before passing it downstream
+	if idAsString != "" && err != nil {
+		log.Default().Printf("Error parsing id: %v", err)
 		return err
 	}
-	validFoods := utils.ValidateAndFilterDependencies(availableFoods, 0)
+	availableFoods, err := h.service.GetFoods(c.Request().Context(), idAsString)
+	var validFoods []*models.Food
 
+	if idAsString != "" {
+		if err != nil {
+			return err
+		}
+		validFoods = utils.ValidateAndFilterDependencies(availableFoods, id)
+	} else {
+		validFoods = availableFoods
+	}
+	idForFoodProps := -1
+	if idAsString != "" {
+		idForFoodProps = id
+	}
 	props := &utils.FoodFormProps{
 		Food: &models.Food{
+			ID:       idForFoodProps,
 			IsRecipe: true,
 			Recipe: &models.Recipe{
 				Ingredients:   make([]*models.RecipeItem, 0),
@@ -274,6 +294,75 @@ func (h *FoodHandler) GetRecipeFields(c echo.Context) error {
 	return components.RecipeFields(props).Render(c.Request().Context(), c.Response().Writer)
 }
 
+func (h *FoodHandler) GetNewIngredientRow(c echo.Context) error {
+	idAsString := c.QueryParam("id")
+	availableFoods, err := h.service.GetFoods(c.Request().Context(), "")
+	if err != nil {
+		log.Default().Printf("Error getting foods: %v", err)
+		return err
+	}
+	// for new foods
+	if idAsString == "" || idAsString == "-1" {
+		return components.IngredientsList([]*models.RecipeItem{
+			&models.RecipeItem{
+				Food: &models.Food{
+				},
+				Quantity: 0.0,
+				Unit:     "",
+			},
+		}, availableFoods).Render(
+			c.Request().Context(), c.Response().Writer)
+	}
+	id, err := strconv.Atoi(c.QueryParam("id"))
+	// just make sure its a valid int before passing it downstream
+	if idAsString != "" && err != nil {
+		log.Default().Printf("Error parsing id: %v", err)
+		return err
+	}
+	targetFood, err := h.service.GetFoodDetails(c.Request().Context(), idAsString, 1)
+
+	// retrieve the valid ingredients for the target food id
+	validFoods := utils.ValidateAndFilterDependencies(availableFoods, id)
+	targetFood.Recipe.Ingredients = append(targetFood.Recipe.Ingredients, &models.RecipeItem{
+		Food: &models.Food{
+		},
+		Quantity: 0.0,
+		Unit:     "",
+	})
+	return components.IngredientsList(targetFood.Recipe.Ingredients, validFoods).Render(
+		c.Request().Context(), c.Response().Writer)
+}
+
+func (h *FoodHandler) GetFoodUnits(c echo.Context) error {
+	idAsString := c.Param("id")
+	unitType := c.QueryParam("unit_type")
+	if (idAsString == "" || idAsString == "-1") && unitType == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "Invalid ID or Unit Type")
+	}
+	var units []string
+	if idAsString != "" && idAsString != "-1" {
+		_, err := strconv.Atoi(idAsString)
+		// just make sure its a valid int before passing it downstream
+		if idAsString != "" && err != nil {
+			log.Default().Printf("Error parsing id: %v", err)
+			return err
+		}
+		units, err = h.service.GetFoodUnits(c.Request().Context(), idAsString)
+		if err != nil {
+			log.Default().Printf("Error getting food units: %v", err)
+			return err
+		}
+	} else {
+		units = utils.GetUnitsByType(unitType)
+		if len(units) == 0 {
+			log.Default().Printf("Error getting food units for type: %s", unitType)
+			return errors.New("invalid unit type")
+		}
+	}
+
+	return components.BaseUnitsOptions(units, "").Render(
+		c.Request().Context(), c.Response().Writer)
+}
 func NewFoodHandler(service *services.FoodService) *FoodHandler {
 	return &FoodHandler{
 		service: service,

@@ -10,7 +10,6 @@ import "mealplanner/internal/utils"
 templ Modal() {
 	<div
 		x-show="$store.mealPlanner.showModal"
-		@click.away="$store.mealPlanner.toggleModal(false)"
 		id="modal-container"
 		class="fixed inset-0 z-50 overflow-y-auto"
 	></div>
@@ -102,90 +101,84 @@ templ CreateScheduleModal(props *utils.ModalProps) {
 }
 
 templ ViewFoodDetailsModal(food *models.Food) {
-	<div 
-        id="food-details-modal" 
-        class="fixed inset-0 z-50 overflow-y-auto"
-        hx-target="this"
-        @keydown.escape.window="$store.mealPlanner.toggleModal(false)">
-        <div class="flex items-center justify-center min-h-screen p-4">
-            <div class="fixed inset-0 bg-black opacity-50"></div>
-            <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full">
-                <div class="p-6">
-                    <div class="mb-6">
-                        <div class="flex justify-between items-start">
-                            <h2 class="text-xl font-semibold">{ food.Name }</h2>
-                            <button 
-                                hx-get="/foods"
-                                hx-target="#food-details-modal"
-                                class="p-2 hover:bg-gray-100 rounded">
-                                <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
-                                    <path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"/>
-                                </svg>
-                            </button>
-                        </div>
-                        <p class="text-sm text-gray-600 mt-1">
-                        	if food.IsRecipe {
-	                            "Recipe"
-	                        } else {
-	                            "Basic Food"
-	                        }
-	                        • { food.BaseUnit }
-                        </p>
+    <div class="flex items-center justify-center min-h-screen p-4">
+        <div class="fixed inset-0 bg-black opacity-50"></div>
+        <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full">
+            <div class="p-6">
+                <div class="mb-6">
+                    <div class="flex justify-between items-start">
+                        <h2 class="text-xl font-semibold">{ food.Name }</h2>
+                        <button
+                            class="p-2 hover:bg-gray-100 rounded"
+                            @click="$store.mealPlanner.toggleModal(false)"
+                        >
+                            <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"/>
+                            </svg>
+                        </button>
                     </div>
+                    <p class="text-sm text-gray-600 mt-1">
+                       	if food.IsRecipe {
+                            "Recipe"
+                        } else {
+                            "Basic Food"
+                        }
+                        • { food.BaseUnit }
+                    </p>
+                </div>
 
-                    if food.IsRecipe && food.Recipe != nil {
-                        <div class="space-y-4">
-                            if food.Recipe.URL != "" {
-                                <div>
-                                    <h3 class="font-medium mb-2">Recipe URL</h3>
-                                    <a href={ templ.SafeURL(food.Recipe.URL) } 
-                                       target="_blank"
-                                       class="text-blue-600 hover:underline break-all">
-                                        { food.Recipe.URL }
-                                    </a>
-                                </div>
-                            }
-
+                if food.IsRecipe && food.Recipe != nil {
+                    <div class="space-y-4">
+                        if food.Recipe.URL != "" {
                             <div>
-                                <h3 class="font-medium mb-2">Ingredients</h3>
-                                <ul class="divide-y divide-gray-200">
-                                    for _, ing := range food.Recipe.Ingredients {
-                                        @viewIngredientRow(ing)
-                                    }
-                                </ul>
+                                <h3 class="font-medium mb-2">Recipe URL</h3>
+                                <a href={ templ.SafeURL(food.Recipe.URL) }
+                                    target="_blank"
+                                    class="text-blue-600 hover:underline break-all">
+                                    { food.Recipe.URL }
+                                </a>
                             </div>
+                        }
 
-                            if food.Recipe.Instructions != "" {
-                                <div>
-                                    <h3 class="font-medium mb-2">Instructions</h3>
-                                    <p class="whitespace-pre-line">
-                                        { food.Recipe.Instructions }
-                                    </p>
-                                </div>
-                            }
+                        <div>
+                            <h3 class="font-medium mb-2">Ingredients</h3>
+                            <ul class="divide-y divide-gray-200">
+                                for _, ing := range food.Recipe.Ingredients {
+                                    @viewIngredientRow(ing)
+                                }
+                            </ul>
+                        </div>
 
+                        if food.Recipe.Instructions != "" {
                             <div>
-                                <h3 class="font-medium mb-2">Yield</h3>
-                                <p>
-                                    { fmt.Sprintf("%.2f %s", food.Recipe.YieldQuantity, food.Recipe.YieldUnit) }
+                                <h3 class="font-medium mb-2">Instructions</h3>
+                                <p class="whitespace-pre-line">
+                                    { food.Recipe.Instructions }
                                 </p>
                             </div>
-                        </div>
-                    }
+                        }
 
-                    <div class="flex justify-end gap-3 mt-6">
-                        <button
-                            :click="$store.mealPlanner.toggleModal(false)"
-                            class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded">
-                            Close
-                        </button>
-                        <button
-                            hx-get={ fmt.Sprintf("/foods/%d/edit", food.ID) }
-                            hx-target="#food-details-modal"
-                            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                            Edit
-                        </button>
+                        <div>
+                            <h3 class="font-medium mb-2">Yield</h3>
+                            <p>
+                                { fmt.Sprintf("%.2f %s", food.Recipe.YieldQuantity, food.Recipe.YieldUnit) }
+                            </p>
+                        </div>
                     </div>
+                }
+
+                <div class="flex justify-end gap-3 mt-6">
+                    <button
+                        @click="$store.mealPlanner.toggleModal(false)"
+                        class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded">
+                        Close
+                    </button>
+                    <button
+                        hx-get={ fmt.Sprintf("/foods/%d/edit", food.ID) }
+                        hx-target="#modal-container"
+                        class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        Edit
+                    </button>
                 </div>
             </div>
         </div>
@@ -199,7 +192,7 @@ templ viewIngredientRow(ing *models.RecipeItem) {
             <span>{ fmt.Sprintf("%.2f %s %s", ing.Quantity, ing.Unit, ing.Food.Name) }</span>
         </div>
         if ing.Food.IsRecipe {
-            <button 
+            <button
                 hx-get={ fmt.Sprintf("/foods/%d", ing.Food.ID) }
                 hx-target="#food-details-modal"
                 class="text-blue-600 hover:text-blue-800 text-sm flex items-center"
@@ -214,7 +207,7 @@ templ viewIngredientRow(ing *models.RecipeItem) {
 }
 
 templ CreateEditFoodModal(props *utils.FoodFormProps) {
-    <div class="flex items-center justify-center min-h-screen p-4">
+    <div class="flex items-center justify-center min-h-screen p-4" x-data="foodManager">
         <div class="fixed inset-0 bg-black opacity-50"></div>
         <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full">
             <div class="p-6">
@@ -234,7 +227,11 @@ templ CreateEditFoodModal(props *utils.FoodFormProps) {
                     }
                     hx-target="#modal-container"
                     hx-target-400="#modal-container"
-                    @htmx:after-request="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false);}"
+                    @htmx:after-request="if(event.detail.xhr.status === 200
+                    	/* make sure the modal doesnt close when retrieving the recipe and ingredient fields */
+                    	&& (!event.detail.target.id.includes('recipe-fields'))
+                    	&& (!event.detail.target.id.includes('ingredients-list')))
+                     { $store.mealPlanner.toggleModal(false);}"
                     class="space-y-4"
                 >
                     <!-- Basic Info -->
@@ -308,15 +305,13 @@ templ CreateEditFoodModal(props *utils.FoodFormProps) {
 templ unitTypeSelect(props *utils.FoodFormProps) {
     <div class="flex-1">
         <label class="block text-sm font-medium mb-1">Type</label>
-        <select 
-            name="unit_type" 
+        <select
+            name="unit_type"
             class={
                 "w-full px-3 py-2 border rounded",
                 templ.KV("border-red-500", props.Errors["unit_type"] != "")
             }
-            hx-get="/foods/units"
-            hx-target="#base-unit-select"
-            hx-trigger="change"
+            @change="changeUnitType($event.target.value)"
         >
             <option value="mass" selected?={props.Food.UnitType == "mass"}>Mass</option>
             <option value="volume" selected?={props.Food.UnitType == "volume"}>Volume</option>
@@ -326,35 +321,21 @@ templ unitTypeSelect(props *utils.FoodFormProps) {
             <div class="text-red-500 text-sm mt-1">{err}</div>
         }
     </div>
+
 }
 
 // Base unit selection component
 templ baseUnitSelect(props *utils.FoodFormProps) {
-    <div id="base-unit-select" class="flex-1">
+    <div class="flex-1">
         <label class="block text-sm font-medium mb-1">Base Unit</label>
-        <select 
-            name="base_unit" 
+        <select
+	        id="base-unit-select"
+	        name="base_unit"
             class={
                 "w-full px-3 py-2 border rounded",
                 templ.KV("border-red-500", props.Errors["base_unit"] != "")
             }
         >
-            if props.Food.UnitType == "mass" {
-                <option value="grams" selected?={props.Food.BaseUnit == "grams"}>Grams</option>
-                <option value="kilograms" selected?={props.Food.BaseUnit == "kilograms"}>Kilograms</option>
-                <option value="ounces" selected?={props.Food.BaseUnit == "ounces"}>Ounces</option>
-                <option value="pounds" selected?={props.Food.BaseUnit == "pounds"}>Pounds</option>
-            } else if props.Food.UnitType == "volume" {
-                <option value="milliliters" selected?={props.Food.BaseUnit == "milliliters"}>Milliliters</option>
-                <option value="liters" selected?={props.Food.BaseUnit == "liters"}>Liters</option>
-                <option value="teaspoons" selected?={props.Food.BaseUnit == "teaspoons"}>Teaspoons</option>
-                <option value="tablespoons" selected?={props.Food.BaseUnit == "tablespoons"}>Tablespoons</option>
-                <option value="cups" selected?={props.Food.BaseUnit == "cups"}>Cups</option>
-                <option value="fluidOunces" selected?={props.Food.BaseUnit == "fluidOunces"}>Fluid Ounces</option>
-            } else {
-                <option value="pieces" selected?={props.Food.BaseUnit == "pieces"}>Pieces</option>
-                <option value="servings" selected?={props.Food.BaseUnit == "servings"}>Servings</option>
-            }
         </select>
         if err := props.Errors["base_unit"]; err != "" {
             <div class="text-red-500 text-sm mt-1">{err}</div>
@@ -364,13 +345,13 @@ templ baseUnitSelect(props *utils.FoodFormProps) {
 
 // Recipe fields component
 templ RecipeFields(props *utils.FoodFormProps) {
-    <div class="space-y-4">
+	<div class="space-y-4">
         <!-- Recipe URL -->
         <div>
             <label class="block text-sm font-medium mb-1">Recipe URL (optional)</label>
-            <input 
-                type="url" 
-                name="recipe_url" 
+            <input
+                type="url"
+                name="recipe_url"
                 value={props.Food.Recipe.URL}
                 class="w-full px-3 py-2 border rounded"
             />
@@ -382,7 +363,7 @@ templ RecipeFields(props *utils.FoodFormProps) {
                 <label class="block text-sm font-medium">Ingredients</label>
                 <button
                     type="button"
-                    hx-get="/foods/ingredient-row"
+                    hx-get={ fmt.Sprintf("/foods/new-ingredient-row?id=%d", props.Food.ID) }
                     hx-target="#ingredients-list"
                     hx-swap="beforeend"
                     class="text-sm text-blue-600 hover:text-blue-700"
@@ -390,11 +371,7 @@ templ RecipeFields(props *utils.FoodFormProps) {
                     Add Ingredient
                 </button>
             </div>
-            <div id="ingredients-list" class="space-y-2">
-                for index, ing := range props.Food.Recipe.Ingredients {
-                    @ingredientRow(ing, index, props.Foods)
-                }
-            </div>
+            @IngredientsList(props.Food.Recipe.Ingredients, props.Foods)
         </div>
 
         <!-- Instructions -->
@@ -427,26 +404,18 @@ templ RecipeFields(props *utils.FoodFormProps) {
             <div class="flex-1">
                 <label class="block text-sm font-medium mb-1">Yield Unit</label>
                 <select
+	                id="yield-unit-select"
                     name="yield_unit"
                     class={
                         "w-full px-3 py-2 border rounded",
                         templ.KV("border-red-500", props.Errors["yield_unit"] != "")
                     }
+                    hx-get="/foods/units"
+                    hx-trigger="load"
+                    hx-include="[name='unit_type']"
+                    hx-target="this"
                 >
-                    if props.Food.UnitType == "mass" {
-                        <option value="grams" selected?={props.Food.Recipe.YieldUnit == "grams"}>Grams</option>
-                        <option value="kilograms" selected?={props.Food.Recipe.YieldUnit == "kilograms"}>Kilograms</option>
-                        <option value="ounces" selected?={props.Food.Recipe.YieldUnit == "ounces"}>Ounces</option>
-                        <option value="pounds" selected?={props.Food.Recipe.YieldUnit == "pounds"}>Pounds</option>
-                    } else if props.Food.UnitType == "volume" {
-                        <option value="milliliters" selected?={props.Food.Recipe.YieldUnit == "milliliters"}>Milliliters</option>
-                        <option value="liters" selected?={props.Food.Recipe.YieldUnit == "liters"}>Liters</option>
-                        <option value="cups" selected?={props.Food.Recipe.YieldUnit == "cups"}>Cups</option>
-                        <option value="fluidOunces" selected?={props.Food.Recipe.YieldUnit == "fluidOunces"}>Fluid Ounces</option>
-                    } else {
-                        <option value="pieces" selected?={props.Food.Recipe.YieldUnit == "pieces"}>Pieces</option>
-                        <option value="servings" selected?={props.Food.Recipe.YieldUnit == "servings"}>Servings</option>
-                    }
+
                 </select>
                 if err := props.Errors["yield_unit"]; err != "" {
                     <div class="text-red-500 text-sm mt-1">{err}</div>
@@ -456,8 +425,15 @@ templ RecipeFields(props *utils.FoodFormProps) {
     </div>
 }
 
+templ IngredientsList(ings []*models.RecipeItem, availableFoods []*models.Food) {
+	<div id="ingredients-list" class="space-y-2">
+        for index, ing := range ings {
+            @IngredientRow(ing, index, availableFoods)
+        }
+    </div>
+}
 // Ingredient row component
-templ ingredientRow(ing *models.RecipeItem, index int, availableFoods []*models.Food) {
+templ IngredientRow(ing *models.RecipeItem, index int, availableFoods []*models.Food) {
     <div class="flex flex-col sm:flex-row gap-2 items-start" id={fmt.Sprintf("ingredient-%d", index)}>
         <select
             name={fmt.Sprintf("ingredients[%d].food_id", index)}
@@ -465,8 +441,8 @@ templ ingredientRow(ing *models.RecipeItem, index int, availableFoods []*models.
         >
             <option value="">Select Food</option>
             for _, food := range availableFoods {
-                <option 
-                    value={strconv.Itoa(food.ID)} 
+                <option
+                    value={strconv.Itoa(food.ID)}
                     selected?={ing.Food.ID == food.ID}
                 >
                     {food.Name}
@@ -485,11 +461,11 @@ templ ingredientRow(ing *models.RecipeItem, index int, availableFoods []*models.
                 name={fmt.Sprintf("ingredients[%d].unit", index)}
                 class="w-24 px-3 py-2 border rounded"
                 hx-get={fmt.Sprintf("/foods/%d/units", ing.Food.ID)}
-                hx-trigger="load, change from:select[name='ingredients[%d].food_id']"
+                hx-trigger="change from:select[name$='.food_id']"
+                hx-swap="innerHTML"
                 hx-target="this"
             >
-                <!-- Units will be populated dynamically based on the selected food -->
-                <option value={ing.Unit} selected>{ing.Unit}</option>
+                @BaseUnitsOptions([]string{ing.Unit}, ing.Unit)
             </select>
             <button
                 type="button"
@@ -502,4 +478,10 @@ templ ingredientRow(ing *models.RecipeItem, index int, availableFoods []*models.
             </button>
         </div>
     </div>
+}
+
+templ BaseUnitsOptions(units []string, selectedUnit string) {
+	for _, unit := range units {
+		<option value={unit} selected?={unit == selectedUnit}>{unit}</option>
+	}
 }

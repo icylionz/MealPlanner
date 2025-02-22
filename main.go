@@ -53,40 +53,6 @@ func main() {
 		e.Logger.Fatal(err)
 	}
 
-	//test data
-	// sandwich, err := db.Queries.CreateFood(context.Background(), dblib.CreateFoodParams{
-	// 	Name:     "sandwich",
-	// 	UnitType: "Count",
-	// 	BaseUnit: "Servings",
-	// 	IsRecipe: true,
-	// })
-	// if err != nil {
-	// 	log.Default().Println(err)
-	// }
-	// fmt.Println(sandwich)
-	// bread, err := db.Queries.CreateFood(context.Background(), dblib.CreateFoodParams{
-	// 	Name:     "bread",
-	// 	UnitType: "Count",
-	// 	BaseUnit: "Pieces",
-	// 	IsRecipe: true,
-	// })
-	// if err != nil {
-	// 	log.Default().Println(err)
-	// }
-	// fmt.Println(bread)
-
-	// recipe, err := db.Queries.CreateRecipe(context.Background(), dblib.CreateRecipeParams{
-	// 	FoodID:        sandwich.ID,
-	// 	YieldUnit:     "Servings",
-	// 	YieldQuantity: pgtype.Numeric{Int: big.NewInt(1)},
-	// })
-	// db.Queries.AddRecipeIngredient(context.Background(), dblib.AddRecipeIngredientParams{
-	// 	RecipeID: recipe.,
-	// 	IngredientID:   bread.ID,
-	// 	Quantity: pgtype.Numeric{Int: big.NewInt(1)},
-	// 	Unit:     "Pieces",
-	// })
-
 	// foodService := service.NewFoodService(db)
 	scheduleService := service.NewScheduleService(db)
 	foodService := service.NewFoodService(db)
@@ -120,6 +86,9 @@ func main() {
 	e.GET("/foods/:id/edit", foodHandler.HandleEditFoodModal)
 	e.PUT("/foods/:id/edit", foodHandler.HandleEditFoodModal)
 	e.GET("/foods/recipe-fields", foodHandler.GetRecipeFields)
+	e.GET("/foods/new-ingredient-row", foodHandler.GetNewIngredientRow)
+	e.GET("/foods/units", foodHandler.GetFoodUnits)
+	e.GET("/foods/:id/units", foodHandler.GetFoodUnits)
 
 	// Create sub-FS for static files
 	staticFS, err := fs.Sub(staticFiles, "static")

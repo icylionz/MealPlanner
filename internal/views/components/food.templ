@@ -51,7 +51,10 @@ templ SearchBar() {
 
 templ FoodList(foods []*models.Food) {
     for _, food := range foods {
-        <div class="p-4 hover:bg-gray-50 border-b border-gray-200 last:border-0">
+        <div 
+	        class="p-4 hover:bg-gray-50 border-b border-gray-200 last:border-0"
+	        @click={fmt.Sprintf("$store.mealPlanner.showViewFoodModal({id: %v})", food.ID)}
+        >
             <div class="flex justify-between items-start">
                 <div>
                     <h3 class="font-medium">{ food.Name }</h3>

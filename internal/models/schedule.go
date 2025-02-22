@@ -6,18 +6,18 @@ import (
 )
 
 type Schedule struct {
-	ID       int       `json:"id"`
-	FoodID   int       `json:"foodId"`
-	FoodName string    `json:"foodName"`
+	ID          int       `json:"id"`
+	FoodID      int       `json:"foodId"`
+	FoodName    string    `json:"foodName"`
 	ScheduledAt time.Time `json:"scheduledAt"`
 }
 
 func ToScheduleModelFromGetSchedulesInRangeRow(schedule *db.GetSchedulesInRangeRow) *Schedule {
 
 	return &Schedule{
-		ID:     int(schedule.ID),
-		FoodID: int(schedule.FoodID.Int32),
-		FoodName: schedule.FoodName,
+		ID:          int(schedule.ID),
+		FoodID:      int(schedule.FoodID.Int32),
+		FoodName:    schedule.FoodName,
 		ScheduledAt: schedule.ScheduledAt.Time,
 	}
 }
@@ -33,9 +33,9 @@ func ToSchedulesModelFromGetSchedulesInRangeRow(schedules []*db.GetSchedulesInRa
 func ToScheduleModelFromCreateScheduleRow(schedule *db.CreateScheduleRow) *Schedule {
 
 	return &Schedule{
-		ID:     int(schedule.ID),
-		FoodID: int(schedule.FoodID.Int32),
-		FoodName: schedule.FoodName,
+		ID:          int(schedule.ID),
+		FoodID:      int(schedule.FoodID.Int32),
+		FoodName:    schedule.FoodName,
 		ScheduledAt: schedule.ScheduledAt.Time,
 	}
 }

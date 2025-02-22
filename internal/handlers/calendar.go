@@ -23,7 +23,7 @@ func (h *CalendarHandler) HandleCalendarView(c echo.Context) error {
 	}
 
 	dateStr := c.QueryParam("date")
-	
+
 	currentDate := time.Now()
 	if dateStr != "" {
 		parsedDate, err := time.Parse("2006-01-02", dateStr)

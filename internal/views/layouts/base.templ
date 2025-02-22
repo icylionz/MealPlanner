@@ -15,6 +15,7 @@ templ Base() {
             <script defer src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.13.5/cdn.min.js"></script>
             <script src="https://cdn.tailwindcss.com"></script>
             <script src="/static/js/app.js"></script>
+            <script src="/static/js/food.js"></script>
             <script src="/static/js/calendar.js"></script>
         </head>
         <body 
@@ -22,6 +23,7 @@ templ Base() {
 	        x-init="$store.mealPlanner.init()"
 			x-data="{}"
 			hx-ext="response-targets"
+			
         >
             <div class="container mx-auto px-4 py-8">
                 { children... }

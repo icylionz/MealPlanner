@@ -74,7 +74,6 @@ func (h *SchedulesHandler) HandleAddSchedule(c echo.Context) error {
 			TimeChosen: timeOfSchedule,
 		}
 
-
 		c.Response().Writer.WriteHeader(http.StatusBadRequest)
 		return components.CreateScheduleModal(props).Render(c.Request().Context(), c.Response().Writer)
 	}

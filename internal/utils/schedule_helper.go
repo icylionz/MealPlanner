@@ -6,9 +6,9 @@ import (
 )
 
 type ModalProps struct {
-    Date     time.Time
-    TimeChosen     time.Time
-    FoodChosen     models.Food
-    Foods    []models.Food
-    Errors   map[string]string
+	Date       time.Time
+	TimeChosen time.Time
+	FoodChosen models.Food
+	Foods      []models.Food
+	Errors     map[string]string
 }

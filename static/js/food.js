@@ -1,48 +1,66 @@
-document.addEventListener('alpine:init', () => {
-    Alpine.data('foodManager', () => ({
-        foods: [],
-        searchQuery: '',
-        typeFilter: 'all',
-        
-        initFoods({ foods }) {
-            this.foods = foods;
-        },
+document.addEventListener("alpine:init", () => {
+  Alpine.data("foodManager", () => ({
+    foods: [],
+    searchQuery: "",
+    typeFilter: "all",
 
-        get filteredFoods() {
-            return this.foods.filter(food => {
-                const matchesSearch = food.name
-                    .toLowerCase()
-                    .includes(this.searchQuery.toLowerCase());
-                const matchesType =
-                    this.typeFilter === 'all' ||
-                    (this.typeFilter === 'recipe' && food.isRecipe) ||
-                    (this.typeFilter === 'basic' && !food.isRecipe);
-                return matchesSearch && matchesType;
-            });
-        },
+    initFoods({ foods }) {
+      this.foods = foods;
+    },
 
-        handleSearch() {
-            // Optional: Add server-side search for large datasets
-            htmx.trigger('#food-list', 'refreshFoods');
-        },
+    get filteredFoods() {
+      return this.foods.filter((food) => {
+        const matchesSearch = food.name
+          .toLowerCase()
+          .includes(this.searchQuery.toLowerCase());
+        const matchesType =
+          this.typeFilter === "all" ||
+          (this.typeFilter === "recipe" && food.isRecipe) ||
+          (this.typeFilter === "basic" && !food.isRecipe);
+        return matchesSearch && matchesType;
+      });
+    },
 
-        confirmDelete(food) {
-            const confirmed = window.confirm(`Are you sure you want to delete ${food.name}?`);
-            if (confirmed) {
-                htmx.trigger(`button[hx-delete="/foods/${food.id}"]`, 'confirmed');
-            }
-        },
+    handleSearch() {
+      // Optional: Add server-side search for large datasets
+      htmx.trigger("#food-list", "refreshFoods");
+    },
 
-        handleFoodDeleted({ foodId }) {
-            this.foods = this.foods.filter(f => f.id !== foodId);
-        },
+    confirmDelete(food) {
+      const confirmed = window.confirm(
+        `Are you sure you want to delete ${food.name}?`,
+      );
+      if (confirmed) {
+        htmx.trigger(`button[hx-delete="/foods/${food.id}"]`, "confirmed");
+      }
+    },
 
-        toggleViewModal(foodId) {
-            htmx.trigger('body', 'showFoodModal', { foodId });
-        },
+    handleFoodDeleted({ foodId }) {
+      this.foods = this.foods.filter((f) => f.id !== foodId);
+    },
 
-        openNewFoodModal() {
-            htmx.trigger('body', 'showFoodModal', { foodId: null });
-        }
-    }));
+    toggleViewModal(foodId) {
+      htmx.trigger("body", "showFoodModal", { foodId });
+    },
+
+    openNewFoodModal() {
+      htmx.trigger("body", "showFoodModal", { foodId: null });
+    },
+
+    changeUnitType(unitType) {
+      console.log(unitType);
+      htmx.ajax("GET", `/foods/units?unit_type=${unitType}`, {
+        handler: (_, xhr) => {
+          if (xhr.xhr.status === 200) {
+            response = xhr.xhr.response;
+            baseUnitSelect = document.getElementById("base-unit-select");
+            if (baseUnitSelect != null) baseUnitSelect.innerHTML = response;
+            
+            yieldUnitSelect = document.getElementById("yield-unit-select");
+            if (yieldUnitSelect != null) yieldUnitSelect.innerHTML = response;
+          }
+        },
+      });
+    },
+  }));
 });

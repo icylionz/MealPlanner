@@ -32,7 +32,7 @@ type WeekData struct {
 func GetDayData(date *time.Time, schedules []*models.Schedule) *DayData {
 	// Pre-filter schedules for the given date
 	filteredSchedules := FilterSchedulesForDay(date, schedules)
-	
+
 	return &DayData{
 		Date:      date,
 		IsToday:   IsToday(date),
@@ -160,7 +160,6 @@ func FilterSchedulesForWeek(startDate, endDate *time.Time, schedules []*models.S
 	return filtered
 }
 
-
 func GetVisibleSchedules(schedules []*models.Schedule, limit int) []*models.Schedule {
 	if len(schedules) <= limit {
 		return schedules
@@ -204,94 +203,94 @@ func isSameDay(date1, date2 time.Time) bool {
 }
 
 func GetPreviousDate(current time.Time, viewMode string) string {
-    var newDate time.Time
+	var newDate time.Time
 
-    switch viewMode {
-    case "day":
-        newDate = current.AddDate(0, 0, -1)
-    case "week":
-        // Move to previous week's Monday
-        newDate = current.AddDate(0, 0, -7)
-    case "month":
-        // First day of previous month
-        newDate = current.AddDate(0, -1, 0)
-        newDate = time.Date(newDate.Year(), newDate.Month(), 1, 0, 0, 0, 0, newDate.Location())
-    default:
-        return current.Format("2006-01-02")
-    }
+	switch viewMode {
+	case "day":
+		newDate = current.AddDate(0, 0, -1)
+	case "week":
+		// Move to previous week's Monday
+		newDate = current.AddDate(0, 0, -7)
+	case "month":
+		// First day of previous month
+		newDate = current.AddDate(0, -1, 0)
+		newDate = time.Date(newDate.Year(), newDate.Month(), 1, 0, 0, 0, 0, newDate.Location())
+	default:
+		return current.Format("2006-01-02")
+	}
 
-    return newDate.Format("2006-01-02")
+	return newDate.Format("2006-01-02")
 }
 
 func GetNextDate(current time.Time, viewMode string) string {
-    var newDate time.Time
+	var newDate time.Time
 
-    switch viewMode {
-    case "day":
-        newDate = current.AddDate(0, 0, 1)
-    case "week":
-        // Move to next week's Monday
-        newDate = current.AddDate(0, 0, 7)
-    case "month":
-        // First day of next month
-        newDate = current.AddDate(0, 1, 0)
-        newDate = time.Date(newDate.Year(), newDate.Month(), 1, 0, 0, 0, 0, newDate.Location())
-    default:
-        return current.Format("2006-01-02")
-    }
+	switch viewMode {
+	case "day":
+		newDate = current.AddDate(0, 0, 1)
+	case "week":
+		// Move to next week's Monday
+		newDate = current.AddDate(0, 0, 7)
+	case "month":
+		// First day of next month
+		newDate = current.AddDate(0, 1, 0)
+		newDate = time.Date(newDate.Year(), newDate.Month(), 1, 0, 0, 0, 0, newDate.Location())
+	default:
+		return current.Format("2006-01-02")
+	}
 
-    return newDate.Format("2006-01-02")
+	return newDate.Format("2006-01-02")
 }
 
 func FormatDateRange(current time.Time, viewMode string) string {
-    switch viewMode {
-    case "day":
-        return current.Format("Monday, January 2, 2006")
+	switch viewMode {
+	case "day":
+		return current.Format("Monday, January 2, 2006")
 
-    case "week":
-        // Get Monday and Sunday of the week
-        weekStart := current
-        if current.Weekday() != time.Monday {
-            daysToMonday := int(current.Weekday())
-            if current.Weekday() == time.Sunday {
-                daysToMonday = 6
-            } else {
-                daysToMonday--
-            }
-            weekStart = current.AddDate(0, 0, -daysToMonday)
-        }
-        weekEnd := weekStart.AddDate(0, 0, 6)
+	case "week":
+		// Get Monday and Sunday of the week
+		weekStart := current
+		if current.Weekday() != time.Monday {
+			daysToMonday := int(current.Weekday())
+			if current.Weekday() == time.Sunday {
+				daysToMonday = 6
+			} else {
+				daysToMonday--
+			}
+			weekStart = current.AddDate(0, 0, -daysToMonday)
+		}
+		weekEnd := weekStart.AddDate(0, 0, 6)
 
-        // If same month
-        if weekStart.Month() == weekEnd.Month() {
-            return fmt.Sprintf("%d - %d %s %d",
-                weekStart.Day(),
-                weekEnd.Day(),
-                weekStart.Format("January"),
-                weekStart.Year())
-        }
-        // If same year
-        if weekStart.Year() == weekEnd.Year() {
-            return fmt.Sprintf("%d %s - %d %s %d",
-                weekStart.Day(),
-                weekStart.Format("January"),
-                weekEnd.Day(),
-                weekEnd.Format("January"),
-                weekStart.Year())
-        }
-        // Different years
-        return fmt.Sprintf("%d %s %d - %d %s %d",
-            weekStart.Day(),
-            weekStart.Format("January"),
-            weekStart.Year(),
-            weekEnd.Day(),
-            weekEnd.Format("January"),
-            weekEnd.Year())
+		// If same month
+		if weekStart.Month() == weekEnd.Month() {
+			return fmt.Sprintf("%d - %d %s %d",
+				weekStart.Day(),
+				weekEnd.Day(),
+				weekStart.Format("January"),
+				weekStart.Year())
+		}
+		// If same year
+		if weekStart.Year() == weekEnd.Year() {
+			return fmt.Sprintf("%d %s - %d %s %d",
+				weekStart.Day(),
+				weekStart.Format("January"),
+				weekEnd.Day(),
+				weekEnd.Format("January"),
+				weekStart.Year())
+		}
+		// Different years
+		return fmt.Sprintf("%d %s %d - %d %s %d",
+			weekStart.Day(),
+			weekStart.Format("January"),
+			weekStart.Year(),
+			weekEnd.Day(),
+			weekEnd.Format("January"),
+			weekEnd.Year())
 
-    case "month":
-        return current.Format("January 2006")
+	case "month":
+		return current.Format("January 2006")
 
-    default:
-        return current.Format("2006-01-02")
-    }
+	default:
+		return current.Format("2006-01-02")
+	}
 }

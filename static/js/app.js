@@ -33,7 +33,20 @@ document.addEventListener("alpine:init", () => {
         swap: "innerHTML",
       });
     },
+    
+    showViewFoodModal(food) {
+      this.toggleModal(true);
+      const container = document.getElementById("modal-container");
+      if (!container) return;
+      container.innerHTML = "";
 
+      htmx.ajax("GET", `/foods/modal/details?id=${food.id}`, {
+        target: "#modal-container",
+        swap: "innerHTML",
+      });
+      
+    },
+    
     toggleModal(value) {
       this.showModal = value;
       if (!value) {

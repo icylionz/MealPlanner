@@ -20,8 +20,8 @@ func NewScheduleService(db *database.DB) *ScheduleService {
 
 func (s *ScheduleService) GetSchedulesForRange(ctx context.Context, start, end time.Time) ([]*models.Schedule, error) {
 	dbSchedules, err := s.db.GetSchedulesInRange(ctx, db.GetSchedulesInRangeParams{
-		ScheduledAt: pgtype.Timestamptz{Time: start, Valid: true},
-		ScheduledAt_2:   pgtype.Timestamptz{Time: end, Valid: true},
+		ScheduledAt:   pgtype.Timestamptz{Time: start, Valid: true},
+		ScheduledAt_2: pgtype.Timestamptz{Time: end, Valid: true},
 	})
 	if err != nil {
 		return nil, err
@@ -30,8 +30,8 @@ func (s *ScheduleService) GetSchedulesForRange(ctx context.Context, start, end t
 }
 
 func (s *ScheduleService) CreateSchedule(ctx context.Context, foodId int, scheduledAt time.Time) (*models.Schedule, error) {
-	dbSchedule, err := s.db.CreateSchedule(ctx, db.CreateScheduleParams {
-		FoodID: pgtype.Int4{Int32: int32(foodId), Valid: true},
+	dbSchedule, err := s.db.CreateSchedule(ctx, db.CreateScheduleParams{
+		FoodID:      pgtype.Int4{Int32: int32(foodId), Valid: true},
 		ScheduledAt: pgtype.Timestamptz{Time: scheduledAt, Valid: true},
 	})
 	if err != nil {
@@ -50,8 +50,7 @@ func (s *ScheduleService) DeleteSchedules(ctx context.Context, scheduleIds []int
 
 func (s *ScheduleService) DeleteSchedulesInRange(ctx context.Context, start, end time.Time) error {
 	return s.db.DeleteScheduleByDateRange(ctx, db.DeleteScheduleByDateRangeParams{
-		ScheduledAt: pgtype.Timestamptz{Time: start, Valid: true},
+		ScheduledAt:   pgtype.Timestamptz{Time: start, Valid: true},
 		ScheduledAt_2: pgtype.Timestamptz{Time: end, Valid: true},
-		
 	})
 }
