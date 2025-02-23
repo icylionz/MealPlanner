@@ -119,9 +119,9 @@ templ ViewFoodDetailsModal(food *models.Food) {
                     </div>
                     <p class="text-sm text-gray-600 mt-1">
                        	if food.IsRecipe {
-                            "Recipe"
+                            Recipe
                         } else {
-                            "Basic Food"
+                            Basic Food
                         }
                         • { food.BaseUnit }
                     </p>
@@ -193,9 +193,8 @@ templ viewIngredientRow(ing *models.RecipeItem) {
         </div>
         if ing.Food.IsRecipe {
             <button
-                hx-get={ fmt.Sprintf("/foods/%d", ing.Food.ID) }
-                hx-target="#food-details-modal"
                 class="text-blue-600 hover:text-blue-800 text-sm flex items-center"
+                @click={fmt.Sprintf("$store.mealPlanner.showViewFoodModal({id: %v})", ing.Food.ID)}
             >
                 View Recipe
                 <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -227,11 +226,7 @@ templ CreateEditFoodModal(props *utils.FoodFormProps) {
                     }
                     hx-target="#modal-container"
                     hx-target-400="#modal-container"
-                    @htmx:after-request="if(event.detail.xhr.status === 200
-                    	/* make sure the modal doesnt close when retrieving the recipe and ingredient fields */
-                    	&& (!event.detail.target.id.includes('recipe-fields'))
-                    	&& (!event.detail.target.id.includes('ingredients-list')))
-                     { $store.mealPlanner.toggleModal(false);}"
+                    @htmx:after-request="handleSuccessfulFoodCreateOrUpdate(event)"
                     class="space-y-4"
                 >
                     <!-- Basic Info -->

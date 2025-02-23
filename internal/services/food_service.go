@@ -34,6 +34,7 @@ func (s *FoodService) CreateFood(ctx context.Context, params db.CreateFoodParams
 }
 
 func (s *FoodService) CreateRecipeWithIngredients(ctx context.Context, recipeParams db.CreateRecipeParams, ingredients []db.AddRecipeIngredientParams) error {
+	log.Default().Printf("adding recipe with ingredients: %v", recipeParams.FoodID)
 	return s.db.WithTx(ctx, func(q *db.Queries) error {
 		recipe, err := q.CreateRecipe(ctx, recipeParams)
 		if err != nil {
@@ -140,63 +141,75 @@ func (s *FoodService) UpdateFood(ctx context.Context, updateParams db.UpdateFood
 }
 
 func SearchResultToFoods(rows []*db.SearchFoodsWithDependenciesRow) []*models.Food {
-	foodMap := make(map[int32]*models.Food)
+    foodMap := make(map[int32]*models.Food)
 
-	for _, row := range rows {
-		if _, exists := foodMap[row.ID]; exists {
-			continue
-		}
+    // First pass: Create all food objects
+    for _, row := range rows {
+        if _, exists := foodMap[row.ID]; exists {
+            continue
+        }
 
-		food := &models.Food{
-			ID:       int(row.ID),
-			Name:     row.Name,
-			UnitType: row.UnitType,
-			BaseUnit: row.BaseUnit,
-			IsRecipe: row.IsRecipe,
-		}
+        food := &models.Food{
+            ID:       int(row.ID),
+            Name:     row.Name,
+            UnitType: row.UnitType,
+            BaseUnit: row.BaseUnit,
+            IsRecipe: row.IsRecipe,
+        }
 
-		if row.Density.Valid {
-			val, _ := row.Density.Float64Value()
-			food.Density = val.Float64
-		}
+        if row.Density.Valid {
+            val, _ := row.Density.Float64Value()
+            food.Density = val.Float64
+        }
 
-		if row.IsRecipe {
-			food.Recipe = &models.Recipe{
-				Instructions: "", // Will be filled in second pass
-				Ingredients:  make([]*models.RecipeItem, 0),
-			}
-		}
+        if row.IsRecipe {
+            yieldQty := 0.0
+            if row.YieldQuantity.Valid {
+                val, _ := row.YieldQuantity.Float64Value()
+                yieldQty = val.Float64
+            }
 
-		foodMap[row.ID] = food
-	}
+            food.Recipe = &models.Recipe{
+                Instructions:   row.Instructions.String,
+                URL:           row.Url.String,
+                YieldQuantity: yieldQty,
+                Ingredients:   make([]*models.RecipeItem, 0),
+            }
+        }
 
-	for _, row := range rows {
-		if row.Depth > 0 && row.Quantity.Valid {
-			parentID := rows[0].ID
-			if parent, exists := foodMap[parentID]; exists && parent.Recipe != nil {
-				quantity, _ := row.Quantity.Float64Value()
+        foodMap[row.ID] = food
+    }
 
-				ingredient := &models.RecipeItem{
-					FoodID:   int(row.ID),
-					Food:     foodMap[row.ID],
-					Quantity: quantity.Float64,
-				}
+    // Second pass: Build recipe relationships
+    for _, row := range rows {
+        if row.Depth > 0 && row.Quantity.Valid {
+            parentFood := foodMap[rows[0].ID] // Root food
+            if parentFood != nil && parentFood.Recipe != nil {
+                quantity, _ := row.Quantity.Float64Value()
+                
+                ingredient := &models.RecipeItem{
+                    FoodID:   int(row.ID),
+                    Food:     foodMap[row.ID],
+                    Quantity: quantity.Float64,
+                    Unit:     row.Unit.String,
+                }
 
-				parent.Recipe.Ingredients = append(parent.Recipe.Ingredients, ingredient)
-			}
-		}
-	}
+                parentFood.Recipe.Ingredients = append(parentFood.Recipe.Ingredients, ingredient)
+            }
+        }
+    }
 
-	var result []*models.Food
-	for _, row := range rows {
-		if row.Depth == 0 {
-			if food, exists := foodMap[row.ID]; exists {
-				result = append(result, food)
-			}
-		}
-	}
+    // Return root foods
+    var result []*models.Food
+    for _, row := range rows {
+        if row.Depth == 0 {
+            if food, exists := foodMap[row.ID]; exists {
+                result = append(result, food)
+            }
+        }
+    }
 
-	return result
+    return result
 }
 
 // Helper function to convert pgtype.Numeric to float64

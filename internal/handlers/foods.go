@@ -102,7 +102,7 @@ func (h *FoodHandler) HandleCreateFoodModal(c echo.Context) error {
 			UnitType: form.UnitType,
 			BaseUnit: form.BaseUnit,
 			IsRecipe: form.IsRecipe,
-			// Calculate density
+			//TODO: Calculate density
 		})
 		if err != nil {
 			log.Default().Printf("Error creating food: %v", err)
@@ -110,6 +110,7 @@ func (h *FoodHandler) HandleCreateFoodModal(c echo.Context) error {
 		}
 
 		if form.IsRecipe {
+			log.Default().Printf("Creating recipe: %v", form.Name)
 			dbIngredients := make([]db.AddRecipeIngredientParams, len(form.Ingredients))
 			for i, ing := range form.Ingredients {
 				ingredientID, err := strconv.Atoi(ing.FoodID)
@@ -119,8 +120,10 @@ func (h *FoodHandler) HandleCreateFoodModal(c echo.Context) error {
 				dbIngredients[i] = db.AddRecipeIngredientParams{
 					IngredientID: int32(ingredientID),
 					Quantity:     utils.Float64ToNumeric(ing.Quantity),
+					Unit:         ing.Unit,
 				}
 			}
+
 			err = h.service.CreateRecipeWithIngredients(c.Request().Context(), db.CreateRecipeParams{
 				FoodID:        food.ID,
 				Url:           pgtype.Text{String: form.RecipeURL},
@@ -128,6 +131,7 @@ func (h *FoodHandler) HandleCreateFoodModal(c echo.Context) error {
 				YieldQuantity: utils.Float64ToNumeric(form.YieldQuantity),
 			}, dbIngredients)
 			if err != nil {
+				log.Default().Printf("Error adding recipe ingredient: %v", err)
 				return err
 			}
 		}
@@ -161,20 +165,24 @@ func (h *FoodHandler) HandleEditFoodModal(c echo.Context) error {
 
 	// If PUT, handle form submission
 	if c.Request().Method == "PUT" {
+		log.Default().Printf("PUT /foods/%d/edit", idNum)
 		form := new(utils.FoodForm)
 		if err := c.Bind(form); err != nil {
+			log.Default().Printf("Error binding food form: %v", err)
 			return err
 		}
 
 		// If this is a recipe, bind ingredients
 		if form.IsRecipe {
 			if err := form.BindIngredients(c); err != nil {
+				log.Default().Printf("Error binding ingredients form: %v", err)
 				return err
 			}
 		}
 
 		// Validate form
 		if err := form.Validate(); err != nil {
+			log.Default().Printf("Error validating food form: %v\nWith Fields: %v", err, err.Fields())
 			props := utils.FoodFormProps{
 				IsEdit: true,
 				Food:   form.ToModel(),
@@ -185,6 +193,7 @@ func (h *FoodHandler) HandleEditFoodModal(c echo.Context) error {
 			if form.IsRecipe {
 				availableFoods, err := h.service.GetFoods(c.Request().Context(), "")
 				if err != nil {
+					log.Default().Printf("Error getting foods: %v", err)
 					return err
 				}
 				props.Foods = utils.ValidateAndFilterDependencies(availableFoods, idNum)
@@ -195,27 +204,33 @@ func (h *FoodHandler) HandleEditFoodModal(c echo.Context) error {
 		}
 
 		updateParams := db.UpdateFoodWithRecipeParams{
-			ID:       int32(idNum),
-			Name:     form.Name,
-			UnitType: form.UnitType,
-			BaseUnit: form.BaseUnit,
-			IsRecipe: form.IsRecipe,
+			ID:            int32(idNum),
+			Name:          form.Name,
+			UnitType:      form.UnitType,
+			BaseUnit:      form.BaseUnit,
+			IsRecipe:      form.IsRecipe,
+			Url:           pgtype.Text{String: form.RecipeURL},
+			Instructions:  pgtype.Text{String: form.Instructions},
+			YieldQuantity: utils.Float64ToNumeric(form.YieldQuantity),
 			// Calculate density
 		}
 		dbIngredients := make([]db.AddRecipeIngredientParams, len(form.Ingredients))
 		for i, ing := range form.Ingredients {
 			ingredientID, err := strconv.Atoi(ing.FoodID)
 			if err != nil {
+				log.Default().Printf("Error parsing ingredient id: %v", err)
 				return err
 			}
 			dbIngredients[i] = db.AddRecipeIngredientParams{
 				IngredientID: int32(ingredientID),
 				Quantity:     utils.Float64ToNumeric(ing.Quantity),
+				Unit:         ing.Unit,
 			}
 		}
 
 		_, err = h.service.UpdateFood(c.Request().Context(), updateParams, dbIngredients, false)
 		if err != nil {
+			log.Default().Printf("Error updating food: %v", err)
 			return err
 		}
 
@@ -301,8 +316,7 @@ func (h *FoodHandler) GetNewIngredientRow(c echo.Context) error {
 	if idAsString == "" || idAsString == "-1" {
 		return components.IngredientsList([]*models.RecipeItem{
 			&models.RecipeItem{
-				Food: &models.Food{
-				},
+				Food:     &models.Food{},
 				Quantity: 0.0,
 				Unit:     "",
 			},
@@ -320,8 +334,7 @@ func (h *FoodHandler) GetNewIngredientRow(c echo.Context) error {
 	// retrieve the valid ingredients for the target food id
 	validFoods := utils.ValidateAndFilterDependencies(availableFoods, id)
 	targetFood.Recipe.Ingredients = append(targetFood.Recipe.Ingredients, &models.RecipeItem{
-		Food: &models.Food{
-		},
+		Food:     &models.Food{},
 		Quantity: 0.0,
 		Unit:     "",
 	})

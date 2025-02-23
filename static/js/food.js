@@ -21,22 +21,19 @@ document.addEventListener("alpine:init", () => {
       });
     },
 
-    handleSearch() {
-      // Optional: Add server-side search for large datasets
-      htmx.trigger("#food-list", "refreshFoods");
-    },
-
-    confirmDelete(food) {
+    confirmDeleteFood(food) {
       const confirmed = window.confirm(
         `Are you sure you want to delete ${food.name}?`,
       );
       if (confirmed) {
-        htmx.trigger(`button[hx-delete="/foods/${food.id}"]`, "confirmed");
+        htmx.ajax("DELETE", `/foods/${food.id}`, {
+          handler: (_, xhr) => {
+            if (xhr.xhr.status >= 200 && xhr.xhr.status < 300) {
+              htmx.trigger("#food-list", "refreshFoodView");
+            }
+          },
+        });
       }
-    },
-
-    handleFoodDeleted({ foodId }) {
-      this.foods = this.foods.filter((f) => f.id !== foodId);
     },
 
     toggleViewModal(foodId) {
@@ -46,8 +43,23 @@ document.addEventListener("alpine:init", () => {
     openNewFoodModal() {
       htmx.trigger("body", "showFoodModal", { foodId: null });
     },
-    
-    // This section of code will remain in remembrance of the time wasted doing this. only to realize as soon as i finished, that i didn't need the yield unit select
+
+    handleSuccessfulFoodCreateOrUpdate(event) {
+      if (
+        event.detail.xhr.status === 200 &&
+        event.detail.target.id.includes("modal-container")
+      ) {
+        /* make sure the modal doesnt close when retrieving the recipe and ingredient fields */ console.log(
+          "closing",
+        );
+        this.$store.mealPlanner.toggleModal(false);
+      }
+    },
+    // This section of code will remain in remembrance of the time wasted doing this. only to realize as soon 
+    // as i finished, that i didn't need the yield unit select. It was so that everytime the user changed the 
+    // unit type, the base unit select and yield unit select would change with the associated units for the type. 
+    // e.g. user selects volume, base unit and yield unit would show milliliters and the other units of volume.
+    // 
     // changeUnitType(unitType) {
     //   console.log(unitType);
     //   htmx.ajax("GET", `/foods/units?unit_type=${unitType}`, {

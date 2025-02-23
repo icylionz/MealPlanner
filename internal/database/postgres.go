@@ -17,12 +17,7 @@ type DB struct {
 type qLogger struct{}
 
 func (l qLogger) Log(ctx context.Context, level tracelog.LogLevel, msg string, data map[string]any) {
-	// Log only query events at info level
-
-	// log.Default().Printf("Message from db: %v\nData: %v\n", msg, data)
-	if msg == "Query" {
-		log.Default().Printf("SQL: %s\nARGS: %v\n", data["sql"], data["args"])
-	}
+	log.Default().Printf("Message from db: %v\n", msg)
 }
 
 func New(ctx context.Context, connString string) (*DB, error) {

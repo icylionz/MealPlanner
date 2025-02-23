@@ -59,18 +59,23 @@ WITH RECURSIVE recipe_tree AS (
     AND (@max_depth::int <= 0 OR rt.depth < @max_depth)  -- Check max depth if specified
     AND rt.depth < 15              -- Enforce max depth
 )
-SELECT DISTINCT 
-    id,
-    name,
-    unit_type,
-    base_unit,
-    density,
-    is_recipe,
-    depth,
-    quantity,
-    unit
-FROM recipe_tree
-ORDER BY depth, name;
+SELECT DISTINCT ON (rt.depth, f.id)
+    f.id,
+    f.name,
+    f.unit_type,
+    f.base_unit,
+    f.density,
+    f.is_recipe,
+    rt.depth,
+    rt.quantity,
+    rt.unit,
+    r.instructions,
+    r.url,
+    r.yield_quantity
+FROM recipe_tree rt
+JOIN foods f ON rt.id = f.id
+LEFT JOIN recipes r ON f.id = r.food_id
+ORDER BY rt.depth, f.id, f.name;
 
 -- name: UpdateFood :one
 UPDATE foods

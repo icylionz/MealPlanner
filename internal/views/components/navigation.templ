@@ -7,7 +7,6 @@ templ Navigation() {
             :class="{'border-b-2 border-blue-500': $store.mealPlanner.activeTab === 'calendar'}"
             class="px-4 py-2 font-medium"
             hx-get="/calendar"
-            hx-vals="js:{mode: $store.mealPlanner.viewMode}"
             hx-target="#main-content"
         >
             Calendar
