@@ -221,17 +221,17 @@ func numericToFloat64(n pgtype.Numeric) float64 {
 	return val.Float64
 }
 
-func (s *FoodService) GetFoodUnits(ctx context.Context, id string) ([]string, error) {
+func (s *FoodService) GetFoodUnits(ctx context.Context, id string) ([]string, string, error) {
 	targetFood, err := s.GetFoodDetails(ctx, id, 0)
 	if err != nil {
 		log.Default().Printf("Error getting food to find units: %v", err)
-		return nil, err
+		return nil, "", err
 	}
 	units := utils.GetUnitsByType(targetFood.UnitType)
 	if units == nil ||  len(units) == 0 {
 		log.Default().Printf("Invalid unit type: %s", targetFood.UnitType)
-		return nil, errors.New("invalid unit type")
+		return nil, "", errors.New("invalid unit type")
 	}
 	
-	return units, nil
+	return units, targetFood.BaseUnit, nil
 }

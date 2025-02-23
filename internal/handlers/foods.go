@@ -343,12 +343,13 @@ func (h *FoodHandler) GetNewIngredientRow(c echo.Context) error {
 }
 
 func (h *FoodHandler) GetFoodUnits(c echo.Context) error {
-	idAsString := c.Param("id")
+	idAsString := c.QueryParam("id")
 	unitType := c.QueryParam("unit_type")
 	if (idAsString == "" || idAsString == "-1") && unitType == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "Invalid ID or Unit Type")
 	}
 	var units []string
+	defaultBaseUnit := ""
 	if idAsString != "" && idAsString != "-1" {
 		_, err := strconv.Atoi(idAsString)
 		// just make sure its a valid int before passing it downstream
@@ -356,7 +357,7 @@ func (h *FoodHandler) GetFoodUnits(c echo.Context) error {
 			log.Default().Printf("Error parsing id: %v", err)
 			return err
 		}
-		units, err = h.service.GetFoodUnits(c.Request().Context(), idAsString)
+		units, defaultBaseUnit, err = h.service.GetFoodUnits(c.Request().Context(), idAsString)
 		if err != nil {
 			log.Default().Printf("Error getting food units: %v", err)
 			return err
@@ -369,7 +370,7 @@ func (h *FoodHandler) GetFoodUnits(c echo.Context) error {
 		}
 	}
 
-	return components.BaseUnitsOptions(units, "").Render(
+	return components.BaseUnitsOptions(units, defaultBaseUnit).Render(
 		c.Request().Context(), c.Response().Writer)
 }
 func NewFoodHandler(service *services.FoodService) *FoodHandler {

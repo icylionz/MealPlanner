@@ -88,7 +88,6 @@ func main() {
 	e.GET("/foods/recipe-fields", foodHandler.GetRecipeFields)
 	e.GET("/foods/new-ingredient-row", foodHandler.GetNewIngredientRow)
 	e.GET("/foods/units", foodHandler.GetFoodUnits)
-	e.GET("/foods/:id/units", foodHandler.GetFoodUnits)
 
 	// Create sub-FS for static files
 	staticFS, err := fs.Sub(staticFiles, "static")

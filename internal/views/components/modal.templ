@@ -437,6 +437,12 @@ templ IngredientRow(ing *models.RecipeItem, index int, availableFoods []*models.
         <select
             name={fmt.Sprintf("ingredients[%d].food_id", index)}
             class="flex-1 px-3 py-2 border rounded"
+            hx-get="/foods/units"
+            hx-trigger="change"
+            hx-swap="innerHTML"
+            hx-params="id"
+            hx-vals="js:{id: event.target.value}"
+            hx-target={fmt.Sprintf("#ingredient-%d select[name='ingredients[%d].unit']", index, index)}
         >
             <option value="">Select Food</option>
             for _, food := range availableFoods {
@@ -459,10 +465,6 @@ templ IngredientRow(ing *models.RecipeItem, index int, availableFoods []*models.
             <select
                 name={fmt.Sprintf("ingredients[%d].unit", index)}
                 class="w-24 px-3 py-2 border rounded"
-                hx-get={fmt.Sprintf("/foods/%d/units", ing.Food.ID)}
-                hx-trigger="change from:select[name$='.food_id']"
-                hx-swap="innerHTML"
-                hx-target="this"
             >
                 @BaseUnitsOptions([]string{ing.Unit}, ing.Unit)
             </select>
