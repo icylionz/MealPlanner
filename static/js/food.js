@@ -20,7 +20,6 @@ document.addEventListener("alpine:init", () => {
         return matchesSearch && matchesType;
       });
     },
-
     confirmDeleteFood(food) {
       const confirmed = window.confirm(
         `Are you sure you want to delete ${food.name}?`,
@@ -34,14 +33,6 @@ document.addEventListener("alpine:init", () => {
           },
         });
       }
-    },
-
-    toggleViewModal(foodId) {
-      htmx.trigger("body", "showFoodModal", { foodId });
-    },
-
-    openNewFoodModal() {
-      htmx.trigger("body", "showFoodModal", { foodId: null });
     },
 
     handleSuccessfulFoodCreateOrUpdate(event) {
