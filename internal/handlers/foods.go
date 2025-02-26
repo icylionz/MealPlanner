@@ -49,8 +49,10 @@ func (h *FoodHandler) HandleSearchFoods(c echo.Context) error {
 
 func (h *FoodHandler) HandleDeleteFood(c echo.Context) error {
 	id := c.Param("id")
+	log.Default().Printf("DELETE /foods/%s", id)
 	err := h.service.DeleteFood(c.Request().Context(), id)
 	if err != nil {
+		log.Default().Printf("Error deleting food: %v", err)
 		return c.String(500, "Error deleting food")
 	}
 	return c.NoContent(204)

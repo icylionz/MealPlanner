@@ -8,8 +8,13 @@ templ Index() {
     @layouts.Base() {
         @components.Navigation()
         
-        <div id="main-content">
-            <div hx-get="/calendar" hx-trigger="load" hx-swap="innerHTML"></div>
+        <div id="main-content" x-init="
+            setTimeout(() => {
+                htmx.ajax('GET', `/calendar?mode=${$store.mealPlanner.viewMode}&date=${$store.mealPlanner.currentDate}` , 
+                {target: '#main-content', swap:'innerHTML'})
+            }, 0)
+        ">
+            <!-- Content will be loaded via HTMX -->
         </div>
         // @components.schedule.Modal()
         // @components.food.Modal()

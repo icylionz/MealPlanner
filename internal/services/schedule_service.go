@@ -18,10 +18,10 @@ func NewScheduleService(db *database.DB) *ScheduleService {
 	return &ScheduleService{db: db}
 }
 
-func (s *ScheduleService) GetSchedulesForRange(ctx context.Context, start, end time.Time) ([]*models.Schedule, error) {
+func (s *ScheduleService) GetSchedulesForRange(ctx context.Context, start, end *time.Time) ([]*models.Schedule, error) {
 	dbSchedules, err := s.db.GetSchedulesInRange(ctx, db.GetSchedulesInRangeParams{
-		ScheduledAt:   pgtype.Timestamptz{Time: start, Valid: true},
-		ScheduledAt_2: pgtype.Timestamptz{Time: end, Valid: true},
+		ScheduledAt:   pgtype.Timestamptz{Time: *start, Valid: true},
+		ScheduledAt_2: pgtype.Timestamptz{Time: *end, Valid: true},
 	})
 	if err != nil {
 		return nil, err

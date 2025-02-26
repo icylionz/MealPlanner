@@ -7,11 +7,11 @@ import "strings"
 import "strconv"
 
 templ Calendar(view *utils.CalendarView) {
-    <div
+	<div
         x-data="calendar"
         hx-get="/calendar"
-        hx-trigger="viewModeChange from:body"
-        hx-vals="js:{mode: event.detail.mode}"
+        hx-trigger="viewModeChange from:body, calendarRefresh from:body"
+        hx-vals="js:{mode: event.detail.mode, date: event.detail.date}"
         hx-target="this"
         hx-swap="outerHTML"
         id="calendar-container"
@@ -244,29 +244,26 @@ templ ContextMenu(day *utils.DayData, position utils.Position) {
     >
         <div class="p-2 min-w-[150px]">
             <button
-                hx-get={fmt.Sprintf("/calendar?mode=day&date=%s", day.Date.Format("2006-01-02"))}
-                hx-target="#calendar-container"
+                @click={fmt.Sprintf("switchCalendarView('day', '%s')", day.Date.Format("2006-01-02"))}
                 class="w-full text-left px-3 py-2 hover:bg-gray-100 rounded"
             >
                 View Day
             </button>
             <button
-                hx-get={fmt.Sprintf("/calendar?mode=week&date=%s", day.Date.Format("2006-01-02"))}
-                hx-target="#calendar-container"
+                @click={fmt.Sprintf("switchCalendarView('week', '%s')", day.Date.Format("2006-01-02"))}
                 class="w-full text-left px-3 py-2 hover:bg-gray-100 rounded"
             >
                 View Week
             </button>
             <button
-            	@click={fmt.Sprintf("$store.mealPlanner.showScheduleModal({ date: '%s' })", day.Date.Format("2006-01-02"))}
+                @click={fmt.Sprintf("$store.mealPlanner.showScheduleModal({ date: '%s' })", day.Date.Format("2006-01-02"))}
                 class="w-full text-left px-3 py-2 hover:bg-gray-100 rounded"
             >
                 Schedule Meal
             </button>
             if len(day.Schedules) > 0 {
                 <button
-                    hx-delete={fmt.Sprintf("/schedules?date=%s", day.Date.Format("2006-01-02"))}
-                    hx-confirm="Are you sure you want to delete all schedules for this day?"
+                    @click={fmt.Sprintf("deleteSchedulesForDateRange('%s', '%s')", day.Date.Format("2006-01-02"), day.Date.AddDate(0, 0, 1).Format("2006-01-02"))}
                     class="w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-red-600"
                 >
                     Delete Schedules
@@ -282,8 +279,7 @@ templ ScheduleComponent(schedule *models.Schedule) {
         <div class="font-medium flex-grow">{ schedule.FoodName }</div>
         <div class="flex items-center gap-2">
             <button
-                hx-delete={fmt.Sprintf("/schedules/%d", schedule.ID)}
-                hx-confirm="Are you sure you want to delete this schedule?"
+	            @click={fmt.Sprintf("deleteScheduleById(%d)", schedule.ID)}
                 class="p-1 hover:bg-gray-100 rounded text-red-600"
             >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -294,3 +294,31 @@ func FormatDateRange(current time.Time, viewMode string) string {
 		return current.Format("2006-01-02")
 	}
 }
+
+func GetDateRange(date *time.Time, period string) (*time.Time, *time.Time, error) {
+    dateToProcess := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+    
+    switch period {
+    case "day":
+    	end := dateToProcess.AddDate(0, 0, 1)
+        return &dateToProcess, &end, nil
+    case "week":
+        // Go's time.Weekday is 0-6 where 0 is Sunday
+        // Adjust to get Monday as start of week
+        weekday := int(dateToProcess.Weekday())
+        if weekday == 0 {
+            weekday = 7
+        }
+        start := dateToProcess.AddDate(0, 0, -(weekday-1))
+        end := start.AddDate(0, 0, 6)
+        return &start, &end, nil
+        
+    case "month":
+        start := time.Date(dateToProcess.Year(), dateToProcess.Month(), 1, 0, 0, 0, 0, dateToProcess.Location())
+        end := start.AddDate(0, 1, -1)
+        return &start, &end, nil
+        
+    default:
+        return nil, nil, fmt.Errorf("invalid period: %s. Must be 'week' or 'month'", period)
+    }
+}

@@ -2,11 +2,13 @@ document.addEventListener("alpine:init", () => {
   Alpine.store("mealPlanner", {
     activeTab: "calendar",
     viewMode: "month",
+    currentDate: new Date().toISOString().split("T")[0], 
     showModal: false,
 
     init() {
       this.activeTab = "calendar";
       this.viewMode = "month";
+      this.currentDate = new Date().toISOString().split("T")[0]; 
       this.showModal = false;
     },
 
@@ -21,7 +23,7 @@ document.addEventListener("alpine:init", () => {
         swap: "innerHTML",
       });
     },
-    
+
     showEditFoodModal(food) {
       this.toggleModal(true);
       const container = document.getElementById("modal-container");
@@ -33,7 +35,7 @@ document.addEventListener("alpine:init", () => {
         swap: "innerHTML",
       });
     },
-    
+
     showAddFoodModal() {
       this.toggleModal(true);
       const container = document.getElementById("modal-container");
@@ -45,7 +47,7 @@ document.addEventListener("alpine:init", () => {
         swap: "innerHTML",
       });
     },
-    
+
     showViewFoodModal(food) {
       this.toggleModal(true);
       const container = document.getElementById("modal-container");
@@ -56,9 +58,8 @@ document.addEventListener("alpine:init", () => {
         target: "#modal-container",
         swap: "innerHTML",
       });
-      
     },
-    
+
     toggleModal(value) {
       this.showModal = value;
       if (!value) {
@@ -66,6 +67,25 @@ document.addEventListener("alpine:init", () => {
         if (!container) return;
         container.innerHTML = "";
       }
+    },
+
+    navigateToCalendar() {
+      this.activeTab = "calendar";
+
+      htmx.ajax(
+        "GET",
+        `/calendar?mode=${this.viewMode}&date=${this.currentDate}`,
+        {
+          target: "#main-content",
+        },
+      );
+    },
+
+    navigateToFoods() {
+      this.activeTab = "foods";
+      htmx.ajax("GET", "/foods", {
+        target: "#main-content",
+      });
     },
   });
 });

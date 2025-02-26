@@ -81,6 +81,8 @@ func (s *FoodService) DeleteFood(ctx context.Context, id string) error {
 	return s.db.WithTx(ctx, func(q *db.Queries) error {
 		idNum, err := strconv.ParseInt(id, 10, 32)
 		if err != nil {
+			// TODO: Handle proper error handling for when foreign key constraint fails
+			log.Default().Printf("Error parsing id: %v", err)
 			return err
 		}
 		return q.DeleteFood(ctx, int32(idNum))

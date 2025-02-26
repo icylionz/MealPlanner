@@ -62,7 +62,7 @@ func main() {
 	// scheduleHandler := handlers.NewScheduleHandler(scheduleService)
 	calendarHandler := handlers.NewCalendarHandler(scheduleService)
 	pageHandler := handlers.NewPageHandler()
-	schedulesHandler := handlers.NewSchedulesHandler(scheduleService)
+	schedulesHandler := handlers.NewSchedulesHandler(scheduleService, foodService)
 	foodHandler := handlers.NewFoodHandler(foodService)
 	// Routes
 	e.GET("/", pageHandler.HandleIndex)

@@ -1,22 +1,18 @@
 package components
 
 templ Navigation() {
-    <nav class="flex border-b border-gray-200 mb-8">
+	<nav class="flex border-b border-gray-200 mb-8">
         <button
-            @click="$store.mealPlanner.activeTab = 'calendar'"
+            @click="$store.mealPlanner.navigateToCalendar()"
             :class="{'border-b-2 border-blue-500': $store.mealPlanner.activeTab === 'calendar'}"
             class="px-4 py-2 font-medium"
-            hx-get="/calendar"
-            hx-target="#main-content"
         >
             Calendar
         </button>
         <button
-            @click="$store.mealPlanner.activeTab = 'foods'"
+            @click="$store.mealPlanner.navigateToFoods()"
             :class="{'border-b-2 border-blue-500': $store.mealPlanner.activeTab === 'foods'}"
             class="px-4 py-2 font-medium"
-            hx-get="/foods"
-            hx-target="#main-content"
         >
             Foods
         </button>

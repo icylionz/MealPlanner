@@ -17,6 +17,7 @@ import (
 
 type SchedulesHandler struct {
 	scheduleService *services.ScheduleService
+	foodService     *services.FoodService
 }
 
 func (h *SchedulesHandler) HandleAddSchedule(c echo.Context) error {
@@ -66,7 +67,7 @@ func (h *SchedulesHandler) HandleAddSchedule(c echo.Context) error {
 
 		props := &utils.ModalProps{
 			Date:   date,
-			Foods:  []models.Food{},
+			Foods:  []*models.Food{},
 			Errors: errors,
 			FoodChosen: models.Food{
 				ID: selectedFoodId,
@@ -137,17 +138,21 @@ func (h *SchedulesHandler) HandleScheduleModal(c echo.Context) error {
 		log.Default().Printf("Error parsing date: %s", err)
 		return errors.New("Invalid date")
 	}
-	// TODO: Get foods
 
+	foods, err := h.foodService.GetFoods(c.Request().Context(), "")
+	if err != nil {
+		return c.String(500, "Error searching foods")
+	}
 	return components.CreateScheduleModal(&utils.ModalProps{
 		Date:   date,
-		Foods:  []models.Food{},
+		Foods:  foods,
 		Errors: map[string]string{},
 	}).Render(c.Request().Context(), c.Response())
 }
 
-func NewSchedulesHandler(scheduleService *services.ScheduleService) *SchedulesHandler {
+func NewSchedulesHandler(scheduleService *services.ScheduleService, foodService *services.FoodService) *SchedulesHandler {
 	return &SchedulesHandler{
 		scheduleService: scheduleService,
+		foodService: foodService,
 	}
 }

@@ -1,7 +1,5 @@
 document.addEventListener("alpine:init", () => {
   Alpine.data("calendar", () => ({
-    showContextMenu: false,
-    contextMenuPosition: { x: 0, y: 0 },
     isMobile: window.innerWidth < 640,
 
     init() {
@@ -16,7 +14,21 @@ document.addEventListener("alpine:init", () => {
 
     switchViewMode(mode) {
       this.$store.mealPlanner.viewMode = mode;
-      htmx.trigger("body", "viewModeChange", { mode: mode });
+
+      htmx.trigger("body", "viewModeChange", {
+        mode: mode,
+        date: this.$store.mealPlanner.currentDate,
+      });
+    },
+
+    switchCalendarView(mode, date) {
+      this.$store.mealPlanner.viewMode = mode;
+      this.$store.mealPlanner.currentDate = date;
+
+      htmx.trigger("body", "viewModeChange", {
+        mode: this.$store.mealPlanner.viewMode,
+        date: this.$store.mealPlanner.currentDate,
+      });
     },
 
     showContextMenu(event, day) {
@@ -25,7 +37,6 @@ document.addEventListener("alpine:init", () => {
 
       container.innerHTML = "";
 
-      // Load context menu via HTMX
       htmx.ajax(
         "GET",
         `/calendar/context-menu?date=${day.date}&x=${event.clientX}&y=${event.clientY}`,
@@ -35,7 +46,41 @@ document.addEventListener("alpine:init", () => {
         },
       );
     },
-    
+
+    deleteSchedulesForDateRange(fromDate, toDate) {
+      htmx.ajax(
+        "DELETE",
+        `/schedules/date-range?start=${fromDate}&end=${toDate}`,
+        {
+          target: "#calendar-container",
+          confirm:
+            "Are you sure you want to delete all schedules for this day?",
+          handler: (_, xhr) => {
+            if (xhr.xhr.status >= 200 && xhr.xhr.status < 300) {
+              this.refreshCalendar();
+            }
+          },
+        },
+      );
+    },
+
+    deleteScheduleById(id) {
+      htmx.ajax("DELETE", `/schedules/ids?ids=${id}`, {
+        confirm: "Are you sure you want to delete this schedule?",
+        handler: (_, xhr) => {
+          if (xhr.xhr.status >= 200 && xhr.xhr.status < 300) {
+            this.refreshCalendar();
+          }
+        },
+      });
+    },
+
+    refreshCalendar() {
+      htmx.trigger("body", "calendarRefresh", {
+        mode: this.$store.mealPlanner.viewMode,
+        date: this.$store.mealPlanner.currentDate,
+      });
+    },
   }));
 });
 

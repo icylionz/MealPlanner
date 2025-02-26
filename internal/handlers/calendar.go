@@ -24,24 +24,30 @@ func (h *CalendarHandler) HandleCalendarView(c echo.Context) error {
 
 	dateStr := c.QueryParam("date")
 
-	currentDate := time.Now()
+	chosenDate := time.Now()
 	if dateStr != "" {
 		parsedDate, err := time.Parse("2006-01-02", dateStr)
 		if err == nil {
 			log.Default().Printf("parsedDate: %s", parsedDate)
-			currentDate = parsedDate
+			chosenDate = parsedDate
 		}
 	}
-
+	
 	//TODO: actually make this get the schedules for the right time period
-	schedules, err := h.scheduleService.GetSchedulesForRange(c.Request().Context(), currentDate, currentDate)
+	start, end, err := utils.GetDateRange(&chosenDate, viewMode)
+	if err != nil {
+		log.Default().Printf("Error getting date range: %s", err)
+		return err
+	}
+	log.Default().Printf("start: %s, end: %s", start, end)
+	schedules, err := h.scheduleService.GetSchedulesForRange(c.Request().Context(), start, end)
 	if err != nil {
 		log.Default().Printf("Error getting schedules: %s", err)
 		return err
 	}
-
+	log.Default().Printf("schedules: %v", schedules)
 	view := &utils.CalendarView{
-		CurrentDate: &currentDate,
+		CurrentDate: &chosenDate,
 		ViewMode:    viewMode,
 		Schedules:   schedules,
 	}
@@ -59,9 +65,9 @@ func (h *CalendarHandler) HandleContextMenu(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-
+	start, end, err := utils.GetDateRange(&parsedDate, "day")
 	// Get schedules for this day
-	schedules, err := h.scheduleService.GetSchedulesForRange(c.Request().Context(), parsedDate, parsedDate)
+	schedules, err := h.scheduleService.GetSchedulesForRange(c.Request().Context(), start, end)
 	if err != nil {
 		log.Default().Printf("Error getting schedules: %s", err)
 		return err

@@ -18,7 +18,7 @@ templ DeleteConfirmationModal() {
 }
 
 templ CreateScheduleModal(props *utils.ModalProps) {
-	<div class="flex items-center justify-center min-h-screen p-4">
+	<div class="flex items-center justify-center min-h-screen p-4" x-data="calendar">
         <div class="fixed inset-0 bg-black opacity-50"></div>
 
         <div class="relative bg-white rounded-lg shadow-xl max-w-md w-full">
@@ -31,7 +31,7 @@ templ CreateScheduleModal(props *utils.ModalProps) {
                     hx-target-400="#modal-container"
                     hx-swap="innerHTML"
                     class="space-y-4"
-                    @htmx:after-request="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); }"
+                    @htmx:after-request="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); refreshCalendar();}"
                 >
                     <input type="hidden" name="date" value={ props.Date.Format("2006-01-02") } />
 
@@ -464,6 +464,7 @@ templ IngredientRow(ing *models.RecipeItem, index int, availableFoods []*models.
             <select
                 name={fmt.Sprintf("ingredients[%d].unit", index)}
                 class="w-24 px-3 py-2 border rounded"
+                disabled
             >
                 @BaseUnitsOptions([]string{ing.Unit}, ing.Unit)
             </select>
