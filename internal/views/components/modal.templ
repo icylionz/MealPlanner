@@ -363,13 +363,16 @@ templ RecipeFields(props *utils.FoodFormProps) {
                     type="button"
                     hx-get={ fmt.Sprintf("/foods/new-ingredient-row?id=%d", props.Food.ID) }
                     hx-target="#ingredients-list"
+                    hx-vals="js:{index: document.querySelectorAll('#ingredients-list > div').length}"
                     hx-swap="beforeend"
                     class="text-sm text-blue-600 hover:text-blue-700"
                 >
                     Add Ingredient
                 </button>
             </div>
-            @IngredientsList(props.Food.Recipe.Ingredients, props.Foods)
+            <div id="ingredients-list" class="space-y-2">
+	            @IngredientsList(props.Food.Recipe.Ingredients, props.Foods)
+            </div>
         </div>
 
         <!-- Instructions -->
@@ -424,11 +427,9 @@ templ RecipeFields(props *utils.FoodFormProps) {
 }
 
 templ IngredientsList(ings []*models.RecipeItem, availableFoods []*models.Food) {
-	<div id="ingredients-list" class="space-y-2">
         for index, ing := range ings {
             @IngredientRow(ing, index, availableFoods)
         }
-    </div>
 }
 // Ingredient row component
 templ IngredientRow(ing *models.RecipeItem, index int, availableFoods []*models.Food) {
@@ -441,7 +442,7 @@ templ IngredientRow(ing *models.RecipeItem, index int, availableFoods []*models.
             hx-swap="innerHTML"
             hx-params="id"
             hx-vals="js:{id: event.target.value}"
-            hx-target={fmt.Sprintf("#ingredient-%d select[name='ingredients[%d].unit']", index, index)}
+            hx-target="next div > select"
         >
             <option value="">Select Food</option>
             for _, food := range availableFoods {
@@ -464,13 +465,12 @@ templ IngredientRow(ing *models.RecipeItem, index int, availableFoods []*models.
             <select
                 name={fmt.Sprintf("ingredients[%d].unit", index)}
                 class="w-24 px-3 py-2 border rounded"
-                disabled
             >
                 @BaseUnitsOptions([]string{ing.Unit}, ing.Unit)
             </select>
             <button
                 type="button"
-                hx-delete={fmt.Sprintf("#ingredient-%d", index)}
+                @click={fmt.Sprintf("document.getElementById('ingredient-%d').remove()", index)}
                 class="p-2 text-gray-400 hover:text-red-600"
             >
                 <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">

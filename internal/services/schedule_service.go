@@ -2,9 +2,11 @@ package services
 
 import (
 	"context"
+	"log"
 	"mealplanner/internal/database"
 	"mealplanner/internal/database/db"
 	"mealplanner/internal/models"
+	"mealplanner/internal/utils"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -19,17 +21,23 @@ func NewScheduleService(db *database.DB) *ScheduleService {
 }
 
 func (s *ScheduleService) GetSchedulesForRange(ctx context.Context, start, end *time.Time) ([]*models.Schedule, error) {
+
 	dbSchedules, err := s.db.GetSchedulesInRange(ctx, db.GetSchedulesInRangeParams{
 		ScheduledAt:   pgtype.Timestamptz{Time: *start, Valid: true},
 		ScheduledAt_2: pgtype.Timestamptz{Time: *end, Valid: true},
 	})
 	if err != nil {
+		log.Default().Printf("Error getting schedules: %s", err)
 		return nil, err
 	}
-	return models.ToSchedulesModelFromGetSchedulesInRangeRow(dbSchedules), nil
+	for _, dbSchedule := range dbSchedules {
+		log.Default().Printf("dbSchedule: %v", dbSchedule)
+	}
+	timeZone := utils.GetTimezone(ctx)
+	return models.ToSchedulesModelFromGetSchedulesInRangeRow(dbSchedules, timeZone), nil
 }
 
-func (s *ScheduleService) CreateSchedule(ctx context.Context, foodId int, scheduledAt time.Time) (*models.Schedule, error) {
+func (s *ScheduleService) CreateSchedule(ctx context.Context, foodId int, scheduledAt time.Time, timeZone *time.Location) (*models.Schedule, error) {
 	dbSchedule, err := s.db.CreateSchedule(ctx, db.CreateScheduleParams{
 		FoodID:      pgtype.Int4{Int32: int32(foodId), Valid: true},
 		ScheduledAt: pgtype.Timestamptz{Time: scheduledAt, Valid: true},
@@ -37,7 +45,7 @@ func (s *ScheduleService) CreateSchedule(ctx context.Context, foodId int, schedu
 	if err != nil {
 		return nil, err
 	}
-	return models.ToScheduleModelFromCreateScheduleRow(dbSchedule), nil
+	return models.ToScheduleModelFromCreateScheduleRow(dbSchedule, timeZone), nil
 }
 
 func (s *ScheduleService) DeleteSchedules(ctx context.Context, scheduleIds []int) error {

@@ -309,6 +309,14 @@ func (h *FoodHandler) GetRecipeFields(c echo.Context) error {
 
 func (h *FoodHandler) GetNewIngredientRow(c echo.Context) error {
 	idAsString := c.QueryParam("id")
+	index := c.QueryParam("index")
+	if index == "" {
+		index = "0"
+	}
+	indexAsInt, err := strconv.Atoi(index)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "Invalid Index")
+	}
 	availableFoods, err := h.service.GetFoods(c.Request().Context(), "")
 	if err != nil {
 		log.Default().Printf("Error getting foods: %v", err)
@@ -316,13 +324,12 @@ func (h *FoodHandler) GetNewIngredientRow(c echo.Context) error {
 	}
 	// for new foods
 	if idAsString == "" || idAsString == "-1" {
-		return components.IngredientsList([]*models.RecipeItem{
+		return components.IngredientRow(
 			&models.RecipeItem{
 				Food:     &models.Food{},
 				Quantity: 0.0,
 				Unit:     "",
-			},
-		}, availableFoods).Render(
+			}, indexAsInt, availableFoods).Render(
 			c.Request().Context(), c.Response().Writer)
 	}
 	id, err := strconv.Atoi(c.QueryParam("id"))

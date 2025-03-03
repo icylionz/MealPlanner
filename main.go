@@ -9,6 +9,7 @@ import (
 	"mealplanner/internal/database"
 	"mealplanner/internal/handlers"
 	service "mealplanner/internal/services"
+	"mealplanner/internal/utils"
 	"net/http"
 	"os"
 	"strings"
@@ -64,16 +65,18 @@ func main() {
 	pageHandler := handlers.NewPageHandler()
 	schedulesHandler := handlers.NewSchedulesHandler(scheduleService, foodService)
 	foodHandler := handlers.NewFoodHandler(foodService)
+	calendarGroup := e.Group("/", utils.SetTimeZone())
+	
 	// Routes
 	e.GET("/", pageHandler.HandleIndex)
 	// Calendar Routes
-	e.GET("/calendar", calendarHandler.HandleCalendarView)
-	e.GET("/calendar/context-menu", calendarHandler.HandleContextMenu)
+	calendarGroup.GET("calendar", calendarHandler.HandleCalendarView)
+	calendarGroup.GET("calendar/context-menu", calendarHandler.HandleContextMenu)
 	// Schedules Routes
-	e.POST("/schedules", schedulesHandler.HandleAddSchedule)
-	e.DELETE("/schedules/ids", schedulesHandler.HandleDeleteScheduleByIds)
-	e.DELETE("/schedules/date-range", schedulesHandler.HandleDeleteScheduleByDateRange)
-	e.GET("/schedules/modal", schedulesHandler.HandleScheduleModal)
+	calendarGroup.POST("schedules", schedulesHandler.HandleAddSchedule)
+	calendarGroup.DELETE("schedules/ids", schedulesHandler.HandleDeleteScheduleByIds)
+	calendarGroup.DELETE("schedules/date-range", schedulesHandler.HandleDeleteScheduleByDateRange)
+	calendarGroup.GET("schedules/modal", schedulesHandler.HandleScheduleModal)
 	// Food Routes
 	e.GET("/foods", foodHandler.HandleFoodsPage)
 	// e.GET("/foods/modal/new", foodHandler.HandleAddFoodModal)

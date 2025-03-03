@@ -12,30 +12,30 @@ type Schedule struct {
 	ScheduledAt time.Time `json:"scheduledAt"`
 }
 
-func ToScheduleModelFromGetSchedulesInRangeRow(schedule *db.GetSchedulesInRangeRow) *Schedule {
+func ToScheduleModelFromGetSchedulesInRangeRow(schedule *db.GetSchedulesInRangeRow, timeZone *time.Location) *Schedule {
 
 	return &Schedule{
 		ID:          int(schedule.ID),
 		FoodID:      int(schedule.FoodID.Int32),
 		FoodName:    schedule.FoodName,
-		ScheduledAt: schedule.ScheduledAt.Time,
+		ScheduledAt: schedule.ScheduledAt.Time.In(timeZone),
 	}
 }
 
-func ToSchedulesModelFromGetSchedulesInRangeRow(schedules []*db.GetSchedulesInRangeRow) []*Schedule {
+func ToSchedulesModelFromGetSchedulesInRangeRow(schedules []*db.GetSchedulesInRangeRow, timeZone *time.Location) []*Schedule {
 	var result []*Schedule
 	for _, schedule := range schedules {
-		result = append(result, ToScheduleModelFromGetSchedulesInRangeRow(schedule))
+		result = append(result, ToScheduleModelFromGetSchedulesInRangeRow(schedule, timeZone))
 	}
 	return result
 }
 
-func ToScheduleModelFromCreateScheduleRow(schedule *db.CreateScheduleRow) *Schedule {
+func ToScheduleModelFromCreateScheduleRow(schedule *db.CreateScheduleRow, timeZone *time.Location) *Schedule {
 
 	return &Schedule{
 		ID:          int(schedule.ID),
 		FoodID:      int(schedule.FoodID.Int32),
 		FoodName:    schedule.FoodName,
-		ScheduledAt: schedule.ScheduledAt.Time,
+		ScheduledAt: schedule.ScheduledAt.Time.In(timeZone),
 	}
 }

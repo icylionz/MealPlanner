@@ -96,6 +96,11 @@ WITH updated_food AS (
     WHERE id = $1
     RETURNING *
 ),
+deleted_ingredients AS (
+    DELETE FROM recipe_ingredients
+    WHERE recipe_id = $1
+    RETURNING recipe_id
+),
 updated_recipe AS (
     UPDATE recipes
     SET 
@@ -105,10 +110,6 @@ updated_recipe AS (
         updated_at = NOW()
     WHERE food_id = $1
     RETURNING *
-),
-deleted_ingredients AS (
-    DELETE FROM recipe_ingredients
-    WHERE recipe_id = $1
 )
 SELECT 
     f.*,
@@ -119,11 +120,10 @@ SELECT
             'yield_quantity', r.yield_quantity
         ),
         NULL
-    ) as recipe
+    ) as recipe,
+    (SELECT COUNT(*) FROM deleted_ingredients) as deleted_count
 FROM updated_food f
-LEFT JOIN updated_recipe r ON f.id = r.food_id;
-
--- name: DeleteFood :exec
+LEFT JOIN updated_recipe r ON f.id = r.food_id;-- name: DeleteFood :exec
 DELETE FROM foods WHERE id = $1;
 
 -- name: GetRecipeWithIngredients :one

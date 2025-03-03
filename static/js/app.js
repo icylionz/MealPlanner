@@ -89,3 +89,9 @@ document.addEventListener("alpine:init", () => {
     },
   });
 });
+
+document.addEventListener('htmx:configRequest', function(evt) {
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  evt.detail.headers['X-Timezone'] = timezone;
+  localStorage.setItem('userTimezone', timezone);
+});

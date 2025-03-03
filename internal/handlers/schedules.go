@@ -78,10 +78,13 @@ func (h *SchedulesHandler) HandleAddSchedule(c echo.Context) error {
 		c.Response().Writer.WriteHeader(http.StatusBadRequest)
 		return components.CreateScheduleModal(props).Render(c.Request().Context(), c.Response().Writer)
 	}
+	userTimeZone := utils.GetTimezone(c.Request().Context())
+	scheduleAt := time.Date(dateOfSchedule.Year(), dateOfSchedule.Month(), dateOfSchedule.Day(), timeOfSchedule.Hour(), timeOfSchedule.Minute(), timeOfSchedule.Second(), 0, userTimeZone)
+	log.Default().Printf("Schedule at: %v", scheduleAt)
+	// store the time in UTC
+	scheduleAt = scheduleAt.UTC()
 
-	scheduleAt := time.Date(dateOfSchedule.Year(), dateOfSchedule.Month(), dateOfSchedule.Day(), timeOfSchedule.Hour(), timeOfSchedule.Minute(), timeOfSchedule.Second(), 0, time.UTC)
-
-	_, err = h.scheduleService.CreateSchedule(c.Request().Context(), foodId, scheduleAt)
+	_, err = h.scheduleService.CreateSchedule(c.Request().Context(), foodId, scheduleAt, userTimeZone)
 	if err != nil {
 		log.Default().Printf("Error creating schedule: %s", err)
 		return err

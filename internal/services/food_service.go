@@ -116,11 +116,11 @@ func (s *FoodService) UpdateFood(ctx context.Context, updateParams db.UpdateFood
 
 	err := s.db.WithTx(ctx, func(q *db.Queries) error {
 		var err error
+		// we update the food details and delete the recipe ingredients in this transaction
 		updatedFood, err := q.UpdateFoodWithRecipe(ctx, updateParams)
 		if err != nil {
 			return err
 		}
-
 		for _, ing := range ingredients {
 			ing.RecipeID = updatedFood.ID
 			if err := q.AddRecipeIngredient(ctx, ing); err != nil {
@@ -188,7 +188,7 @@ func SearchResultToFoods(rows []*db.SearchFoodsWithDependenciesRow) []*models.Fo
             parentFood := foodMap[rows[0].ID] // Root food
             if parentFood != nil && parentFood.Recipe != nil {
                 quantity, _ := row.Quantity.Float64Value()
-                
+
                 ingredient := &models.RecipeItem{
                     FoodID:   int(row.ID),
                     Food:     foodMap[row.ID],
@@ -234,6 +234,6 @@ func (s *FoodService) GetFoodUnits(ctx context.Context, id string) ([]string, st
 		log.Default().Printf("Invalid unit type: %s", targetFood.UnitType)
 		return nil, "", errors.New("invalid unit type")
 	}
-	
+
 	return units, targetFood.BaseUnit, nil
 }
