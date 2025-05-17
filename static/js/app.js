@@ -87,6 +87,12 @@ document.addEventListener("alpine:init", () => {
         target: "#main-content",
       });
     },
+    navigateToShoppingLists() {
+          this.activeTab = "shoppinglists";
+          htmx.ajax("GET", "/shopping-lists", {
+            target: "#main-content",
+          });
+        },
   });
 });
 
