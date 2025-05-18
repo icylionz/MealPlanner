@@ -41,11 +41,11 @@ func main() {
 	// Migrate database
 	m, err := migrate.New("file://migrations", connString)
 	if err != nil {
-		log.Default().Println(err)
+		log.Fatalf("Failed to create migration instance: %v", err)
 	}
 	err = m.Up()
-	if err != nil {
-		log.Default().Println(err)
+	if err != nil && err != migrate.ErrNoChange {
+		log.Fatalf("Failed to apply migrations: %v", err)
 	}
 
 	// Services
@@ -68,7 +68,7 @@ func main() {
 	foodHandler := handlers.NewFoodHandler(foodService)
 	shoppingListHandler := handlers.NewShoppingListHandler(shoppingService, scheduleService)
 	calendarGroup := e.Group("/", utils.SetTimeZone())
-	
+
 	// Routes
 	e.GET("/", pageHandler.HandleIndex)
 	// Calendar Routes
@@ -93,8 +93,7 @@ func main() {
 	e.GET("/foods/recipe-fields", foodHandler.GetRecipeFields)
 	e.GET("/foods/new-ingredient-row", foodHandler.GetNewIngredientRow)
 	e.GET("/foods/units", foodHandler.GetFoodUnits)
-	
-	
+
 	// Shopping List Routes
 	e.GET("/shopping-lists", shoppingListHandler.HandleShoppingListsPage)
 	e.GET("/shopping-lists/generate", shoppingListHandler.HandleShoppingListGenerateForm)
