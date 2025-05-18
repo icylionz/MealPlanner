@@ -57,6 +57,7 @@ func main() {
 	// foodService := service.NewFoodService(db)
 	scheduleService := service.NewScheduleService(db)
 	foodService := service.NewFoodService(db)
+	shoppingService := service.NewShoppingService(db, scheduleService)
 
 	// Handlers
 	// foodHandler := handlers.NewFoodHandler(foodService)
@@ -65,6 +66,7 @@ func main() {
 	pageHandler := handlers.NewPageHandler()
 	schedulesHandler := handlers.NewSchedulesHandler(scheduleService, foodService)
 	foodHandler := handlers.NewFoodHandler(foodService)
+	shoppingListHandler := handlers.NewShoppingListHandler(shoppingService, scheduleService)
 	calendarGroup := e.Group("/", utils.SetTimeZone())
 	
 	// Routes
@@ -91,6 +93,18 @@ func main() {
 	e.GET("/foods/recipe-fields", foodHandler.GetRecipeFields)
 	e.GET("/foods/new-ingredient-row", foodHandler.GetNewIngredientRow)
 	e.GET("/foods/units", foodHandler.GetFoodUnits)
+	
+	
+	// Shopping List Routes
+	e.GET("/shopping-lists", shoppingListHandler.HandleShoppingListsPage)
+	e.GET("/shopping-lists/generate", shoppingListHandler.HandleShoppingListGenerateForm)
+	e.POST("/shopping-lists", shoppingListHandler.HandleCreateShoppingList)
+	e.GET("/shopping-lists/:id", shoppingListHandler.HandleViewShoppingList)
+	e.DELETE("/shopping-lists/:id", shoppingListHandler.HandleDeleteShoppingList)
+	e.DELETE("/shopping-lists/:id/meals/:mealId", shoppingListHandler.HandleRemoveMealFromShoppingList)
+	e.DELETE("/shopping-lists/:id/items/:itemId", shoppingListHandler.HandleDeleteShoppingListItem)
+	e.POST("/shopping-lists/:id/items/:itemId/purchase", shoppingListHandler.HandleRecordPurchase)
+	e.GET("/shopping-lists/:id/export", shoppingListHandler.HandleExportShoppingList)
 
 	// Create sub-FS for static files
 	staticFS, err := fs.Sub(staticFiles, "static")
