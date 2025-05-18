@@ -82,6 +82,9 @@ func (s *ShoppingService) DeleteShoppingList(ctx context.Context, id int) error 
 	return s.db.DeleteShoppingList(ctx, int32(id))
 }
 
+func (s *ShoppingService) DeleteShoppingListItem(ctx context.Context, itemId int) error {
+    return s.db.DeleteShoppingListItem(ctx, int32(itemId))
+}
 func (s *ShoppingService) AddMealToShoppingList(ctx context.Context, shoppingListId, scheduleId int) error {
 	return s.db.AddShoppingListMeal(ctx, db.AddShoppingListMealParams{
 		ShoppingListID: pgtype.Int4{Int32: int32(shoppingListId)},

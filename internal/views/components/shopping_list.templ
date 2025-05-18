@@ -1,0 +1,245 @@
+package components
+
+import (
+    "mealplanner/internal/models"
+    "mealplanner/internal/utils"
+    "time"
+    "fmt"
+)
+
+templ ShoppingListDetail(list *models.ShoppingList) {
+    <div class="bg-white rounded-lg shadow">
+        <div class="p-6 border-b">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">{ list.Name }</h2>
+                <div class="flex gap-2">
+                    <a 
+                        href={ templ.SafeURL(fmt.Sprintf("/shopping-lists/%d/export", list.ID)) }
+                        class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                        target="_blank"
+                    >
+                        Export
+                    </a>
+                    <button
+                        @click={ fmt.Sprintf("deleteShoppingList(%d, '%s')", list.ID, list.Name) }
+                        class="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
+                    >
+                        Delete
+                    </button>
+                </div>
+            </div>
+            <div class="flex justify-between text-sm text-gray-600">
+                <span>
+                    { list.StartDate.Format("January 2") } - { list.EndDate.Format("January 2, 2006") }
+                </span>
+                <span>
+                    { fmt.Sprintf("%d meals, %d items", len(list.Meals), len(list.Items)) }
+                </span>
+            </div>
+        </div>
+
+        <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Items Column -->
+            <div>
+                <h3 class="font-medium mb-3">Items to Buy</h3>
+                <div id="items-container" class="space-y-3">
+                    @ShoppingListItems(list.Items)
+                </div>
+            </div>
+
+            <!-- Meals Column -->
+            <div>
+                <h3 class="font-medium mb-3">Planned Meals</h3>
+                <div id="meals-container" class="space-y-3">
+                    @ShoppingListMeals(list.Meals, list.ID)
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+templ ShoppingListItems(items []*models.ShoppingListItem) {
+    if len(items) == 0 {
+        <div class="text-center py-6 text-gray-500">No items in this list</div>
+    } else {
+        <div class="divide-y divide-gray-200">
+            for _, item := range items {
+                <div class="py-3 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <input 
+                            type="checkbox" 
+                            id={ fmt.Sprintf("item-%d", item.ID) }
+                            class="rounded border-gray-300"
+                            @change={ fmt.Sprintf("toggleItemPurchased(%d, this.checked)", item.ID) }
+                        />
+                        <label 
+                            for={ fmt.Sprintf("item-%d", item.ID) }
+                            class="flex-grow"
+                        >
+                            <span class="font-medium">{ item.FoodName }</span>
+                            <span class="text-gray-600">
+                                { fmt.Sprintf(" - %.2f %s", item.Quantity, item.Unit) }
+                            </span>
+                        </label>
+                    </div>
+                    
+                    <div class="flex gap-2">
+                        <button
+                            @click={ fmt.Sprintf("showPurchaseForm(%d)", item.ID) }
+                            class="text-blue-600 hover:text-blue-800 text-sm"
+                        >
+                            Record
+                        </button>
+                        <button
+                            @click={ fmt.Sprintf("deleteShoppingListItem(%d, %d)", item.ShoppingListID, item.ID) }
+                            class="text-red-600 hover:text-red-800 text-sm"
+                        >
+                            Remove
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+templ ShoppingListMeals(meals []*models.ShoppingListMeal, listID int) {
+    if len(meals) == 0 {
+        <div class="text-center py-6 text-gray-500">No meals in this list</div>
+    } else {
+        <div class="divide-y divide-gray-200">
+            for _, meal := range meals {
+                <div class="py-3 flex justify-between items-center">
+                    <div>
+                        <div class="font-medium">{ meal.FoodName }</div>
+                        <div class="text-sm text-gray-600">
+                            { meal.ScheduledAt.Format("Monday, Jan 2 at 3:04 PM") }
+                        </div>
+                    </div>
+                    <button
+                        @click={ fmt.Sprintf("removeMealFromList(%d, %d, '%s')", listID, meal.ScheduleID, meal.FoodName) }
+                        class="text-red-600 hover:text-red-800 text-sm"
+                    >
+                        Remove
+                    </button>
+                </div>
+            }
+        </div>
+    }
+}
+
+templ GenerateShoppingListForm(props *utils.ShoppingListFormProps) {
+    <div class="bg-white rounded-lg shadow p-6">
+        <h2 class="text-xl font-semibold mb-6">Generate Shopping List</h2>
+
+        <form 
+            hx-post="/shopping-lists"
+            hx-swap="outerHTML"
+            class="space-y-4"
+        >
+            <div>
+                <label class="block text-sm font-medium mb-1">Name</label>
+                <input 
+                    type="text" 
+                    name="name"
+                    value={ props.Name }
+                    class={
+                        "w-full px-3 py-2 border rounded",
+                        templ.KV("border-red-500", props.Errors["name"] != "")
+                    }
+                    placeholder="e.g., Weekly Groceries"
+                />
+                if props.Errors["name"] != "" {
+                    <div class="text-red-500 text-sm mt-1">{ props.Errors["name"] }</div>
+                }
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">Start Date</label>
+                    <input 
+                        type="date" 
+                        name="start_date"
+                        value={ getDateString(props.StartDate) }
+                        class={
+                            "w-full px-3 py-2 border rounded",
+                            templ.KV("border-red-500", props.Errors["start_date"] != "")
+                        }
+                    />
+                    if props.Errors["start_date"] != "" {
+                        <div class="text-red-500 text-sm mt-1">{ props.Errors["start_date"] }</div>
+                    }
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">End Date</label>
+                    <input 
+                        type="date" 
+                        name="end_date"
+                        value={ getDateString(props.EndDate) }
+                        class={
+                            "w-full px-3 py-2 border rounded",
+                            templ.KV("border-red-500", props.Errors["end_date"] != "")
+                        }
+                    />
+                    if props.Errors["end_date"] != "" {
+                        <div class="text-red-500 text-sm mt-1">{ props.Errors["end_date"] }</div>
+                    }
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-3 mt-6">
+                <a 
+                    href="/shopping-lists"
+                    class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded"
+                >
+                    Cancel
+                </a>
+                <button
+                    type="submit"
+                    class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                    Generate List
+                </button>
+            </div>
+        </form>
+    </div>
+}
+
+templ ShoppingListCard(list *models.ShoppingList) {
+    <div class="bg-white p-4 rounded-lg shadow hover:shadow-md transition-shadow">
+        <div class="flex justify-between items-start">
+            <div>
+                <h3 class="font-medium">{ list.Name }</h3>
+                <p class="text-sm text-gray-600">
+                    { list.StartDate.Format("Jan 2") } - { list.EndDate.Format("Jan 2, 2006") }
+                </p>
+            </div>
+            <div class="flex gap-2">
+                <a 
+                    href={ templ.SafeURL(fmt.Sprintf("/shopping-lists/%d", list.ID)) }
+                    class="p-2 hover:bg-blue-100 rounded"
+                >
+                    <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                </a>
+                <button
+                    @click={ fmt.Sprintf("deleteShoppingList(%d, '%s')", list.ID, list.Name) }
+                    class="p-2 hover:bg-red-100 rounded"
+                >
+                    <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+func getDateString(date time.Time) string {
+    if date.IsZero() {
+        return ""
+    }
+    return date.Format("2006-01-02")
+}
