@@ -7,13 +7,6 @@ import "time"
 import "mealplanner/internal/utils"
 
 
-templ Modal() {
-	<div
-		x-show="$store.mealPlanner.showModal"
-		id="modal-container"
-		class="fixed inset-0 z-50 overflow-y-auto"
-	></div>
-}
 templ DeleteConfirmationModal() {
 }
 
@@ -27,8 +20,8 @@ templ CreateScheduleModal(props *utils.ModalProps) {
 
                 <form
                     hx-post="/schedules"
-                    hx-target="#modal-container"
-                    hx-target-400="#modal-container"
+                    hx-target="#dynamic-modal-container"
+                    hx-target-400="#dynamic-modal-container"
                     hx-swap="innerHTML"
                     class="space-y-4"
                     @htmx:after-request="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); refreshCalendar();}"
@@ -223,8 +216,8 @@ templ CreateEditFoodModal(props *utils.FoodFormProps) {
                     } else {
                         hx-post="/foods/new"
                     }
-                    hx-target="#modal-container"
-                    hx-target-400="#modal-container"
+                    hx-target="#dynamic-modal-container"
+                    hx-target-400="#dynamic-modal-container"
                     @htmx:after-request="handleSuccessfulFoodCreateOrUpdate(event)"
                     class="space-y-4"
                 >

@@ -13,75 +13,84 @@ document.addEventListener("alpine:init", () => {
     },
 
     showScheduleModal(date) {
-      this.toggleModal(true);
-      const container = document.getElementById("modal-container");
-      if (!container) return;
-      container.innerHTML = "";
-
+      this.showModal = true;
+      // Create modal container if it doesn't exist
+      this.ensureModalContainer();
+      
       htmx.ajax("GET", `/schedules/modal?date=${date.date}`, {
-        target: "#modal-container",
+        target: "#dynamic-modal-container",
         swap: "innerHTML",
       });
     },
 
     showEditFoodModal(food) {
-      this.toggleModal(true);
-      const container = document.getElementById("modal-container");
-      if (!container) return;
-      container.innerHTML = "";
+      this.showModal = true;
+      this.ensureModalContainer();
 
       htmx.ajax("GET", `/foods/${food.id}/edit`, {
-        target: "#modal-container",
+        target: "#dynamic-modal-container",
         swap: "innerHTML",
       });
     },
 
     showAddFoodModal() {
-      this.toggleModal(true);
-      const container = document.getElementById("modal-container");
-      if (!container) return;
-      container.innerHTML = "";
+      this.showModal = true;
+      this.ensureModalContainer();
 
       htmx.ajax("GET", `/foods/new`, {
-        target: "#modal-container",
+        target: "#dynamic-modal-container",
         swap: "innerHTML",
       });
     },
 
     showViewFoodModal(food) {
-      this.toggleModal(true);
-      const container = document.getElementById("modal-container");
-      if (!container) return;
-      container.innerHTML = "";
+      this.showModal = true;
+      this.ensureModalContainer();
 
       htmx.ajax("GET", `/foods/modal/details?id=${food.id}`, {
-        target: "#modal-container",
+        target: "#dynamic-modal-container",
         swap: "innerHTML",
       });
     },
+
     showShoppingListGenerateModal() {
-      this.toggleModal(true);
-      const container = document.getElementById("modal-container");
-      if (!container) return;
-      container.innerHTML = "";
+      this.showModal = true;
+      this.ensureModalContainer();
 
       htmx.ajax("GET", `/shopping-lists/generate`, {
-        target: "#modal-container",
+        target: "#dynamic-modal-container",
         swap: "innerHTML",
       });
     },
+
     toggleModal(value) {
       this.showModal = value;
       if (!value) {
-        const container = document.getElementById("modal-container");
-        if (!container) return;
+        this.clearModalContainer();
+      }
+    },
+
+    ensureModalContainer() {
+      let container = document.getElementById("dynamic-modal-container");
+      if (!container) {
+        container = document.createElement("div");
+        container.id = "dynamic-modal-container";
+        container.className = "fixed inset-0 z-50 overflow-y-auto";
+        container.setAttribute("x-show", "$store.mealPlanner.showModal");
+        document.body.appendChild(container);
+      }
+      container.innerHTML = "";
+    },
+
+    clearModalContainer() {
+      const container = document.getElementById("dynamic-modal-container");
+      if (container) {
         container.innerHTML = "";
       }
     },
 
     navigateToCalendar() {
       this.activeTab = "calendar";
-
       htmx.ajax(
         "GET",
         `/calendar?mode=${this.viewMode}&date=${this.currentDate}`,

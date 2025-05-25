@@ -130,8 +130,8 @@ templ GenerateShoppingListModal(props *utils.ShoppingListFormProps) {
 
                 <form 
                     hx-post="/shopping-lists"
-                    hx-target="#modal-container"
-                    hx-target-400="#modal-container"
+                    hx-target="#dynamic-modal-container"
+                    hx-target-400="#dynamic-modal-container"
                     hx-swap="innerHTML"
                     @htmx:after-request="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); $store.mealPlanner.navigateToShoppingLists(); }"
                     class="space-y-4"

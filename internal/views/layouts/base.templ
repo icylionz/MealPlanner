@@ -1,7 +1,5 @@
 package layouts
 
-import "mealplanner/internal/views/components"
-
 templ Base() {
     <!doctype html>
     <html lang="en">
@@ -29,9 +27,6 @@ templ Base() {
             <div class="container mx-auto px-4 py-8">
                 { children... }
             </div>
-            
-            @components.Modal()
-            
         </body>
     </html>
 }
