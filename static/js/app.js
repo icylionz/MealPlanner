@@ -2,13 +2,13 @@ document.addEventListener("alpine:init", () => {
   Alpine.store("mealPlanner", {
     activeTab: "calendar",
     viewMode: "month",
-    currentDate: new Date().toISOString().split("T")[0], 
+    currentDate: new Date().toISOString().split("T")[0],
     showModal: false,
 
     init() {
       this.activeTab = "calendar";
       this.viewMode = "month";
-      this.currentDate = new Date().toISOString().split("T")[0]; 
+      this.currentDate = new Date().toISOString().split("T")[0];
       this.showModal = false;
     },
 
@@ -59,7 +59,17 @@ document.addEventListener("alpine:init", () => {
         swap: "innerHTML",
       });
     },
+    showShoppingListGenerateModal() {
+      this.toggleModal(true);
+      const container = document.getElementById("modal-container");
+      if (!container) return;
+      container.innerHTML = "";
 
+      htmx.ajax("GET", `/shopping-lists/generate`, {
+        target: "#modal-container",
+        swap: "innerHTML",
+      });
+    },
     toggleModal(value) {
       this.showModal = value;
       if (!value) {
@@ -87,17 +97,18 @@ document.addEventListener("alpine:init", () => {
         target: "#main-content",
       });
     },
+
     navigateToShoppingLists() {
-          this.activeTab = "shoppinglists";
-          htmx.ajax("GET", "/shopping-lists", {
-            target: "#main-content",
-          });
-        },
+      this.activeTab = "shoppinglists";
+      htmx.ajax("GET", "/shopping-lists", {
+        target: "#main-content",
+      });
+    },
   });
 });
 
-document.addEventListener('htmx:configRequest', function(evt) {
+document.addEventListener("htmx:configRequest", function (evt) {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  evt.detail.headers['X-Timezone'] = timezone;
-  localStorage.setItem('userTimezone', timezone);
+  evt.detail.headers["X-Timezone"] = timezone;
+  localStorage.setItem("userTimezone", timezone);
 });

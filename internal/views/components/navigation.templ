@@ -17,11 +17,14 @@ templ Navigation() {
             Foods
         </button>
         <button
-            @click="$store.mealPlanner.navigateToShoppingLists()"
-            :class="{'border-b-2 border-blue-500': $store.mealPlanner.activeTab === 'foods'}"
+            hx-get="/shopping-lists"
+            hx-target="#main-content"
+            hx-push-url="/shopping-lists"
+            @click="$store.mealPlanner.activeTab = 'shoppinglists'" 
+            :class="{'border-b-2 border-blue-500': $store.mealPlanner.activeTab === 'shoppinglists'}"
             class="px-4 py-2 font-medium"
         >
-			Shopping Lists
+            Shopping Lists
         </button>
     </nav>
 }
