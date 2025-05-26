@@ -1,14 +1,10 @@
 document.addEventListener("alpine:init", () => {
   Alpine.store("mealPlanner", {
     activeTab: "calendar",
-    viewMode: "month",
-    currentDate: new Date().toISOString().split("T")[0],
     showModal: false,
 
     init() {
       this.activeTab = "calendar";
-      this.viewMode = "month";
-      this.currentDate = new Date().toISOString().split("T")[0];
       this.showModal = false;
     },
 
@@ -91,15 +87,10 @@ document.addEventListener("alpine:init", () => {
 
     navigateToCalendar() {
       this.activeTab = "calendar";
-      htmx.ajax(
-        "GET",
-        `/calendar?mode=${this.viewMode}&date=${this.currentDate}`,
-        {
-          target: "#main-content",
-        },
-      );
+      htmx.ajax("GET", "/calendar", {
+        target: "#main-content",
+      });
     },
-
     navigateToFoods() {
       this.activeTab = "foods";
       htmx.ajax("GET", "/foods", {

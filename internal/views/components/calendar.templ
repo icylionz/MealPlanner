@@ -3,287 +3,103 @@ package components
 import "mealplanner/internal/utils"
 import "mealplanner/internal/models"
 import "fmt"
-import "strings"
-import "strconv"
 
-templ Calendar(view *utils.CalendarView) {
-	<div
-        x-data="calendar"
-        hx-get="/calendar"
-        hx-trigger="viewModeChange from:body, calendarRefresh from:body"
-        hx-vals="js:{mode: event.detail.mode, date: event.detail.date}"
-        hx-target="this"
-        hx-swap="outerHTML"
-        id="calendar-container"
-    >
-    	<!-- Context Menu Container -->
-    	<div
-            x-ref="contextMenuContainer"
-            @click.away="$refs.contextMenuContainer.innerHTML = ''"
-            class="relative"
-        ></div>
-        <!-- Calendar Header -->
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-            <div class="flex items-center gap-4">
-                <button
-                    hx-get={fmt.Sprintf("/calendar?mode=%s&date=%s", view.ViewMode, utils.GetPreviousDate(*view.CurrentDate, view.ViewMode))}
-                    hx-target="#calendar-container"
-                    class="p-2 hover:bg-gray-100 rounded"
-                >
+templ Calendar(day *utils.DayData) {
+    <div x-data="calendar" hx-get="/calendar" hx-trigger="calendarRefresh from:body" hx-vals="js:{date: currentDate}" hx-target="this" hx-swap="outerHTML" id="calendar-container">
+        <!-- Date Picker Header -->
+        <div class="flex items-center justify-between p-4 bg-white rounded-lg shadow mb-4">
+            <div class="flex items-center gap-3">
+                <button @click="previousDay()" class="p-2 hover:bg-gray-100 rounded">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                     </svg>
                 </button>
-                <h2 class="text-lg font-semibold">{ utils.FormatDateRange(*view.CurrentDate, view.ViewMode) }</h2>
-                <button
-                    hx-get={fmt.Sprintf("/calendar?mode=%s&date=%s", view.ViewMode, utils.GetNextDate(*view.CurrentDate, view.ViewMode))}
-                    hx-target="#calendar-container"
-                    class="p-2 hover:bg-gray-100 rounded"
-                >
+                
+                <input 
+                    type="date" 
+                    x-model="currentDate"
+                    @change="changeDate($event.target.value)"
+                    class="px-3 py-2 border border-gray-300 rounded focus:border-blue-500"
+                />
+                
+                <button @click="nextDay()" class="p-2 hover:bg-gray-100 rounded">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                     </svg>
                 </button>
             </div>
+            
+            <button @click="goToToday()" class="px-3 py-1 text-sm bg-blue-100 text-blue-600 rounded hover:bg-blue-200">
+                Today
+            </button>
+        </div>
 
-            <!-- View Mode Switcher -->
-            <div class="flex w-full sm:w-auto">
-                for _, mode := range []string{"day", "week", "month"} {
-                    <button
-	                    @click={ fmt.Sprintf("switchViewMode('%s')", mode) }
-                        class={
-                            "flex-1 sm:flex-none px-4 py-2 text-sm font-medium rounded transition-colors ",
-                            templ.KV("bg-gray-100", mode == view.ViewMode)
+        <!-- Day Content -->
+        <div class="bg-white rounded-lg shadow">
+            <div class="p-4 border-b">
+                <h2 class="text-lg font-semibold">{day.Date.Format("Monday, January 2, 2006")}</h2>
+            </div>
+            
+            <div class="p-4">
+                if len(day.Schedules) == 0 {
+                    <div class="text-center py-8 text-gray-500">
+                        <p class="mb-4">No meals scheduled for this day</p>
+                        <button 
+                            @click={fmt.Sprintf("$store.mealPlanner.showScheduleModal({date: '%s'})", day.Date.Format("2006-01-02"))}
+                            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                        >
+                            Schedule First Meal
+                        </button>
+                    </div>
+                } else {
+                    <div class="space-y-3 mb-4">
+                        for _, schedule := range day.Schedules {
+                            @ScheduleItem(schedule)
                         }
+                    </div>
+                    
+                    <button 
+                        @click={fmt.Sprintf("$store.mealPlanner.showScheduleModal({date: '%s'})", day.Date.Format("2006-01-02"))}
+                        class="w-full py-3 border-2 border-dashed border-gray-300 text-gray-600 rounded hover:border-blue-400 hover:text-blue-600 transition-colors"
                     >
-                        { strings.Title(mode) }
+                        + Add Another Meal
                     </button>
                 }
             </div>
         </div>
-
-        <div id="calendar-content">
-	        <!-- Calendar Content -->
-	        @renderCalendarContent(view)
-        </div>
     </div>
 }
 
-templ renderCalendarContent(view *utils.CalendarView) {
-    switch view.ViewMode {
-        case "day":
-            @renderDayView(utils.GetDayData(view.CurrentDate, view.Schedules))
-        case "week":
-            @renderWeekView(utils.GetWeekData(view.CurrentDate, view.Schedules))
-        case "month":
-            @renderMonthView(utils.GetMonthData(view.CurrentDate, view.Schedules))
-    }
-}
-
-// Day View
-templ renderDayView(day *utils.DayData) {
-    <div class="bg-white rounded-lg shadow">
-        <div
-	        class="p-4 border-b flex justify-between items-center"
-	        @contextmenu.prevent={fmt.Sprintf("showContextMenu($event, { date: '%s' })", day.Date.Format("2006-01-02"))}
-        >
-            <h3 class="text-lg font-semibold">{ day.Date.Format("Monday, January 2") }</h3>
-            <button
-                @click={ fmt.Sprintf("showContextMenu($event, { date: '%s' })", day.Date.Format("2006-01-02"))}
-                class="p-1 hover:bg-gray-100 rounded options-btn"
-            >
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <path d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                </svg>
-            </button>
-
+templ ScheduleItem(schedule *models.Schedule) {
+    <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+        <div class="flex items-center gap-4">
+            <div class="text-sm font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                {schedule.ScheduledAt.Format("3:04 PM")}
+            </div>
+            <div>
+                <div class="font-medium text-gray-900">{schedule.FoodName}</div>
+                <div class="text-sm text-gray-500">Scheduled meal</div>
+            </div>
         </div>
-
-        <div class="p-4">
-            if len(day.Schedules) == 0 {
-                <div class="text-gray-500 text-center py-4">No meals scheduled</div>
-            } else {
-                <div class="space-y-3">
-                    for _, schedule := range day.Schedules {
-                    	@ScheduleComponent(schedule)
-                    }
-                </div>
-            }
-        </div>
-    </div>
-}
-
-
-// Week View
-templ renderWeekView(week *utils.WeekData) {
-    <div class="bg-white rounded-lg shadow overflow-x-auto">
-        <div class="grid grid-cols-7 divide-x" style="min-width: 840px;">
-            for _, day := range week.Days {
-                <div
-                	class="min-h-[300px] min-w-[120px]"
-	                @contextmenu.prevent={fmt.Sprintf("showContextMenu($event, { date: '%s' })", day.Date.Format("2006-01-02"))}
-                >
-                    <div class="p-3 border-b bg-gray-50 flex justify-between items-center">
-                        <div>
-                            <div class="text-sm font-medium text-gray-500">{ day.Date.Format("Mon") }</div>
-                            <button
-								@click.stop.prevent={fmt.Sprintf(`
-							        if (isMobile) {
-							            showContextMenu($event, { date: '%s' });
-							        } else {
-							            htmx.ajax('GET', '/calendar?mode=day&date=%s', { target: '#calendar-container' });
-							        }
-							    `, day.Date.Format("2006-01-02"), day.Date.Format("2006-01-02"))}
-                                class={
-                                    "text-sm font-medium w-7 h-7 flex items-center justify-center rounded-full ",
-                                    templ.KV("bg-blue-100 text-blue-600", day.IsToday)
-                                }
-                            >
-                                <span>{ day.Date.Format("2") }</span>
-                            </button>
-                        </div>
-                        <!-- Desktop Options Button -->
-                        <button
-                            x-show="!isMobile"
-                            @click={ fmt.Sprintf("showContextMenu($event, { date: '%s' })", day.Date.Format("2006-01-02"))}
-                            class="p-1 hover:bg-gray-100 rounded options-btn"
-                        >
-                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                <path d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                            </svg>
-                        </button>
-
-                    </div>
-
-                    <div class="p-2 space-y-2">
-                        for _, schedule := range day.Schedules {
-                            @ScheduleComponent(schedule)
-                        }
-                    </div>
-                </div>
-            }
-        </div>
-    </div>
-}
-
-// Month View
-templ renderMonthView(weeks []*utils.WeekData) {
-    <div class="flex flex-col flex-1">
-        <div class="grid grid-cols-7 gap-px bg-gray-200 text-sm">
-            for _, day := range []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"} {
-                <div class="bg-white p-2 text-center font-medium">
-                    <span class="hidden sm:inline">{ day }</span>
-                    <span class="sm:hidden">{ day[:1] }</span>
-                </div>
-            }
-        </div>
-
-        <div class="flex flex-col flex-1 bg-gray-200 gap-px">
-            for _, week := range weeks {
-                <div class="grid grid-cols-7 flex-1 gap-px">
-                    for _, day := range week.Days {
-                        <div
-                            class={
-                                "bg-white min-h-[80px] sm:min-h-[120px] p-1 sm:p-2 relative group ",
-                                templ.KV("opacity-50", !day.IsCurrentMonth)
-                            }
-                            @contextmenu.prevent={fmt.Sprintf("showContextMenu($event, { date: '%s' })", day.Date.Format("2006-01-02"))}
-                        >
-                            <div class="flex justify-between items-center">
-	                            <button
-									@click.stop.prevent={fmt.Sprintf(`
-								        if (isMobile) {
-								            showContextMenu($event, { date: '%s' });
-								        } else {
-								            htmx.ajax('GET', '/calendar?mode=day&date=%s', { target: '#calendar-container' });
-								        }
-								    `, day.Date.Format("2006-01-02"), day.Date.Format("2006-01-02"))}
-                                    class={
-                                        "text-sm font-medium w-7 h-7 flex items-center justify-center rounded-full ",
-                                        templ.KV("bg-blue-100 text-blue-600", day.IsToday)
-                                    }
-                                >
-                                    <span>{ day.Date.Format("2") }</span>
-                                </button>
-                                
-                                <!-- Desktop Options Button -->
-                                <button
-                                    x-show="!isMobile"
-                                    @click={ fmt.Sprintf("showContextMenu($event, { date: '%s' })", day.Date.Format("2006-01-02"))}
-                                    class="hidden group-hover:block p-1 hover:bg-gray-100 rounded options-btn"
-                                >
-                                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                        <path d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                                    </svg>
-                                </button>
-
-                            </div>
-
-                            <div class="mt-1 space-y-1">
-                                for _, schedule := range utils.GetVisibleSchedules(day.Schedules, 2) {
-                                    @ScheduleComponent(schedule)
-                                }
-                                if utils.HasMoreSchedules(day.Schedules, 2) {
-                                    <div class="text-xs text-gray-600 pl-1">
-                                        +{ strconv.Itoa(len(day.Schedules) - 2) } more
-                                    </div>
-                                }
-                            </div>
-                        </div>
-                    }
-                </div>
-            }
-        </div>
-    </div>
-}
-
-templ ContextMenu(day *utils.DayData, position utils.Position) {
-    <div
-        class="fixed bg-white rounded-lg shadow-lg z-50 context-menu"
-        style={fmt.Sprintf("top: min(%dpx, calc(100vh - 150px)); left: min(%dpx, calc(100vw - 200px));", position.Y, position.X)}
-    >
-        <div class="p-2 min-w-[150px]">
-            <button
-                @click={fmt.Sprintf("switchCalendarView('day', '%s')", day.Date.Format("2006-01-02"))}
-                class="w-full text-left px-3 py-2 hover:bg-gray-100 rounded"
-            >
-                View Day
-            </button>
-            <button
-                @click={fmt.Sprintf("switchCalendarView('week', '%s')", day.Date.Format("2006-01-02"))}
-                class="w-full text-left px-3 py-2 hover:bg-gray-100 rounded"
-            >
-                View Week
-            </button>
-            <button
-                @click={fmt.Sprintf("$store.mealPlanner.showScheduleModal({ date: '%s' })", day.Date.Format("2006-01-02"))}
-                class="w-full text-left px-3 py-2 hover:bg-gray-100 rounded"
-            >
-                Schedule Meal
-            </button>
-            if len(day.Schedules) > 0 {
-                <button
-                    @click={fmt.Sprintf("deleteSchedulesForDateRange('%s', '%s')", day.Date.Format("2006-01-02"), day.Date.AddDate(0, 0, 1).Format("2006-01-02"))}
-                    class="w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-red-600"
-                >
-                    Delete Schedules
-                </button>
-            }
-        </div>
-    </div>
-}
-
-templ ScheduleComponent(schedule *models.Schedule) {
-	<div class="flex items-center px-4 py-3 border-l-4 border-blue-500 bg-gray-50 rounded group">
-        <div class="min-w-[80px] text-gray-600">{ schedule.ScheduledAt.Format("3:04 PM") }</div>
-        <div class="font-medium flex-grow">{ schedule.FoodName }</div>
+        
         <div class="flex items-center gap-2">
-            <button
-	            @click={fmt.Sprintf("deleteScheduleById(%d)", schedule.ID)}
-                class="p-1 hover:bg-gray-100 rounded text-red-600"
+            <button 
+                @click={fmt.Sprintf("$store.mealPlanner.showViewFoodModal({id: %d})", schedule.FoodID)}
+                class="p-2 text-gray-400 hover:text-blue-600 rounded"
+                title="View details"
             >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path d="M6 18L18 6M6 6l12 12"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                </svg>
+            </button>
+            <button 
+                @click={fmt.Sprintf("deleteScheduleById(%d)", schedule.ID)}
+                class="p-2 text-gray-400 hover:text-red-600 rounded"
+                title="Delete schedule"
+            >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                 </svg>
             </button>
         </div>

@@ -10,7 +10,7 @@ templ Index() {
         
         <div id="main-content" x-init="
             setTimeout(() => {
-                htmx.ajax('GET', `/calendar?mode=${$store.mealPlanner.viewMode}&date=${$store.mealPlanner.currentDate}` , 
+                htmx.ajax('GET', `/calendar` , 
                 {target: '#main-content', swap:'innerHTML'})
             }, 0)
         ">

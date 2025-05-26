@@ -73,7 +73,6 @@ func main() {
 	e.GET("/", pageHandler.HandleIndex)
 	// Calendar Routes
 	calendarGroup.GET("calendar", calendarHandler.HandleCalendarView)
-	calendarGroup.GET("calendar/context-menu", calendarHandler.HandleContextMenu)
 	// Schedules Routes
 	calendarGroup.POST("schedules", schedulesHandler.HandleAddSchedule)
 	calendarGroup.DELETE("schedules/ids", schedulesHandler.HandleDeleteScheduleByIds)
