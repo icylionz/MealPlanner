@@ -17,16 +17,20 @@ type CalendarHandler struct {
 
 func (h *CalendarHandler) HandleCalendarView(c echo.Context) error {
 	dateStr := c.QueryParam("date")
+	userTimeZone := utils.GetTimezone(c.Request().Context())
 
-	chosenDate := time.Now()
+	var chosenDate time.Time
 	if dateStr != "" {
-		if parsedDate, err := time.Parse("2006-01-02", dateStr); err == nil {
+		if parsedDate, err := time.ParseInLocation("2006-01-02", dateStr, userTimeZone); err == nil {
 			chosenDate = parsedDate
+		} else {
+			chosenDate = time.Now().In(userTimeZone)
 		}
+	} else {
+		chosenDate = time.Now().In(userTimeZone)
 	}
 
-	// Get schedules for just this day
-	start := time.Date(chosenDate.Year(), chosenDate.Month(), chosenDate.Day(), 0, 0, 0, 0, chosenDate.Location())
+	start := time.Date(chosenDate.Year(), chosenDate.Month(), chosenDate.Day(), 0, 0, 0, 0, userTimeZone)
 	end := start.AddDate(0, 0, 1)
 
 	schedules, err := h.scheduleService.GetSchedulesForRange(c.Request().Context(), &start, &end)

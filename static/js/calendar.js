@@ -1,39 +1,33 @@
 document.addEventListener("alpine:init", () => {
   Alpine.data("calendar", () => ({
-    currentDate: new Date().toISOString().split('T')[0],
-
-    init() {
-      // Initialize with today's date
-      this.currentDate = new Date().toISOString().split('T')[0];
-    },
-
+    
     changeDate(newDate) {
-      this.currentDate = newDate;
+      this.$store.mealPlanner.setCurrentDate(newDate);
       this.refreshCalendar();
     },
 
     previousDay() {
-      const date = new Date(this.currentDate);
+      const date = new Date(this.$store.mealPlanner.currentDate);
       date.setDate(date.getDate() - 1);
-      this.currentDate = date.toISOString().split('T')[0];
+      this.$store.mealPlanner.setCurrentDate(date.toISOString().split('T')[0]);
       this.refreshCalendar();
     },
 
     nextDay() {
-      const date = new Date(this.currentDate);
+      const date = new Date(this.$store.mealPlanner.currentDate);
       date.setDate(date.getDate() + 1);
-      this.currentDate = date.toISOString().split('T')[0];
+      this.$store.mealPlanner.setCurrentDate(date.toISOString().split('T')[0]);
       this.refreshCalendar();
     },
 
     goToToday() {
-      this.currentDate = new Date().toISOString().split('T')[0];
+      this.$store.mealPlanner.setCurrentDate(new Date().toISOString().split('T')[0]);
       this.refreshCalendar();
     },
 
     refreshCalendar() {
       htmx.trigger("body", "calendarRefresh", {
-        date: this.currentDate
+        date: this.$store.mealPlanner.currentDate
       });
     },
 
