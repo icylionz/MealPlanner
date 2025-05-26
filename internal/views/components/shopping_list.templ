@@ -3,133 +3,240 @@ package components
 import (
     "mealplanner/internal/models"
     "mealplanner/internal/utils"
-    "time"
     "fmt"
+    "strconv"
 )
 
 templ ShoppingListDetail(list *models.ShoppingList) {
-	<div x-data="shoppingList" class="bg-white rounded-lg shadow">
-	    <div class="bg-white rounded-lg shadow">
-	        <div class="p-6 border-b">
-	            <div class="flex justify-between items-center mb-4">
-	                <h2 class="text-xl font-semibold">{ list.Name }</h2>
-	                <div class="flex gap-2">
-	                    <a
-	                        href={ templ.SafeURL(fmt.Sprintf("/shopping-lists/%d/export", list.ID)) }
-	                        class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-	                        target="_blank"
-	                    >
-	                        Export
-	                    </a>
-	                    <button
-				            hx-delete={ fmt.Sprintf("/shopping-lists/%d", list.ID) }
-				            hx-target="#main-content"
-				            hx-push-url="/shopping-lists"
-				            hx-confirm={ fmt.Sprintf("Are you sure you want to delete \"%s\"?", list.Name) }
-				            class="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
-				        >
-				            Delete
-				        </button>
-	                </div>
-	            </div>
-	            <div class="flex justify-between text-sm text-gray-600">
-	                <span>
-	                    { list.StartDate.Format("January 2") } - { list.EndDate.Format("January 2, 2006") }
-	                </span>
-	                <span>
-	                    { fmt.Sprintf("%d meals, %d items", len(list.Meals), len(list.Items)) }
-	                </span>
-	            </div>
-	        </div>
+    <div x-data="shoppingList" class="bg-white rounded-lg shadow">
+        <div class="p-6 border-b">
+            <div class="flex justify-between items-center mb-4">
+                <div>
+                    <h2 class="text-xl font-semibold">{ list.Name }</h2>
+                    if list.Notes != "" {
+                        <p class="text-gray-600 mt-1">{ list.Notes }</p>
+                    }
+                </div>
+                <div class="flex gap-2">
+                    <button
+                        @click="$store.mealPlanner.showAddItemsModal()"
+                        class="px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
+                    >
+                        Add Items
+                    </button>
+                    <a
+                        href={ templ.SafeURL(fmt.Sprintf("/shopping-lists/%d/export", list.ID)) }
+                        class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                        target="_blank"
+                    >
+                        Export
+                    </a>
+                    <button
+                        hx-delete={ fmt.Sprintf("/shopping-lists/%d", list.ID) }
+                        hx-target="#main-content"
+                        hx-push-url="/shopping-lists"
+                        hx-confirm={ fmt.Sprintf("Are you sure you want to delete \"%s\"?", list.Name) }
+                        class="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
+                    >
+                        Delete
+                    </button>
+                </div>
+            </div>
+            <div class="flex justify-between text-sm text-gray-600">
+                <span>
+                    Created { list.CreatedAt.Format("January 2, 2006") }
+                </span>
+                <span>
+                    { fmt.Sprintf("%d items, %d sources", len(list.Items), len(list.Sources)) }
+                </span>
+            </div>
+        </div>
 
-	        <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-	            <div>
-	                <h3 class="font-medium mb-3">Items to Buy</h3>
-	                <div id="items-container" class="space-y-3">
-	                    @ShoppingListItems(list.Items)
-	                </div>
-	            </div>
+        <div class="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Items Column (2/3 width) -->
+            <div class="lg:col-span-2">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-medium">Items to Buy</h3>
+                    <div class="text-sm text-gray-500">
+                        { fmt.Sprintf("%d of %d purchased", 
+                            func() int {
+                                count := 0
+                                for _, item := range list.Items {
+                                    if item.Purchased { count++ }
+                                }
+                                return count
+                            }(), 
+                            len(list.Items),
+                        ) }
+                    </div>
+                </div>
+                <div id="items-container">
+                    @ShoppingListItems(list.Items)
+                </div>
+            </div>
 
-	            <div>
-	                <h3 class="font-medium mb-3">Planned Meals</h3>
-	                <div id="meals-container" class="space-y-3">
-	                    @ShoppingListMeals(list.Meals, list.ID)
-	                </div>
-	            </div>
-	        </div>
-	    </div>
-	</div>
+            <!-- Sources Column (1/3 width) -->
+            <div>
+                <h3 class="font-medium mb-4">Sources</h3>
+                <div id="sources-container" class="space-y-3">
+                    @ShoppingListSources(list.Sources, list.ID)
+                </div>
+            </div>
+        </div>
+    </div>
 }
 
 templ ShoppingListItems(items []*models.ShoppingListItem) {
     if len(items) == 0 {
-        <div class="text-center py-6 text-gray-500">No items in this list</div>
+        <div class="text-center py-8 text-gray-500">
+            <p class="mb-4">No items in this list yet</p>
+            <button
+                @click="$store.mealPlanner.showAddItemsModal()"
+                class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+            >
+                Add Your First Items
+            </button>
+        </div>
     } else {
-        <div class="divide-y divide-gray-200">
+        <div class="space-y-2">
             for _, item := range items {
-                <div class="py-3 flex items-center justify-between">
-                    <div class="flex gap-2">
-		                <button
-                            hx-post={ fmt.Sprintf("/shopping-lists/%d/items/%d/purchase", item.ShoppingListID, item.ID) }
-                            hx-prompt="Enter actual quantity purchased:"
-                            hx-vars="js:{actual_quantity: htmx.values.prompt, price: window.prompt('Enter price (optional):') || '0'}"
-                            hx-target="#items-container"
-                            class="text-blue-600 hover:text-blue-800 text-sm"
-                        >
-                            Record
-                        </button>
-                        <button
-                            hx-delete={ fmt.Sprintf("/shopping-lists/%d/items/%d", item.ShoppingListID, item.ID) }
-                            hx-target="#items-container"
-                            hx-confirm="Remove this item from the shopping list?"
-                            class="text-red-600 hover:text-red-800 text-sm"
-                        >
-                            Remove
-                        </button>
-                    </div>
-                </div>
+                @ShoppingListItem(item)
             }
         </div>
     }
 }
 
-templ ShoppingListMeals(meals []*models.ShoppingListMeal, listID int) {
-    if len(meals) == 0 {
-        <div class="text-center py-6 text-gray-500">No meals in this list</div>
-    } else {
-        <div class="divide-y divide-gray-200">
-            for _, meal := range meals {
-                <div class="py-3 flex justify-between items-center">
-                    <div>
-                        <div class="font-medium">{ meal.FoodName }</div>
-                        <div class="text-sm text-gray-600">
-                            { meal.ScheduledAt.Format("Monday, Jan 2 at 3:04 PM") }
+templ ShoppingListItem(item *models.ShoppingListItem) {
+    <div class={
+        "p-4 border rounded-lg transition-colors",
+        templ.KV("bg-green-50 border-green-200", item.Purchased),
+        templ.KV("bg-white border-gray-200 hover:bg-gray-50", !item.Purchased)
+    }>
+        <div class="flex items-start justify-between">
+            <div class="flex items-start gap-3 flex-1">
+                <!-- Checkbox -->
+                <input
+                    type="checkbox"
+                    checked?={ item.Purchased }
+                    @change={ fmt.Sprintf("toggleItemPurchased(%d, $event.target.checked)", item.ID) }
+                    class="mt-1 rounded border-gray-300"
+                />
+                
+                <!-- Item Details -->
+                <div class="flex-1">
+                    <div class={
+                        "font-medium",
+                        templ.KV("line-through text-gray-500", item.Purchased)
+                    }>
+                        { item.FoodName }
+                    </div>
+                    <div class="text-sm text-gray-600">
+                        { utils.FormatQuantity(item.Quantity) } { item.Unit }
+                        if item.Notes != "" {
+                            <span class="text-gray-400"> • { item.Notes }</span>
+                        }
+                    </div>
+                    
+                    <!-- Sources info -->
+                    if len(item.Sources) > 0 {
+                        <div class="text-xs text-gray-400 mt-1">
+                            From { fmt.Sprintf("%d source(s)", len(item.Sources)) }
                         </div>
-                    </div>
-                    <button
-                        hx-delete={ fmt.Sprintf("/shopping-lists/%d/meals/%d", listID, meal.ScheduleID) }
-                        hx-target="#items-container" 
-                        hx-trigger="click"
-                        hx-confirm={ fmt.Sprintf("Remove \"%s\" from this shopping list?", meal.FoodName) }
-                        class="text-red-600 hover:text-red-800 text-sm"
-                    >
-                        Remove
-                    </button>
+                    }
+                    
+                    <!-- Purchase details -->
+                    if item.Purchased && (item.ActualQuantity > 0 || item.ActualPrice > 0) {
+                        <div class="text-xs text-green-600 mt-1">
+                            if item.ActualQuantity > 0 {
+                                Bought: { utils.FormatQuantity(item.ActualQuantity) } { item.Unit }
+                            }
+                            if item.ActualPrice > 0 {
+                                <span class="ml-2">${ fmt.Sprintf("%.2f", item.ActualPrice) }</span>
+                            }
+                        </div>
+                    }
                 </div>
+            </div>
+            
+            <!-- Actions -->
+            <div class="flex gap-1 ml-2">
+                <button
+                    @click={ fmt.Sprintf("showItemEditModal(%d)", item.ID) }
+                    class="p-1 text-gray-400 hover:text-blue-600 rounded"
+                    title="Edit item"
+                >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                    </svg>
+                </button>
+                <button
+                    hx-delete={ fmt.Sprintf("/shopping-lists/%d/items/%d", item.ShoppingListID, item.ID) }
+                    hx-target="#items-container"
+                    hx-confirm="Remove this item from the shopping list?"
+                    class="p-1 text-gray-400 hover:text-red-600 rounded"
+                    title="Delete item"
+                >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+templ ShoppingListSources(sources []*models.ShoppingListSource, listID int) {
+    if len(sources) == 0 {
+        <div class="text-center py-6 text-gray-500 text-sm">
+            No sources yet
+        </div>
+    } else {
+        <div class="space-y-2">
+            for _, source := range sources {
+                @ShoppingListSource(source, listID)
             }
         </div>
     }
 }
 
-templ GenerateShoppingListModal(props *utils.ShoppingListFormProps) {
+templ ShoppingListSource(source *models.ShoppingListSource, listID int) {
+    <div class="p-3 bg-gray-50 rounded border">
+        <div class="flex justify-between items-start">
+            <div class="flex-1">
+                <div class="text-sm font-medium text-gray-900">
+                    { source.SourceName }
+                </div>
+                <div class="text-xs text-gray-500 mt-1">
+                    { source.AddedAt.Format("Jan 2, 3:04 PM") }
+                    if source.Servings > 0 {
+                        <span class="ml-2">({ fmt.Sprintf("%.1fx", source.Servings) })</span>
+                    }
+                </div>
+            </div>
+            <button
+                hx-delete={ fmt.Sprintf("/shopping-lists/%d/sources/%d", listID, source.ID) }
+                hx-target="#items-container"
+                hx-confirm={ fmt.Sprintf("Remove all items from \"%s\"?", source.SourceName) }
+                class="p-1 text-gray-400 hover:text-red-600 rounded"
+                title="Remove all items from this source"
+            >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+}
+
+templ CreateShoppingListModal(props *utils.ShoppingListFormProps) {
     <div class="flex items-center justify-center min-h-screen p-4">
         <div class="fixed inset-0 bg-black opacity-50"></div>
         <div class="relative bg-white rounded-lg shadow-xl max-w-md w-full">
             <div class="p-6">
-                <h2 class="text-xl font-semibold mb-6">Generate Shopping List</h2>
+                <h2 class="text-xl font-semibold mb-6">Create Shopping List</h2>
 
                 <form 
-                    hx-post="/shopping-lists"
+                    hx-post="/shopping-lists/new"
                     hx-target="#dynamic-modal-container"
                     hx-target-400="#dynamic-modal-container"
                     hx-swap="innerHTML"
@@ -147,46 +254,23 @@ templ GenerateShoppingListModal(props *utils.ShoppingListFormProps) {
                                 templ.KV("border-red-500", props.Errors["name"] != "")
                             }
                             placeholder="e.g., Weekly Groceries"
+                            required
                         />
                         if props.Errors["name"] != "" {
                             <div class="text-red-500 text-sm mt-1">{ props.Errors["name"] }</div>
                         }
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium mb-1">Start Date</label>
-                            <input 
-                                type="date" 
-                                name="start_date"
-                                value={ getDateString(props.StartDate) }
-                                class={
-                                    "w-full px-3 py-2 border rounded",
-                                    templ.KV("border-red-500", props.Errors["start_date"] != "")
-                                }
-                            />
-                            if props.Errors["start_date"] != "" {
-                                <div class="text-red-500 text-sm mt-1">{ props.Errors["start_date"] }</div>
-                            }
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium mb-1">End Date</label>
-                            <input 
-                                type="date" 
-                                name="end_date"
-                                value={ getDateString(props.EndDate) }
-                                class={
-                                    "w-full px-3 py-2 border rounded",
-                                    templ.KV("border-red-500", props.Errors["end_date"] != "")
-                                }
-                            />
-                            if props.Errors["end_date"] != "" {
-                                <div class="text-red-500 text-sm mt-1">{ props.Errors["end_date"] }</div>
-                            }
-                        </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Notes (optional)</label>
+                        <textarea 
+                            name="notes"
+                            rows="3"
+                            class="w-full px-3 py-2 border rounded"
+                            placeholder="Any additional notes..."
+                        >{ props.Notes }</textarea>
                     </div>
 
-                    <!-- Actions -->
                     <div class="flex justify-end gap-3 mt-6">
                         <button
                             type="button"
@@ -199,7 +283,7 @@ templ GenerateShoppingListModal(props *utils.ShoppingListFormProps) {
                             type="submit"
                             class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                         >
-                            Generate List
+                            Create List
                         </button>
                     </div>
                 </form>
@@ -207,47 +291,374 @@ templ GenerateShoppingListModal(props *utils.ShoppingListFormProps) {
         </div>
     </div>
 }
-templ ShoppingListCard(list *models.ShoppingList) {
-	<div x-data="shoppingList" class="bg-white p-4 rounded-lg shadow hover:shadow-md transition-shadow">
-	    <div class="bg-white p-4 rounded-lg shadow hover:shadow-md transition-shadow">
-	        <div class="flex justify-between items-start">
-	            <div>
-	                <h3 class="font-medium">{ list.Name }</h3>
-	                <p class="text-sm text-gray-600">
-	                    { list.StartDate.Format("Jan 2") } - { list.EndDate.Format("Jan 2, 2006") }
-	                </p>
-	            </div>
-	            <div class="flex gap-2">
-		            <a 
-			            hx-get={ fmt.Sprintf("/shopping-lists/%d", list.ID) }
-			            hx-target="#main-content"
-			            hx-push-url="true"
-			            class="p-2 hover:bg-blue-100 rounded"
-			        >
-	                    <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-	                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-	                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-	                    </svg>
-	                </a>
-	                <button
-			            hx-delete={ fmt.Sprintf("/shopping-lists/%d", list.ID) }
-			            hx-target="#shopping-lists-container"
-			            hx-confirm={ fmt.Sprintf("Delete \"%s\"?", list.Name) }
-			            class="p-2 hover:bg-red-100 rounded"
-			        >
-				        <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-				            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-				        </svg>
-				    </button>
-	            </div>
-	        </div>
-	    </div>
+
+templ AddItemsModal(props *utils.AddItemsModalProps) {
+    <div class="flex items-center justify-center min-h-screen p-4" x-data="{ activeTab: 'manual' }">
+        <div class="fixed inset-0 bg-black opacity-50"></div>
+        <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+            <div class="p-6">
+                <h2 class="text-xl font-semibold mb-6">Add Items to Shopping List</h2>
+
+                <!-- Tab Navigation -->
+                <div class="flex border-b border-gray-200 mb-6">
+                    <button
+                        @click="activeTab = 'manual'"
+                        :class="{'border-b-2 border-blue-500 text-blue-600': activeTab === 'manual'}"
+                        class="px-4 py-2 font-medium text-gray-600 hover:text-gray-800"
+                    >
+                        Manual Items
+                    </button>
+                    <button
+                        @click="activeTab = 'recipe'"
+                        :class="{'border-b-2 border-blue-500 text-blue-600': activeTab === 'recipe'}"
+                        class="px-4 py-2 font-medium text-gray-600 hover:text-gray-800"
+                    >
+                        From Recipe
+                    </button>
+                    <button
+                        @click="activeTab = 'schedules'"
+                        :class="{'border-b-2 border-blue-500 text-blue-600': activeTab === 'schedules'}"
+                        class="px-4 py-2 font-medium text-gray-600 hover:text-gray-800"
+                    >
+                        From Meals
+                    </button>
+                    <button
+                        @click="activeTab = 'dateRange'"
+                        :class="{'border-b-2 border-blue-500 text-blue-600': activeTab === 'dateRange'}"
+                        class="px-4 py-2 font-medium text-gray-600 hover:text-gray-800"
+                    >
+                        Date Range
+                    </button>
+                </div>
+
+                <!-- Tab Content -->
+                <div class="overflow-y-auto max-h-96">
+                    <!-- Manual Items Tab -->
+                    <div x-show="activeTab === 'manual'">
+                        @ManualItemForm(props)
+                    </div>
+
+                    <!-- Recipe Tab -->
+                    <div x-show="activeTab === 'recipe'" x-cloak>
+                        @RecipeItemForm(props)
+                    </div>
+
+                    <!-- Schedules Tab -->
+                    <div x-show="activeTab === 'schedules'" x-cloak>
+                        @SchedulesItemForm(props)
+                    </div>
+
+                    <!-- Date Range Tab -->
+                    <div x-show="activeTab === 'dateRange'" x-cloak>
+                        @DateRangeItemForm(props)
+                    </div>
+                </div>
+
+                <!-- Common Actions -->
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t">
+                    <button
+                        type="button"
+                        @click="$store.mealPlanner.toggleModal(false)"
+                        class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded"
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 }
 
-func getDateString(date time.Time) string {
-    if date.IsZero() {
-        return ""
-    }
-    return date.Format("2006-01-02")
+templ ManualItemForm(props *utils.AddItemsModalProps) {
+    <form
+        hx-post={ fmt.Sprintf("/shopping-lists/%d/items/manual", props.ListID) }
+        hx-target="#dynamic-modal-container"
+        hx-target-400="#dynamic-modal-container"
+        @htmx:after-request="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); location.reload(); }"
+        class="space-y-4"
+    >
+        <div>
+            <label class="block text-sm font-medium mb-1">Food</label>
+            <select
+                name="food_id"
+                class={
+                    "w-full px-3 py-2 border rounded",
+                    templ.KV("border-red-500", props.Errors["food_id"] != "")
+                }
+                hx-get="/foods/units"
+                hx-trigger="change"
+                hx-target="#manual-units"
+                hx-include="this"
+                required
+            >
+                <option value="">Select a food...</option>
+                for _, food := range props.Foods {
+                    <option value={ strconv.Itoa(food.ID) }>{ food.Name }</option>
+                }
+            </select>
+            if props.Errors["food_id"] != "" {
+                <div class="text-red-500 text-sm mt-1">{ props.Errors["food_id"] }</div>
+            }
+        </div>
+
+        <div class="flex gap-4">
+            <div class="flex-1">
+                <label class="block text-sm font-medium mb-1">Quantity</label>
+                <input
+                    type="number"
+                    name="quantity"
+                    step="0.1"
+                    min="0.1"
+                    class={
+                        "w-full px-3 py-2 border rounded",
+                        templ.KV("border-red-500", props.Errors["quantity"] != "")
+                    }
+                    required
+                />
+                if props.Errors["quantity"] != "" {
+                    <div class="text-red-500 text-sm mt-1">{ props.Errors["quantity"] }</div>
+                }
+            </div>
+            <div class="flex-1">
+                <label class="block text-sm font-medium mb-1">Unit</label>
+                <select
+                    id="manual-units"
+                    name="unit"
+                    class={
+                        "w-full px-3 py-2 border rounded",
+                        templ.KV("border-red-500", props.Errors["unit"] != "")
+                    }
+                    required
+                >
+                    <option value="">Select unit...</option>
+                </select>
+                if props.Errors["unit"] != "" {
+                    <div class="text-red-500 text-sm mt-1">{ props.Errors["unit"] }</div>
+                }
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium mb-1">Notes (optional)</label>
+            <input
+                type="text"
+                name="notes"
+                class="w-full px-3 py-2 border rounded"
+                placeholder="Any special notes..."
+            />
+        </div>
+
+        <button
+            type="submit"
+            class="w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+        >
+            Add Item
+        </button>
+    </form>
+}
+
+templ RecipeItemForm(props *utils.AddItemsModalProps) {
+    <form
+        hx-post={ fmt.Sprintf("/shopping-lists/%d/items/recipe", props.ListID) }
+        hx-target="#dynamic-modal-container"
+        hx-target-400="#dynamic-modal-container"
+        @htmx:after-request="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); location.reload(); }"
+        class="space-y-4"
+    >
+        <div>
+            <label class="block text-sm font-medium mb-1">Recipe</label>
+            <select
+                name="recipe_id"
+                class={
+                    "w-full px-3 py-2 border rounded",
+                    templ.KV("border-red-500", props.Errors["recipe_id"] != "")
+                }
+                required
+            >
+                <option value="">Select a recipe...</option>
+                for _, food := range props.Foods {
+                    if food.IsRecipe {
+                        <option value={ strconv.Itoa(food.ID) }>{ food.Name }</option>
+                    }
+                }
+            </select>
+            if props.Errors["recipe_id"] != "" {
+                <div class="text-red-500 text-sm mt-1">{ props.Errors["recipe_id"] }</div>
+            }
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium mb-1">Servings</label>
+            <input
+                type="number"
+                name="servings"
+                step="0.1"
+                min="0.1"
+                value="1"
+                class={
+                    "w-full px-3 py-2 border rounded",
+                    templ.KV("border-red-500", props.Errors["servings"] != "")
+                }
+                required
+            />
+            if props.Errors["servings"] != "" {
+                <div class="text-red-500 text-sm mt-1">{ props.Errors["servings"] }</div>
+            }
+        </div>
+
+        <button
+            type="submit"
+            class="w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+        >
+            Add Recipe Ingredients
+        </button>
+    </form>
+}
+
+templ SchedulesItemForm(props *utils.AddItemsModalProps) {
+    <form
+        hx-post={ fmt.Sprintf("/shopping-lists/%d/items/schedules", props.ListID) }
+        hx-target="#dynamic-modal-container"
+        hx-target-400="#dynamic-modal-container"
+        @htmx:after-request="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); location.reload(); }"
+        class="space-y-4"
+    >
+        <div>
+            <label class="block text-sm font-medium mb-2">Select Meals</label>
+            if len(props.Schedules) == 0 {
+                <div class="text-gray-500 text-sm py-4">
+                    No scheduled meals found in the past or upcoming week.
+                </div>
+            } else {
+                <div class="max-h-64 overflow-y-auto border rounded p-2 space-y-2">
+                    for _, schedule := range props.Schedules {
+                        <label class="flex items-center p-2 hover:bg-gray-50 rounded">
+                            <input
+                                type="checkbox"
+                                name="schedule_ids"
+                                value={ strconv.Itoa(schedule.ID) }
+                                class="rounded border-gray-300"
+                            />
+                            <div class="ml-3 flex-1">
+                                <div class="font-medium">{ schedule.FoodName }</div>
+                                <div class="text-sm text-gray-600">
+                                    { schedule.ScheduledAt.Format("Mon, Jan 2 at 3:04 PM") }
+                                    if schedule.Servings != 1.0 {
+                                        <span class="ml-2">({ fmt.Sprintf("%.1f servings", schedule.Servings) })</span>
+                                    }
+                                </div>
+                            </div>
+                        </label>
+                    }
+                </div>
+            }
+            if props.Errors["schedule_ids"] != "" {
+                <div class="text-red-500 text-sm mt-1">{ props.Errors["schedule_ids"] }</div>
+            }
+        </div>
+
+        if len(props.Schedules) > 0 {
+            <button
+                type="submit"
+                class="w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+            >
+                Add Selected Meals
+            </button>
+        }
+    </form>
+}
+
+templ DateRangeItemForm(props *utils.AddItemsModalProps) {
+    <form
+        hx-post={ fmt.Sprintf("/shopping-lists/%d/items/date-range", props.ListID) }
+        hx-target="#dynamic-modal-container"
+        hx-target-400="#dynamic-modal-container"
+        @htmx:after-request="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); location.reload(); }"
+        class="space-y-4"
+    >
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium mb-1">Start Date</label>
+                <input
+                    type="date"
+                    name="start_date"
+                    class={
+                        "w-full px-3 py-2 border rounded",
+                        templ.KV("border-red-500", props.Errors["start_date"] != "")
+                    }
+                    required
+                />
+                if props.Errors["start_date"] != "" {
+                    <div class="text-red-500 text-sm mt-1">{ props.Errors["start_date"] }</div>
+                }
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">End Date</label>
+                <input
+                    type="date"
+                    name="end_date"
+                    class={
+                        "w-full px-3 py-2 border rounded",
+                        templ.KV("border-red-500", props.Errors["end_date"] != "")
+                    }
+                    required
+                />
+                if props.Errors["end_date"] != "" {
+                    <div class="text-red-500 text-sm mt-1">{ props.Errors["end_date"] }</div>
+                }
+            </div>
+        </div>
+
+        <div class="text-sm text-gray-600 p-3 bg-blue-50 rounded">
+            This will add all ingredients needed for meals scheduled within the selected date range.
+        </div>
+
+        <button
+            type="submit"
+            class="w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+        >
+            Add Date Range Meals
+        </button>
+    </form>
+}
+
+templ ShoppingListCard(list *models.ShoppingList) {
+    <div class="bg-white p-4 rounded-lg shadow hover:shadow-md transition-shadow">
+        <div class="flex justify-between items-start">
+            <div class="flex-1">
+                <h3 class="font-medium">{ list.Name }</h3>
+                if list.Notes != "" {
+                    <p class="text-sm text-gray-600 mt-1">{ list.Notes }</p>
+                }
+                <p class="text-sm text-gray-500 mt-2">
+                    { list.CreatedAt.Format("Jan 2, 2006") }
+                </p>
+            </div>
+            <div class="flex gap-2 ml-4">
+                <a
+                    hx-get={ fmt.Sprintf("/shopping-lists/%d", list.ID) }
+                    hx-target="#main-content"
+                    hx-push-url="true"
+                    class="p-2 hover:bg-blue-100 rounded"
+                    title="View list"
+                >
+                    <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                </a>
+                <button
+                    hx-delete={ fmt.Sprintf("/shopping-lists/%d", list.ID) }
+                    hx-target="#shopping-lists-container"
+                    hx-confirm={ fmt.Sprintf("Delete \"%s\"?", list.Name) }
+                    class="p-2 hover:bg-red-100 rounded"
+                    title="Delete list"
+                >
+                    <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
 }

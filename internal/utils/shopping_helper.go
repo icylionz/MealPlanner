@@ -1,12 +1,18 @@
 package utils
 
 import (
-	"time"
+	"mealplanner/internal/models"
 )
 
 type ShoppingListFormProps struct {
-	Name      string
-	StartDate time.Time
-	EndDate   time.Time
+	Name   string
+	Notes  string
+	Errors map[string]string
+}
+
+type AddItemsModalProps struct {
+	ListID    int
+	Foods     []*models.Food
+	Schedules []*models.Schedule
 	Errors    map[string]string
 }

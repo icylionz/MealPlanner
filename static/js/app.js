@@ -28,17 +28,17 @@ document.addEventListener("alpine:init", () => {
         swap: "innerHTML",
       });
     },
-    
+
     showEditScheduleModal(schedule) {
       this.showModal = true;
       this.ensureModalContainer();
-    
+
       htmx.ajax("GET", `/schedules/${schedule.id}/edit`, {
         target: "#dynamic-modal-container",
         swap: "innerHTML",
       });
     },
-    
+
     showEditFoodModal(food) {
       this.showModal = true;
       this.ensureModalContainer();
@@ -129,6 +129,30 @@ document.addEventListener("alpine:init", () => {
         target: "#calendar-container",
         swap: "outerHTML",
         values: { date: this.currentDate },
+      });
+    },
+    
+    showCreateShoppingListModal() {
+      this.showModal = true;
+      this.ensureModalContainer();
+
+      htmx.ajax("GET", `/shopping-lists/new`, {
+        target: "#dynamic-modal-container",
+        swap: "innerHTML",
+      });
+    },
+
+    showAddItemsModal() {
+      this.showModal = true;
+      this.ensureModalContainer();
+
+      // Get current list ID from URL
+      const pathParts = window.location.pathname.split("/");
+      const listId = pathParts[pathParts.length - 1];
+
+      htmx.ajax("GET", `/shopping-lists/${listId}/add-items`, {
+        target: "#dynamic-modal-container",
+        swap: "innerHTML",
       });
     },
   });

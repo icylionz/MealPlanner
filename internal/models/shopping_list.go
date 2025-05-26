@@ -1,101 +1,68 @@
 package models
 
 import (
-	"mealplanner/internal/database/db"
-	"time"
+    "time"
 )
 
 type ShoppingList struct {
-	ID        int       `json:"id"`
-	Name      string    `json:"name"`
-	StartDate time.Time `json:"startDate"`
-	EndDate   time.Time `json:"endDate"`
-	CreatedAt time.Time `json:"createdAt"`
-	Items     []*ShoppingListItem `json:"items,omitempty"`
-	Meals     []*ShoppingListMeal `json:"meals,omitempty"`
+    ID        int                  `json:"id"`
+    Name      string               `json:"name"`
+    Notes     string               `json:"notes,omitempty"`
+    CreatedAt time.Time            `json:"createdAt"`
+    UpdatedAt time.Time            `json:"updatedAt"`
+    Items     []*ShoppingListItem  `json:"items,omitempty"`
+    Sources   []*ShoppingListSource `json:"sources,omitempty"`
 }
 
 type ShoppingListItem struct {
-	ID             int     `json:"id"`
-	ShoppingListID int     `json:"shoppingListId"`
-	FoodID         int     `json:"foodId"`
-	FoodName       string  `json:"foodName"`
-	UnitType       string  `json:"unitType"`
-	BaseUnit       string  `json:"baseUnit"`
-	Quantity       float64 `json:"quantity"`
-	Unit           string  `json:"unit"`
-	Purchased      bool    `json:"purchased"`
-	ActualQuantity float64 `json:"actualQuantity,omitempty"`
-	Price          float64 `json:"price,omitempty"`
+    ID               int                         `json:"id"`
+    ShoppingListID   int                         `json:"shoppingListId"`
+    FoodID           int                         `json:"foodId"`
+    FoodName         string                      `json:"foodName"`
+    Quantity         float64                     `json:"quantity"`
+    Unit             string                      `json:"unit"`
+    UnitType         string                      `json:"unitType"`
+    Notes            string                      `json:"notes,omitempty"`
+    Purchased        bool                        `json:"purchased"`
+    ActualQuantity   float64                     `json:"actualQuantity,omitempty"`
+    ActualPrice      float64                     `json:"actualPrice,omitempty"`
+    Sources          []*ShoppingListItemSource   `json:"sources,omitempty"`
 }
 
-type ShoppingListMeal struct {
-	ID             int       `json:"id"`
-	ShoppingListID int       `json:"shoppingListId"`
-	ScheduleID     int       `json:"scheduleId"`
-	FoodName       string    `json:"foodName"`
-	ScheduledAt    time.Time `json:"scheduledAt"`
+type ShoppingListSource struct {
+    ID             int       `json:"id"`
+    ShoppingListID int       `json:"shoppingListId"`
+    SourceType     string    `json:"sourceType"` // 'schedule', 'recipe', 'manual', 'copy'
+    SourceID       int       `json:"sourceId,omitempty"`
+    SourceName     string    `json:"sourceName"`
+    Servings       float64   `json:"servings,omitempty"`
+    AddedAt        time.Time `json:"addedAt"`
 }
 
-// Conversion functions
-func ToShoppingListModel(sl *db.ShoppingList) *ShoppingList {
-	return &ShoppingList{
-		ID:        int(sl.ID),
-		Name:      sl.Name,
-		StartDate: sl.StartDate.Time,
-		EndDate:   sl.EndDate.Time,
-		CreatedAt: sl.CreatedAt.Time,
-		Items:     []*ShoppingListItem{},
-		Meals:     []*ShoppingListMeal{},
-	}
+type ShoppingListItemSource struct {
+    ItemID              int     `json:"itemId"`
+    SourceID            int     `json:"sourceId"`
+    ContributedQuantity float64 `json:"contributedQuantity"`
 }
 
-func ToShoppingListsModel(slList []*db.ShoppingList) []*ShoppingList {
-	result := make([]*ShoppingList, len(slList))
-	for i, sl := range slList {
-		result[i] = ToShoppingListModel(sl)
-	}
-	return result
+// Request types for different add operations
+type AddManualItemRequest struct {
+    FoodID   int     `json:"foodId"`
+    Quantity float64 `json:"quantity"`
+    Unit     string  `json:"unit"`
+    Notes    string  `json:"notes,omitempty"`
 }
 
-func ToShoppingListItemModel(item *db.GetShoppingListItemsRow) *ShoppingListItem {
-	quantity, _ := item.Quantity.Float64Value()
-	
-	return &ShoppingListItem{
-		ID:             int(item.ID),
-		ShoppingListID: int(item.ShoppingListID.Int32),
-		FoodID:         int(item.FoodID.Int32),
-		FoodName:       item.FoodName,
-		UnitType:       item.UnitType,
-		BaseUnit:       item.BaseUnit,
-		Quantity:       quantity.Float64,
-		Unit:           item.Unit,
-		Purchased:      false, // Would need to be calculated based on purchases
-	}
+type AddRecipeRequest struct {
+    RecipeID int     `json:"recipeId"`
+    Servings float64 `json:"servings"`
 }
 
-func ToShoppingListItemsModel(items []*db.GetShoppingListItemsRow) []*ShoppingListItem {
-	result := make([]*ShoppingListItem, len(items))
-	for i, item := range items {
-		result[i] = ToShoppingListItemModel(item)
-	}
-	return result
+type AddSchedulesRequest struct {
+    ScheduleIDs []int `json:"scheduleIds"`
 }
 
-func ToShoppingListMealModel(meal *db.GetShoppingListMealsRow) *ShoppingListMeal {
-	return &ShoppingListMeal{
-		ID:             int(meal.ID),
-		ShoppingListID: int(meal.ShoppingListID.Int32),
-		ScheduleID:     int(meal.ScheduleID.Int32),
-		FoodName:       meal.FoodName,
-		ScheduledAt:    meal.ScheduledAt.Time,
-	}
-}
-
-func ToShoppingListMealsModel(meals []*db.GetShoppingListMealsRow) []*ShoppingListMeal {
-	result := make([]*ShoppingListMeal, len(meals))
-	for i, meal := range meals {
-		result[i] = ToShoppingListMealModel(meal)
-	}
-	return result
+type AddDateRangeRequest struct {
+    StartDate time.Time `json:"startDate"`
+    EndDate   time.Time `json:"endDate"`
 }

@@ -12,30 +12,89 @@ templ ShoppingListsPage(lists []*models.ShoppingList) {
             <div class="flex justify-between items-center mb-6">
                 <h1 class="text-2xl font-bold">Shopping Lists</h1>
                 <button
-                    @click="$store.mealPlanner.showShoppingListGenerateModal()"
+                    @click="$store.mealPlanner.showCreateShoppingListModal()"
                     class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                 >
                     Create New List
                 </button>
             </div>
             
-            <div id="shopping-lists-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div id="shopping-lists-container">
                 if len(lists) == 0 {
-                    <div class="col-span-full text-center py-12">
-                        <p class="text-lg text-gray-500">No shopping lists yet</p>
-                        <button
-                            @click="$store.mealPlanner.showShoppingListGenerateModal()"
-                            class="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                        >
-                            Generate Your First List
-                        </button>
+                    <div class="text-center py-16">
+                        <div class="max-w-md mx-auto">
+                            <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                            </svg>
+                            <h3 class="text-lg font-medium text-gray-900 mb-2">No shopping lists yet</h3>
+                            <p class="text-gray-500 mb-6">
+                                Create your first shopping list to start organizing your grocery shopping. 
+                                You can add items manually, from recipes, or from your scheduled meals.
+                            </p>
+                            <div class="space-y-3">
+                                <button
+                                    @click="$store.mealPlanner.showCreateShoppingListModal()"
+                                    class="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                                >
+                                    Create Your First List
+                                </button>
+                                <p class="text-sm text-gray-400">
+                                    Pro tip: You can add ingredients from multiple sources to the same list!
+                                </p>
+                            </div>
+                        </div>
                     </div>
                 } else {
-                    for _, list := range lists {
-                        <div class="shopping-list-card">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        for _, list := range lists {
                             @components.ShoppingListCard(list)
+                        }
+                    </div>
+                    
+                    <!-- Quick Actions Footer -->
+                    <div class="mt-12 bg-gray-50 rounded-lg p-6">
+                        <h3 class="font-medium text-gray-900 mb-3">Quick Actions</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <button
+                                @click="$store.mealPlanner.showCreateShoppingListModal()"
+                                class="flex items-center p-3 bg-white rounded border hover:bg-gray-50 transition-colors"
+                            >
+                                <svg class="w-5 h-5 text-blue-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                </svg>
+                                <div class="text-left">
+                                    <div class="font-medium">Create New List</div>
+                                    <div class="text-sm text-gray-500">Start a fresh shopping list</div>
+                                </div>
+                            </button>
+                            
+                            <button
+                                @click="$store.mealPlanner.navigateToCalendar()"
+                                class="flex items-center p-3 bg-white rounded border hover:bg-gray-50 transition-colors"
+                            >
+                                <svg class="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                </svg>
+                                <div class="text-left">
+                                    <div class="font-medium">Plan Meals</div>
+                                    <div class="text-sm text-gray-500">Schedule meals to shop for</div>
+                                </div>
+                            </button>
+                            
+                            <button
+                                @click="$store.mealPlanner.navigateToFoods()"
+                                class="flex items-center p-3 bg-white rounded border hover:bg-gray-50 transition-colors"
+                            >
+                                <svg class="w-5 h-5 text-purple-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                                </svg>
+                                <div class="text-left">
+                                    <div class="font-medium">Manage Recipes</div>
+                                    <div class="text-sm text-gray-500">Add foods and recipes</div>
+                                </div>
+                            </button>
                         </div>
-                    }
+                    </div>
                 }
             </div>
         </div>
