@@ -25,12 +25,12 @@ func New(ctx context.Context, connString string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	logger := qLogger{}
+	// logger := qLogger{}
 	// Add logging configuration
-	config.ConnConfig.Tracer = &tracelog.TraceLog{
-		LogLevel: tracelog.LogLevelTrace,
-		Logger:   logger,
-	}
+	// config.connconfig.tracer = &tracelog.tracelog{
+	// 	loglevel: tracelog.logleveltrace,
+	// 	logger:   logger,
+	// }
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
