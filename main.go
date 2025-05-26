@@ -68,7 +68,8 @@ func main() {
 	foodHandler := handlers.NewFoodHandler(foodService)
 	shoppingListHandler := handlers.NewShoppingListHandler(shoppingService, scheduleService)
 	calendarGroup := e.Group("/", utils.SetTimeZone())
-
+	e.HTTPErrorHandler = utils.CustomErrorHandler
+	
 	// Routes
 	e.GET("/", pageHandler.HandleIndex)
 	// Calendar Routes
@@ -78,6 +79,9 @@ func main() {
 	calendarGroup.DELETE("schedules/ids", schedulesHandler.HandleDeleteScheduleByIds)
 	calendarGroup.DELETE("schedules/date-range", schedulesHandler.HandleDeleteScheduleByDateRange)
 	calendarGroup.GET("schedules/modal", schedulesHandler.HandleScheduleModal)
+	calendarGroup.GET("schedules/:id/edit", schedulesHandler.HandleEditScheduleModal)
+	calendarGroup.PUT("schedules/:id/edit", schedulesHandler.HandleEditScheduleModal)
+	
 	// Food Routes
 	e.GET("/foods", foodHandler.HandleFoodsPage)
 	// e.GET("/foods/modal/new", foodHandler.HandleAddFoodModal)

@@ -50,3 +50,33 @@ func ToScheduleModelFromCreateScheduleRow(schedule *db.CreateScheduleRow, timeZo
 		ScheduledAt: schedule.ScheduledAt.Time.In(timeZone),
 	}
 }
+
+func ToScheduleModelFromUpdateScheduleRow(schedule *db.UpdateScheduleRow, timeZone *time.Location) *Schedule {
+	servings, err := schedule.Servings.Float64Value()
+	if err != nil {
+		return nil
+	}
+	
+	return &Schedule{
+		ID:          int(schedule.ID),
+		FoodID:      int(schedule.FoodID.Int32),
+		FoodName:    schedule.FoodName,
+		Servings:    servings.Float64,
+		ScheduledAt: schedule.ScheduledAt.Time.In(timeZone),
+	}
+}
+
+func ToScheduleModelFromGetScheduleByIdRow(schedule *db.GetScheduleByIdRow, timeZone *time.Location) *Schedule {
+	servings, err := schedule.Servings.Float64Value()
+	if err != nil {
+		return nil
+	}
+	
+	return &Schedule{
+		ID:          int(schedule.ID),
+		FoodID:      int(schedule.FoodID.Int32),
+		FoodName:    schedule.FoodName,
+		Servings:    servings.Float64,
+		ScheduledAt: schedule.ScheduledAt.Time.In(timeZone),
+	}
+}

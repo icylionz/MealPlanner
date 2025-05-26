@@ -28,7 +28,17 @@ document.addEventListener("alpine:init", () => {
         swap: "innerHTML",
       });
     },
-
+    
+    showEditScheduleModal(schedule) {
+      this.showModal = true;
+      this.ensureModalContainer();
+    
+      htmx.ajax("GET", `/schedules/${schedule.id}/edit`, {
+        target: "#dynamic-modal-container",
+        swap: "innerHTML",
+      });
+    },
+    
     showEditFoodModal(food) {
       this.showModal = true;
       this.ensureModalContainer();

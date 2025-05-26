@@ -16,10 +16,20 @@ templ CreateScheduleModal(props *utils.ModalProps) {
 
         <div class="relative bg-white rounded-lg shadow-xl max-w-md w-full">
             <div class="p-6">
-                <h3 class="text-lg font-medium mb-4">{ props.Date.Format("January 2, 2006") }</h3>
+                <h3 class="text-lg font-medium mb-4">
+                    if props.IsEdit {
+                        Edit Schedule - { props.Date.Format("January 2, 2006") }
+                    } else {
+                        { props.Date.Format("January 2, 2006") }
+                    }
+                </h3>
 
                 <form
-                    hx-post="/schedules"
+                    if props.IsEdit {
+                        hx-put={ fmt.Sprintf("/schedules/%d/edit", props.ScheduleID) }
+                    } else {
+                        hx-post="/schedules"
+                    }
                     hx-target="#dynamic-modal-container"
                     hx-target-400="#dynamic-modal-container"
                     hx-swap="innerHTML"
@@ -47,6 +57,7 @@ templ CreateScheduleModal(props *utils.ModalProps) {
                             <div class="text-red-500 text-sm mt-1">{ err }</div>
                         }
                     </div>
+
                     <!-- Time Select -->
                     <div class="mb-6">
                         <label class="block text-sm font-medium mb-1">Time</label>
@@ -70,6 +81,7 @@ templ CreateScheduleModal(props *utils.ModalProps) {
                             <div class="text-red-500 text-sm mt-1">{ err }</div>
                         }
                     </div>
+
                     <!-- Servings Input -->
                     <div class="mb-4">
                         <label class="block text-sm font-medium mb-1">Servings</label>
@@ -109,7 +121,11 @@ templ CreateScheduleModal(props *utils.ModalProps) {
                             type="submit"
                             class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                         >
-                            Schedule
+                            if props.IsEdit {
+                                Update
+                            } else {
+                                Schedule
+                            }
                         </button>
                     </div>
                 </form>

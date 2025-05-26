@@ -12,4 +12,7 @@ type ModalProps struct {
 	Foods      []*models.Food
 	Servings   float64
 	Errors     map[string]string
+	IsEdit     bool
+	ScheduleID int
+	Schedule   *models.Schedule
 }

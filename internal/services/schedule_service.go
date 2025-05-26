@@ -50,6 +50,28 @@ func (s *ScheduleService) CreateSchedule(c echo.Context, foodId int, servings fl
 	return models.ToScheduleModelFromCreateScheduleRow(dbSchedule, timeZone), nil
 }
 
+func (s *ScheduleService) UpdateSchedule(c echo.Context, scheduleId int, foodId int, servings float64, scheduledAt time.Time, timeZone *time.Location) (*models.Schedule, error) {
+    dbSchedule, err := s.db.UpdateSchedule(c.Request().Context(), db.UpdateScheduleParams{
+        ID:          int32(scheduleId),
+        FoodID:      pgtype.Int4{Int32: int32(foodId), Valid: true},
+        Servings:    utils.Float64ToNumeric(servings),
+        ScheduledAt: pgtype.Timestamptz{Time: scheduledAt, Valid: true},
+    })
+    if err != nil {
+        return nil, err
+    }
+    return models.ToScheduleModelFromUpdateScheduleRow(dbSchedule, timeZone), nil
+}
+
+func (s *ScheduleService) GetScheduleById(c echo.Context, scheduleId int) (*models.Schedule, error) {
+	dbSchedule, err := s.db.GetScheduleById(c.Request().Context(), int32(scheduleId))
+	if err != nil {
+		return nil, err
+	}
+	timeZone := utils.GetTimezone(c)
+	return models.ToScheduleModelFromGetScheduleByIdRow(dbSchedule, timeZone), nil
+}
+
 func (s *ScheduleService) DeleteSchedules(ctx context.Context, scheduleIds []int) error {
 	scheduleIdsAsInt32 := make([]int32, len(scheduleIds))
 	for i, id := range scheduleIds {
