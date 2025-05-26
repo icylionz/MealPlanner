@@ -84,7 +84,7 @@ func (h *ShoppingListHandler) HandleCreateShoppingList(c echo.Context) error {
     }
     
     _, err = h.shoppingService.GenerateShoppingListFromDateRange(
-        c.Request().Context(),
+        c,
         form.Name,
         startDate,
         endDate,

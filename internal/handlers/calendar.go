@@ -17,7 +17,7 @@ type CalendarHandler struct {
 
 func (h *CalendarHandler) HandleCalendarView(c echo.Context) error {
 	dateStr := c.QueryParam("date")
-	userTimeZone := utils.GetTimezone(c.Request().Context())
+	userTimeZone := utils.GetTimezone(c)
 
 	var chosenDate time.Time
 	if dateStr != "" {
@@ -33,7 +33,7 @@ func (h *CalendarHandler) HandleCalendarView(c echo.Context) error {
 	start := time.Date(chosenDate.Year(), chosenDate.Month(), chosenDate.Day(), 0, 0, 0, 0, userTimeZone)
 	end := start.AddDate(0, 0, 1)
 
-	schedules, err := h.scheduleService.GetSchedulesForRange(c.Request().Context(), &start, &end)
+	schedules, err := h.scheduleService.GetSchedulesForRange(c, &start, &end)
 	if err != nil {
 		log.Default().Printf("Error getting schedules: %s", err)
 		return err

@@ -21,7 +21,7 @@ document.addEventListener("alpine:init", () => {
     },
 
     goToToday() {
-      this.$store.mealPlanner.setCurrentDate(new Date().toISOString().split('T')[0]);
+      this.$store.mealPlanner.setCurrentDate(this.$store.mealPlanner.getToday());
       this.refreshCalendar();
     },
 

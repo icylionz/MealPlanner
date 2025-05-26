@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"context"
 	"log"
 	"time"
 
@@ -27,9 +26,9 @@ func SetTimeZone() echo.MiddlewareFunc {
 	}
 }
 
-func GetTimezone(ctx context.Context) *time.Location {
-	if tz, ok := ctx.Value("userTimeZone").(time.Location); ok {
-		return &tz
+func GetTimezone(c echo.Context) *time.Location {
+	if tz, ok := c.Get("userTimeZone").(*time.Location); ok {
+		return tz
 	}
 	return time.UTC
 }

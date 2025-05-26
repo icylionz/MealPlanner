@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/labstack/echo/v4"
 )
 
 type ScheduleService struct {
@@ -20,9 +21,9 @@ func NewScheduleService(db *database.DB) *ScheduleService {
 	return &ScheduleService{db: db}
 }
 
-func (s *ScheduleService) GetSchedulesForRange(ctx context.Context, start, end *time.Time) ([]*models.Schedule, error) {
+func (s *ScheduleService) GetSchedulesForRange(c echo.Context, start, end *time.Time) ([]*models.Schedule, error) {
 
-	dbSchedules, err := s.db.GetSchedulesInRange(ctx, db.GetSchedulesInRangeParams{
+	dbSchedules, err := s.db.GetSchedulesInRange(c.Request().Context(), db.GetSchedulesInRangeParams{
 		ScheduledAt:   pgtype.Timestamptz{Time: *start, Valid: true},
 		ScheduledAt_2: pgtype.Timestamptz{Time: *end, Valid: true},
 	})
@@ -33,12 +34,12 @@ func (s *ScheduleService) GetSchedulesForRange(ctx context.Context, start, end *
 	for _, dbSchedule := range dbSchedules {
 		log.Default().Printf("dbSchedule: %v", dbSchedule)
 	}
-	timeZone := utils.GetTimezone(ctx)
+	timeZone := utils.GetTimezone(c)
 	return models.ToSchedulesModelFromGetSchedulesInRangeRow(dbSchedules, timeZone), nil
 }
 
-func (s *ScheduleService) CreateSchedule(ctx context.Context, foodId int, scheduledAt time.Time, timeZone *time.Location) (*models.Schedule, error) {
-	dbSchedule, err := s.db.CreateSchedule(ctx, db.CreateScheduleParams{
+func (s *ScheduleService) CreateSchedule(c echo.Context, foodId int, scheduledAt time.Time, timeZone *time.Location) (*models.Schedule, error) {
+	dbSchedule, err := s.db.CreateSchedule(c.Request().Context(), db.CreateScheduleParams{
 		FoodID:      pgtype.Int4{Int32: int32(foodId), Valid: true},
 		ScheduledAt: pgtype.Timestamptz{Time: scheduledAt, Valid: true},
 	})

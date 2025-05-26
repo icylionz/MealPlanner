@@ -2,23 +2,27 @@ document.addEventListener("alpine:init", () => {
   Alpine.store("mealPlanner", {
     activeTab: "calendar",
     showModal: false,
-    currentDate: new Date().toISOString().split('T')[0],
+    currentDate: new Date().toLocaleDateString("en-CA"),
 
     init() {
       this.activeTab = "calendar";
       this.showModal = false;
-      this.currentDate = new Date().toISOString().split('T')[0];
+      this.currentDate = this.getToday();
+    },
+
+    getToday() {
+      return new Date().toLocaleDateString("en-CA");
     },
 
     setCurrentDate(date) {
-        this.currentDate = date;
-      },
-      
+      this.currentDate = date;
+    },
+
     showScheduleModal(date) {
       this.showModal = true;
       // Create modal container if it doesn't exist
       this.ensureModalContainer();
-      
+
       htmx.ajax("GET", `/schedules/modal?date=${date.date}`, {
         target: "#dynamic-modal-container",
         swap: "innerHTML",
@@ -111,12 +115,12 @@ document.addEventListener("alpine:init", () => {
       });
     },
     refreshCalendar() {
-       htmx.ajax('GET', '/calendar', {
-         target: '#calendar-container',
-         swap: 'outerHTML',
-         values: { date: this.currentDate }
-       });
-     },
+      htmx.ajax("GET", "/calendar", {
+        target: "#calendar-container",
+        swap: "outerHTML",
+        values: { date: this.currentDate },
+      });
+    },
   });
 });
 
