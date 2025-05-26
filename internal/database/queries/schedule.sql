@@ -1,7 +1,7 @@
 -- name: CreateSchedule :one
 WITH inserted_schedule AS (
-  INSERT INTO schedules (food_id, scheduled_at)
-  VALUES ($1, $2)
+  INSERT INTO schedules (food_id, scheduled_at, servings)
+  VALUES ($1, $2, $3)
   RETURNING *
 )
 SELECT s.*, f.name as food_name

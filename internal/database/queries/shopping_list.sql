@@ -64,8 +64,8 @@ WITH RECURSIVE ingredients_needed AS (
         f.name as food_name,
         f.unit_type,
         f.base_unit,
-        1.0 as quantity,
-        'serving' as unit,
+        s.servings as quantity,
+        f.base_unit as unit,  -- Same as base_unit for direct scheduling
         schedule_id,
         f.is_recipe
     FROM shopping_list_meals slm
@@ -98,10 +98,10 @@ SELECT
     food_name,
     unit_type,
     base_unit,
-    CAST(SUM(quantity) AS NUMERIC(10,2)) as total_quantity, -- Explicit NUMERIC with precision
-    unit,
+    CAST(SUM(quantity) AS NUMERIC(10,2)) as total_quantity,
+    base_unit as unit,  -- Always use base_unit for final output
     array_agg(DISTINCT schedule_id) as schedule_ids
 FROM ingredients_needed
 WHERE is_recipe = false
-GROUP BY shopping_list_id, food_id, food_name, unit_type, base_unit, unit
+GROUP BY shopping_list_id, food_id, food_name, unit_type, base_unit  -- Remove unit from GROUP BY
 ORDER BY food_name;

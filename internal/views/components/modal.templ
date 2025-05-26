@@ -70,6 +70,31 @@ templ CreateScheduleModal(props *utils.ModalProps) {
                             <div class="text-red-500 text-sm mt-1">{ err }</div>
                         }
                     </div>
+                    <!-- Servings Input -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Servings</label>
+                        <input
+                            type="number"
+                            name="servings"
+                            value={
+                                func(servings float64) string {
+                                    if servings <= 0 {
+                                        return "1"
+                                    }
+                                    return fmt.Sprintf("%.1f", servings)
+                                }(props.Servings)
+                            }
+                            min="0.1"
+                            step="0.1"
+                            class={
+                                "w-full rounded border p-2",
+                                templ.KV("border-red-500", props.Errors["servings"] != "")
+                            }
+                        />
+                        if err := props.Errors["servings"]; err != "" {
+                            <div class="text-red-500 text-sm mt-1">{ err }</div>
+                        }
+                    </div>
 
                     <!-- Actions -->
                     <div class="flex justify-end gap-3">

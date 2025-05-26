@@ -38,9 +38,10 @@ func (s *ScheduleService) GetSchedulesForRange(c echo.Context, start, end *time.
 	return models.ToSchedulesModelFromGetSchedulesInRangeRow(dbSchedules, timeZone), nil
 }
 
-func (s *ScheduleService) CreateSchedule(c echo.Context, foodId int, scheduledAt time.Time, timeZone *time.Location) (*models.Schedule, error) {
+func (s *ScheduleService) CreateSchedule(c echo.Context, foodId int, servings float64, scheduledAt time.Time, timeZone *time.Location) (*models.Schedule, error) {
 	dbSchedule, err := s.db.CreateSchedule(c.Request().Context(), db.CreateScheduleParams{
 		FoodID:      pgtype.Int4{Int32: int32(foodId), Valid: true},
+		Servings: utils.Float64ToNumeric(servings),
 		ScheduledAt: pgtype.Timestamptz{Time: scheduledAt, Valid: true},
 	})
 	if err != nil {

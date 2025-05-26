@@ -10,5 +10,6 @@ type ModalProps struct {
 	TimeChosen time.Time
 	FoodChosen models.Food
 	Foods      []*models.Food
+	Servings   float64
 	Errors     map[string]string
 }

@@ -30,6 +30,7 @@ CREATE TABLE recipe_ingredients (
 CREATE TABLE schedules (
     id SERIAL PRIMARY KEY,
     food_id INTEGER REFERENCES foods (id) ON DELETE CASCADE,
+    servings NUMERIC NOT NULL DEFAULT 1 CHECK (servings > 0),
     scheduled_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW (),
     updated_at TIMESTAMPTZ DEFAULT NOW ()

@@ -78,6 +78,13 @@ templ ScheduleItem(schedule *models.Schedule) {
             </div>
             <div>
                 <div class="font-medium text-gray-900">{schedule.FoodName}</div>
+                <div class="text-sm text-gray-500">
+                    if schedule.Servings != 1.0 {
+                        { fmt.Sprintf("%.1f servings", schedule.Servings) }
+                    } else {
+                        Scheduled meal
+                    }
+                </div>
                 <div class="text-sm text-gray-500">Scheduled meal</div>
             </div>
         </div>
