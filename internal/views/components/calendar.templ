@@ -5,7 +5,7 @@ import "mealplanner/internal/models"
 import "fmt"
 
 templ Calendar(day *utils.DayData) {
-    <div x-data="calendar" hx-get="/calendar" hx-trigger="calendarRefresh from:body" hx-vals="js:{date: currentDate}" hx-target="this" hx-swap="outerHTML" id="calendar-container">
+    <div x-data="calendar" hx-get="/calendar" hx-trigger="calendarRefresh from:body" hx-vals="js:{date: event.detail.date}" hx-target="this" hx-swap="outerHTML" id="calendar-container">
         <!-- Date Picker Header -->
         <div class="flex items-center justify-between p-4 bg-white rounded-lg shadow mb-4">
             <div class="flex items-center gap-3">
