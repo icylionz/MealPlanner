@@ -139,8 +139,8 @@ func (h *ShoppingListHandler) HandleAddItemsModal(c echo.Context) error {
 	now := time.Now()
 	weekAgo := now.AddDate(0, 0, -7)
 	weekFromNow := now.AddDate(0, 0, 7)
-	
-	schedules, err := h.scheduleService.GetSchedulesForRange(c, &weekAgo, &weekFromNow)
+	timeZone := utils.GetTimezone(c)
+	schedules, err := h.scheduleService.GetSchedulesForRange(c.Request().Context(), &weekAgo, &weekFromNow, timeZone)
 	if err != nil {
 		log.Printf("Error getting schedules: %v", err)
 		schedules = []*models.Schedule{} // Continue with empty schedules
@@ -269,9 +269,16 @@ func (h *ShoppingListHandler) HandleAddSchedules(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "Invalid list ID")
 	}
-
+	
+	err = c.Request().ParseForm()
+	if err != nil {
+		log.Default().Printf("Error parsing form: %s", err)
+		return err
+	}
+	
 	// Parse schedule IDs from form
 	scheduleIDStrs := c.Request().Form["schedule_ids"]
+	log.Default().Printf("Schedule IDs: %v", scheduleIDStrs)
 	if len(scheduleIDStrs) == 0 {
 		errors := map[string]string{"schedule_ids": "Please select at least one meal"}
 		return h.returnAddItemsModalWithErrors(c, listId, errors)
@@ -291,8 +298,8 @@ func (h *ShoppingListHandler) HandleAddSchedules(c echo.Context) error {
 	req := &models.AddSchedulesRequest{
 		ScheduleIDs: scheduleIDs,
 	}
-
-	err = h.shoppingService.AddSchedules(c.Request().Context(), listId, req)
+	timeZone := utils.GetTimezone(c)
+	err = h.shoppingService.AddSchedules(c.Request().Context(), listId, req, timeZone)
 	if err != nil {
 		log.Printf("Error adding schedules: %v", err)
 		return err
@@ -343,8 +350,9 @@ func (h *ShoppingListHandler) HandleAddDateRange(c echo.Context) error {
 		StartDate: startDate,
 		EndDate:   endDate,
 	}
-
-	err = h.shoppingService.AddDateRange(c.Request().Context(), listId, req)
+	
+	timeZone := utils.GetTimezone(c)
+	err = h.shoppingService.AddDateRange(c.Request().Context(), listId, req, timeZone)
 	if err != nil {
 		log.Printf("Error adding date range: %v", err)
 		return err
@@ -493,8 +501,8 @@ func (h *ShoppingListHandler) returnAddItemsModalWithErrors(c echo.Context, list
 	now := time.Now()
 	weekAgo := now.AddDate(0, 0, -7)
 	weekFromNow := now.AddDate(0, 0, 7)
-	
-	schedules, err := h.scheduleService.GetSchedulesForRange(c, &weekAgo, &weekFromNow)
+	timeZone := utils.GetTimezone(c)
+	schedules, err := h.scheduleService.GetSchedulesForRange(c.Request().Context(), &weekAgo, &weekFromNow, timeZone)
 	if err != nil {
 		schedules = []*models.Schedule{}
 	}

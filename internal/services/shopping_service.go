@@ -3,10 +3,12 @@ package services
 import (
 	"context"
 	"fmt"
+	"log"
 	"mealplanner/internal/database"
 	"mealplanner/internal/database/db"
 	"mealplanner/internal/models"
 	"mealplanner/internal/utils"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -121,14 +123,14 @@ func (s *ShoppingService) AddManualItem(ctx context.Context, listId int, req *mo
 
 		// Add or update item
 		return s.addOrUpdateItem(ctx, q, int32(listId), &itemInfo{
-			FoodID:     req.FoodID,
-			FoodName:   food.Name,
-			Quantity:   req.Quantity,
-			Unit:       req.Unit,
-			UnitType:   food.UnitType,
-			Notes:      req.Notes,
-			SourceID:   int(source.ID),
-			SourceQty:  req.Quantity,
+			FoodID:    req.FoodID,
+			FoodName:  food.Name,
+			Quantity:  req.Quantity,
+			Unit:      req.Unit,
+			UnitType:  food.UnitType,
+			Notes:     req.Notes,
+			SourceID:  int(source.ID),
+			SourceQty: req.Quantity,
 		})
 	})
 }
@@ -165,18 +167,20 @@ func (s *ShoppingService) AddRecipe(ctx context.Context, listId int, req *models
 	})
 }
 
-func (s *ShoppingService) AddSchedules(ctx context.Context, listId int, req *models.AddSchedulesRequest) error {
+func (s *ShoppingService) AddSchedules(ctx context.Context, listId int, req *models.AddSchedulesRequest, timeZone *time.Location) error {
 	return s.db.WithTx(ctx, func(q *db.Queries) error {
 		for _, scheduleID := range req.ScheduleIDs {
 			// Get schedule details
-			schedule, err := s.scheduleService.GetScheduleById(nil, scheduleID) // TODO: Fix context passing
+			schedule, err := s.scheduleService.GetScheduleById(ctx, scheduleID, timeZone)
 			if err != nil {
+				log.Default().Printf("Error getting schedule %d: %v", scheduleID, err)
 				return err
 			}
 
 			// Get food/recipe details
 			food, err := s.foodService.GetFoodDetails(ctx, fmt.Sprintf("%d", schedule.FoodID), 15)
 			if err != nil {
+				log.Default().Printf("Error getting food details for schedule %d: %v", scheduleID, err)
 				return err
 			}
 
@@ -189,6 +193,7 @@ func (s *ShoppingService) AddSchedules(ctx context.Context, listId int, req *mod
 				Servings:       utils.Float64ToNumeric(schedule.Servings),
 			})
 			if err != nil {
+				log.Default().Printf("Error creating source for schedule %d: %v", scheduleID, err)
 				return err
 			}
 
@@ -199,16 +204,17 @@ func (s *ShoppingService) AddSchedules(ctx context.Context, listId int, req *mod
 			} else {
 				// Add basic food
 				err = s.addOrUpdateItem(ctx, q, int32(listId), &itemInfo{
-					FoodID:     food.ID,
-					FoodName:   food.Name,
-					Quantity:   schedule.Servings,
-					Unit:       food.BaseUnit,
-					UnitType:   food.UnitType,
-					SourceID:   int(source.ID),
-					SourceQty:  schedule.Servings,
+					FoodID:    food.ID,
+					FoodName:  food.Name,
+					Quantity:  schedule.Servings,
+					Unit:      food.BaseUnit,
+					UnitType:  food.UnitType,
+					SourceID:  int(source.ID),
+					SourceQty: schedule.Servings,
 				})
 			}
 			if err != nil {
+				log.Default().Printf("Error adding schedule %d to list %d: %v", scheduleID, listId, err)
 				return err
 			}
 		}
@@ -216,9 +222,9 @@ func (s *ShoppingService) AddSchedules(ctx context.Context, listId int, req *mod
 	})
 }
 
-func (s *ShoppingService) AddDateRange(ctx context.Context, listId int, req *models.AddDateRangeRequest) error {
+func (s *ShoppingService) AddDateRange(ctx context.Context, listId int, req *models.AddDateRangeRequest, timeZone *time.Location) error {
 	// Get all schedules in range
-	schedules, err := s.scheduleService.GetSchedulesForRange(nil, &req.StartDate, &req.EndDate)
+	schedules, err := s.scheduleService.GetSchedulesForRange(ctx, &req.StartDate, &req.EndDate, timeZone)
 	if err != nil {
 		return err
 	}
@@ -231,7 +237,7 @@ func (s *ShoppingService) AddDateRange(ctx context.Context, listId int, req *mod
 
 	return s.AddSchedules(ctx, listId, &models.AddSchedulesRequest{
 		ScheduleIDs: scheduleIDs,
-	})
+	}, timeZone)
 }
 
 // Item management
@@ -311,6 +317,7 @@ func (s *ShoppingService) addOrUpdateItem(ctx context.Context, q *db.Queries, li
 			Quantity: utils.Float64ToNumeric(newQuantity),
 		})
 		if err != nil {
+			log.Default().Printf("Error updating item quantity: %v", err)
 			return err
 		}
 
@@ -333,6 +340,7 @@ func (s *ShoppingService) addOrUpdateItem(ctx context.Context, q *db.Queries, li
 		Notes:          pgtype.Text{String: info.Notes, Valid: info.Notes != ""},
 	})
 	if err != nil {
+		log.Default().Printf("Error creating item: %v", err)
 		return err
 	}
 
@@ -360,6 +368,7 @@ func (s *ShoppingService) addRecipeIngredientsRecursive(ctx context.Context, q *
 			// Recursive case: get full ingredient details and recurse
 			fullIngredient, err := s.foodService.GetFoodDetails(ctx, fmt.Sprintf("%d", ingredient.Food.ID), 15)
 			if err != nil {
+				log.Default().Printf("Error getting full ingredient details: %v", err)
 				return err
 			}
 
@@ -367,6 +376,7 @@ func (s *ShoppingService) addRecipeIngredientsRecursive(ctx context.Context, q *
 			ingredientScale := scaledQuantity / fullIngredient.Recipe.YieldQuantity
 			err = s.addRecipeIngredientsRecursive(ctx, q, listId, fullIngredient, ingredientScale, sourceID, depth+1)
 			if err != nil {
+				log.Default().Printf("Error adding recipe ingredients: %v", err)
 				return err
 			}
 		} else {
@@ -381,10 +391,12 @@ func (s *ShoppingService) addRecipeIngredientsRecursive(ctx context.Context, q *
 				SourceQty: scaledQuantity,
 			})
 			if err != nil {
+				log.Default().Printf("Error adding recipe ingredient: %v", err)
 				return err
 			}
 		}
 	}
+	log.Default().Printf("Added recipe ingredients for %s", recipe.Name)
 	return nil
 }
 
@@ -395,7 +407,7 @@ func (s *ShoppingService) getShoppingListItemsWithSources(ctx context.Context, l
 	}
 
 	itemMap := make(map[int32]*models.ShoppingListItem)
-	
+
 	for _, dbItem := range dbItems {
 		item, exists := itemMap[dbItem.ID]
 		if !exists {
@@ -481,12 +493,12 @@ func (s *ShoppingService) ExportShoppingListAsText(ctx context.Context, id int) 
 		if item.Purchased {
 			status = " ✓"
 		}
-		text += fmt.Sprintf("□ %s: %s %s%s\n", 
-			item.FoodName, 
-			utils.FormatQuantity(item.Quantity), 
+		text += fmt.Sprintf("□ %s: %s %s%s\n",
+			item.FoodName,
+			utils.FormatQuantity(item.Quantity),
 			item.Unit,
 			status)
-		
+
 		if item.Notes != "" {
 			text += fmt.Sprintf("  Note: %s\n", item.Notes)
 		}

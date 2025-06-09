@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/labstack/echo/v4"
 )
 
 type ScheduleService struct {
@@ -21,9 +20,9 @@ func NewScheduleService(db *database.DB) *ScheduleService {
 	return &ScheduleService{db: db}
 }
 
-func (s *ScheduleService) GetSchedulesForRange(c echo.Context, start, end *time.Time) ([]*models.Schedule, error) {
+func (s *ScheduleService) GetSchedulesForRange(ctx context.Context, start, end *time.Time, timeZone *time.Location) ([]*models.Schedule, error) {
 
-	dbSchedules, err := s.db.GetSchedulesInRange(c.Request().Context(), db.GetSchedulesInRangeParams{
+	dbSchedules, err := s.db.GetSchedulesInRange(ctx, db.GetSchedulesInRangeParams{
 		ScheduledAt:   pgtype.Timestamptz{Time: *start, Valid: true},
 		ScheduledAt_2: pgtype.Timestamptz{Time: *end, Valid: true},
 	})
@@ -31,15 +30,12 @@ func (s *ScheduleService) GetSchedulesForRange(c echo.Context, start, end *time.
 		log.Default().Printf("Error getting schedules: %s", err)
 		return nil, err
 	}
-	for _, dbSchedule := range dbSchedules {
-		log.Default().Printf("dbSchedule: %v", dbSchedule)
-	}
-	timeZone := utils.GetTimezone(c)
+	log.Default().Printf("Schedules found: %d", len(dbSchedules))
 	return models.ToSchedulesModelFromGetSchedulesInRangeRow(dbSchedules, timeZone), nil
 }
 
-func (s *ScheduleService) CreateSchedule(c echo.Context, foodId int, servings float64, scheduledAt time.Time, timeZone *time.Location) (*models.Schedule, error) {
-	dbSchedule, err := s.db.CreateSchedule(c.Request().Context(), db.CreateScheduleParams{
+func (s *ScheduleService) CreateSchedule(ctx context.Context, foodId int, servings float64, scheduledAt time.Time, timeZone *time.Location) (*models.Schedule, error) {
+	dbSchedule, err := s.db.CreateSchedule(ctx, db.CreateScheduleParams{
 		FoodID:      pgtype.Int4{Int32: int32(foodId), Valid: true},
 		Servings: utils.Float64ToNumeric(servings),
 		ScheduledAt: pgtype.Timestamptz{Time: scheduledAt, Valid: true},
@@ -50,8 +46,8 @@ func (s *ScheduleService) CreateSchedule(c echo.Context, foodId int, servings fl
 	return models.ToScheduleModelFromCreateScheduleRow(dbSchedule, timeZone), nil
 }
 
-func (s *ScheduleService) UpdateSchedule(c echo.Context, scheduleId int, foodId int, servings float64, scheduledAt time.Time, timeZone *time.Location) (*models.Schedule, error) {
-    dbSchedule, err := s.db.UpdateSchedule(c.Request().Context(), db.UpdateScheduleParams{
+func (s *ScheduleService) UpdateSchedule(ctx context.Context, scheduleId int, foodId int, servings float64, scheduledAt time.Time, timeZone *time.Location) (*models.Schedule, error) {
+    dbSchedule, err := s.db.UpdateSchedule(ctx, db.UpdateScheduleParams{
         ID:          int32(scheduleId),
         FoodID:      pgtype.Int4{Int32: int32(foodId), Valid: true},
         Servings:    utils.Float64ToNumeric(servings),
@@ -63,12 +59,12 @@ func (s *ScheduleService) UpdateSchedule(c echo.Context, scheduleId int, foodId 
     return models.ToScheduleModelFromUpdateScheduleRow(dbSchedule, timeZone), nil
 }
 
-func (s *ScheduleService) GetScheduleById(c echo.Context, scheduleId int) (*models.Schedule, error) {
-	dbSchedule, err := s.db.GetScheduleById(c.Request().Context(), int32(scheduleId))
+func (s *ScheduleService) GetScheduleById(ctx context.Context, scheduleId int, timeZone *time.Location) (*models.Schedule, error) {
+	log.Default().Printf("Getting schedule %d...", scheduleId)
+	dbSchedule, err := s.db.GetScheduleById(ctx, int32(scheduleId))
 	if err != nil {
 		return nil, err
 	}
-	timeZone := utils.GetTimezone(c)
 	return models.ToScheduleModelFromGetScheduleByIdRow(dbSchedule, timeZone), nil
 }
 

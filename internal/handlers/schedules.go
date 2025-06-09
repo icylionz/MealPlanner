@@ -95,7 +95,7 @@ func (h *SchedulesHandler) HandleAddSchedule(c echo.Context) error {
 	// store the time in UTC
 	scheduleAt = scheduleAt.UTC()
 
-	_, err = h.scheduleService.CreateSchedule(c, foodId, servings, scheduleAt, userTimeZone)
+	_, err = h.scheduleService.CreateSchedule(c.Request().Context(), foodId, servings, scheduleAt, userTimeZone)
 	if err != nil {
 		log.Default().Printf("Error creating schedule: %s", err)
 		return err
@@ -111,7 +111,7 @@ func (h *SchedulesHandler) HandleEditScheduleModal(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "Invalid ID")
 	}
-
+	timeZone := utils.GetTimezone(c)
 	// If PUT, handle form submission
 	if c.Request().Method == "PUT" {
 		log.Default().Printf("PUT /schedules/%d/edit", idNum)
@@ -189,7 +189,7 @@ func (h *SchedulesHandler) HandleEditScheduleModal(c echo.Context) error {
 		// Store the time in UTC
 		scheduleAt = scheduleAt.UTC()
 
-		_, err = h.scheduleService.UpdateSchedule(c, idNum, foodId, servings, scheduleAt, userTimeZone)
+		_, err = h.scheduleService.UpdateSchedule(c.Request().Context(), idNum, foodId, servings, scheduleAt, userTimeZone)
 		if err != nil {
 			log.Default().Printf("Error updating schedule: %s", err)
 			return err
@@ -201,7 +201,7 @@ func (h *SchedulesHandler) HandleEditScheduleModal(c echo.Context) error {
 
 	log.Default().Printf("GET /schedules/%d/edit", idNum)
 	// Initial GET - show form with existing data
-	schedule, err := h.scheduleService.GetScheduleById(c, idNum)
+	schedule, err := h.scheduleService.GetScheduleById(c.Request().Context(), idNum, timeZone)
 	if err != nil {
 		return c.String(500, "Error getting schedule")
 	}
