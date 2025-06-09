@@ -1,0 +1,15 @@
+package pages
+
+import (
+    "mealplanner/internal/views/components"
+    "mealplanner/internal/views/layouts"
+)
+
+templ FoodsFullPage() {
+    @layouts.Base() {
+        @components.Navigation()
+        <div id="main-content">
+            @components.FoodsPage()
+        </div>
+    }
+}

@@ -1,0 +1,16 @@
+package pages
+
+import (
+    "mealplanner/internal/views/layouts"
+    "mealplanner/internal/views/components"
+    "mealplanner/internal/models"
+)
+
+templ ShoppingListDetailPage(list *models.ShoppingList) {
+    @layouts.Base() {
+        @components.Navigation()
+        <div id="main-content">
+            @components.ShoppingListDetail(list)
+        </div>
+    }
+}

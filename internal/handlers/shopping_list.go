@@ -42,20 +42,26 @@ func (h *ShoppingListHandler) HandleShoppingListsPage(c echo.Context) error {
 
 	return pages.ShoppingListsPage(lists).Render(c.Request().Context(), c.Response().Writer)
 }
-
 func (h *ShoppingListHandler) HandleViewShoppingList(c echo.Context) error {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "Invalid ID")
-	}
+    id, err := strconv.Atoi(c.Param("id"))
+    if err != nil {
+        return echo.NewHTTPError(http.StatusBadRequest, "Invalid ID")
+    }
 
-	list, err := h.shoppingService.GetShoppingListById(c.Request().Context(), id)
-	if err != nil {
-		log.Printf("Error getting shopping list: %v", err)
-		return err
-	}
+    list, err := h.shoppingService.GetShoppingListById(c.Request().Context(), id)
+    if err != nil {
+        log.Printf("Error getting shopping list: %v", err)
+        return err
+    }
 
-	return components.ShoppingListDetail(list).Render(c.Request().Context(), c.Response().Writer)
+    // Check if this is an HTMX request
+    if c.Request().Header.Get("HX-Request") != "" {
+        // Return partial for HTMX
+        return components.ShoppingListDetail(list).Render(c.Request().Context(), c.Response().Writer)
+    }
+    
+    // Return full page for direct navigation  
+    return pages.ShoppingListDetailPage(list).Render(c.Request().Context(), c.Response().Writer)
 }
 
 // Shopping list CRUD

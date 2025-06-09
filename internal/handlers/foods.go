@@ -8,6 +8,7 @@ import (
 	"mealplanner/internal/services"
 	"mealplanner/internal/utils"
 	"mealplanner/internal/views/components"
+	"mealplanner/internal/views/pages"
 	"net/http"
 	"strconv"
 
@@ -20,9 +21,15 @@ type FoodHandler struct {
 }
 
 func (h *FoodHandler) HandleFoodsPage(c echo.Context) error {
-	return components.FoodsPage().Render(c.Request().Context(), c.Response().Writer)
-}
+	// Check if this is an HTMX request
+	if c.Request().Header.Get("HX-Request") != "" {
+		// Return partial for HTMX
+		return components.FoodsPage().Render(c.Request().Context(), c.Response().Writer)
+	}
 
+	// Return full page for direct navigation
+	return pages.FoodsFullPage().Render(c.Request().Context(), c.Response().Writer)
+}
 func (h *FoodHandler) HandleViewFoodDetailsModal(c echo.Context) error {
 	id := c.QueryParam("id")
 	food, err := h.service.GetFoodDetails(c.Request().Context(), id, 1)
