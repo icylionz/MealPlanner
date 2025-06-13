@@ -67,11 +67,8 @@ document.addEventListener("alpine:init", () => {
       const itemElement = document.querySelector(`[data-item-id="${itemId}"]`);
       if (!itemElement) return;
       
-      const currentQuantity = prompt("Enter new quantity:", "");
-      if (currentQuantity === null) return; // User cancelled
-      
       const currentNotes = prompt("Enter notes (optional):", "");
-      if (currentNotes === null) return; // User cancelled
+      if (currentNotes === null) return; 
       
       // Get current list ID from URL
       const pathParts = window.location.pathname.split('/');
@@ -80,7 +77,6 @@ document.addEventListener("alpine:init", () => {
       htmx.ajax("PUT", `/shopping-lists/${listId}/items/${itemId}`, {
         target: "#items-container",
         values: {
-          quantity: currentQuantity,
           notes: currentNotes || ""
         },
         handler: (_, xhr) => {

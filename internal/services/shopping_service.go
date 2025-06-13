@@ -240,14 +240,6 @@ func (s *ShoppingService) AddDateRange(ctx context.Context, listId int, req *mod
 	}, timeZone)
 }
 
-// Item management
-func (s *ShoppingService) UpdateItemQuantity(ctx context.Context, itemId int, newQuantity float64) error {
-	return s.db.UpdateShoppingListItemQuantity(ctx, db.UpdateShoppingListItemQuantityParams{
-		ID:       int32(itemId),
-		Quantity: utils.Float64ToNumeric(newQuantity),
-	})
-}
-
 func (s *ShoppingService) UpdateItemNotes(ctx context.Context, itemId int, notes string) error {
 	return s.db.UpdateShoppingListItemNotes(ctx, db.UpdateShoppingListItemNotesParams{
 		ID:    int32(itemId),
@@ -300,7 +292,6 @@ type itemInfo struct {
 }
 
 func (s *ShoppingService) addOrUpdateItem(ctx context.Context, q *db.Queries, listId int32, info *itemInfo) error {
-	// Try to find existing compatible item
 	existingItem, err := q.FindCompatibleShoppingListItem(ctx, db.FindCompatibleShoppingListItemParams{
 		ShoppingListID: pgtype.Int4{Int32: listId, Valid: true},
 		FoodID:         pgtype.Int4{Int32: int32(info.FoodID), Valid: true},
@@ -308,20 +299,6 @@ func (s *ShoppingService) addOrUpdateItem(ctx context.Context, q *db.Queries, li
 	})
 
 	if err == nil {
-		// Item exists, update quantity and add source link
-		existingQuantity, err := existingItem.Quantity.Float64Value()
-		newQuantity := existingQuantity.Float64 + info.Quantity
-
-		err = q.UpdateShoppingListItemQuantity(ctx, db.UpdateShoppingListItemQuantityParams{
-			ID:       existingItem.ID,
-			Quantity: utils.Float64ToNumeric(newQuantity),
-		})
-		if err != nil {
-			log.Default().Printf("Error updating item quantity: %v", err)
-			return err
-		}
-
-		// Link to source
 		return q.CreateShoppingListItemSource(ctx, db.CreateShoppingListItemSourceParams{
 			ShoppingListItemID:   existingItem.ID,
 			ShoppingListSourceID: int32(info.SourceID),
@@ -329,22 +306,18 @@ func (s *ShoppingService) addOrUpdateItem(ctx context.Context, q *db.Queries, li
 		})
 	}
 
-	// Create new item
 	newItem, err := q.CreateShoppingListItem(ctx, db.CreateShoppingListItemParams{
 		ShoppingListID: pgtype.Int4{Int32: listId, Valid: true},
 		FoodID:         pgtype.Int4{Int32: int32(info.FoodID), Valid: true},
 		FoodName:       info.FoodName,
-		Quantity:       utils.Float64ToNumeric(info.Quantity),
 		Unit:           info.Unit,
 		UnitType:       info.UnitType,
 		Notes:          pgtype.Text{String: info.Notes, Valid: info.Notes != ""},
 	})
 	if err != nil {
-		log.Default().Printf("Error creating item: %v", err)
 		return err
 	}
 
-	// Link to source
 	return q.CreateShoppingListItemSource(ctx, db.CreateShoppingListItemSourceParams{
 		ShoppingListItemID:   newItem.ID,
 		ShoppingListSourceID: int32(info.SourceID),
@@ -401,7 +374,7 @@ func (s *ShoppingService) addRecipeIngredientsRecursive(ctx context.Context, q *
 }
 
 func (s *ShoppingService) getShoppingListItemsWithSources(ctx context.Context, listId int) ([]*models.ShoppingListItem, error) {
-	dbItems, err := s.db.GetShoppingListItemsWithSources(ctx, pgtype.Int4{Int32: int32(listId), Valid: true})
+	dbItems, err := s.db.GetShoppingListItemsWithCalculatedQuantities(ctx, pgtype.Int4{Int32: int32(listId), Valid: true})
 	if err != nil {
 		return nil, err
 	}
@@ -411,7 +384,7 @@ func (s *ShoppingService) getShoppingListItemsWithSources(ctx context.Context, l
 	for _, dbItem := range dbItems {
 		item, exists := itemMap[dbItem.ID]
 		if !exists {
-			quantity, _ := dbItem.Quantity.Float64Value()
+			calculatedQuantity, _ := dbItem.CalculatedQuantity.Float64Value()
 			actualQuantity, _ := dbItem.ActualQuantity.Float64Value()
 			actualPrice, _ := dbItem.ActualPrice.Float64Value()
 
@@ -420,7 +393,7 @@ func (s *ShoppingService) getShoppingListItemsWithSources(ctx context.Context, l
 				ShoppingListID: int(dbItem.ShoppingListID.Int32),
 				FoodID:         int(dbItem.FoodID.Int32),
 				FoodName:       dbItem.FoodName,
-				Quantity:       quantity.Float64,
+				Quantity:       calculatedQuantity.Float64, // Now calculated from sources
 				Unit:           dbItem.Unit,
 				UnitType:       dbItem.UnitType,
 				Notes:          dbItem.Notes.String,

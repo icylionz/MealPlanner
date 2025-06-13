@@ -377,7 +377,6 @@ func (h *ShoppingListHandler) HandleAddDateRange(c echo.Context) error {
 
 }
 
-// Item management
 func (h *ShoppingListHandler) HandleUpdateItem(c echo.Context) error {
 	listId, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -390,31 +389,20 @@ func (h *ShoppingListHandler) HandleUpdateItem(c echo.Context) error {
 	}
 
 	var form struct {
-		Quantity float64 `form:"quantity"`
-		Notes    string  `form:"notes"`
+		Notes string `form:"notes"`
 	}
 
 	if err := c.Bind(&form); err != nil {
 		return err
 	}
 
-	// Update quantity if provided
-	if form.Quantity > 0 {
-		err = h.shoppingService.UpdateItemQuantity(c.Request().Context(), itemId, form.Quantity)
-		if err != nil {
-			log.Printf("Error updating item quantity: %v", err)
-			return err
-		}
-	}
-
-	// Update notes
+	// Only update notes - quantity is calculated
 	err = h.shoppingService.UpdateItemNotes(c.Request().Context(), itemId, form.Notes)
 	if err != nil {
 		log.Printf("Error updating item notes: %v", err)
 		return err
 	}
 
-	// Return updated list items
 	return h.returnUpdatedItems(c, listId)
 }
 

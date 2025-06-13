@@ -12,10 +12,9 @@ CREATE TABLE shopping_list_items (
     id SERIAL PRIMARY KEY,
     shopping_list_id INTEGER REFERENCES shopping_lists(id) ON DELETE CASCADE,
     food_id INTEGER REFERENCES foods(id),
-    food_name TEXT NOT NULL, -- Denormalized for display
-    quantity NUMERIC NOT NULL CHECK (quantity > 0),
+    food_name TEXT NOT NULL,
     unit TEXT NOT NULL,
-    unit_type TEXT NOT NULL, -- For proper unit conversion
+    unit_type TEXT NOT NULL,
     notes TEXT,
     purchased BOOLEAN DEFAULT FALSE,
     actual_quantity NUMERIC,

@@ -24,9 +24,9 @@ DELETE FROM shopping_lists WHERE id = $1;
 -- Shopping List Item Operations
 -- name: CreateShoppingListItem :one
 INSERT INTO shopping_list_items (
-    shopping_list_id, food_id, food_name, quantity, unit, unit_type, notes
+    shopping_list_id, food_id, food_name, unit, unit_type, notes
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: GetShoppingListItems :many
@@ -50,11 +50,6 @@ WHERE shopping_list_id = $1
   AND food_id = $2 
   AND unit = $3
 LIMIT 1;
-
--- name: UpdateShoppingListItemQuantity :exec
-UPDATE shopping_list_items 
-SET quantity = $2, updated_at = NOW()
-WHERE id = $1;
 
 -- name: UpdateShoppingListItemNotes :exec
 UPDATE shopping_list_items 
@@ -331,3 +326,32 @@ ORDER BY sl.updated_at DESC;
 SELECT * FROM shopping_lists
 WHERE created_at BETWEEN $1 AND $2
 ORDER BY created_at DESC;
+
+-- name: GetShoppingListItemsWithCalculatedQuantities :many
+SELECT 
+    sli.id,
+    sli.shopping_list_id,
+    sli.food_id,
+    sli.food_name,
+    sli.unit,
+    sli.unit_type,
+    sli.notes,
+    sli.purchased,
+    sli.actual_quantity,
+    sli.actual_price,
+    sli.created_at,
+    sli.updated_at,
+    COALESCE(qty_calc.total_quantity, CAST(0 AS NUMERIC)) as calculated_quantity,
+    slis.shopping_list_source_id as source_id,
+    slis.contributed_quantity
+FROM shopping_list_items sli
+LEFT JOIN (
+    SELECT 
+        shopping_list_item_id,
+        CAST(SUM(contributed_quantity) AS NUMERIC) as total_quantity
+    FROM shopping_list_item_sources 
+    GROUP BY shopping_list_item_id
+) qty_calc ON sli.id = qty_calc.shopping_list_item_id
+LEFT JOIN shopping_list_item_sources slis ON sli.id = slis.shopping_list_item_id
+WHERE sli.shopping_list_id = $1
+ORDER BY sli.food_name, slis.shopping_list_source_id;
