@@ -359,7 +359,7 @@ func (h *FoodHandler) GetNewIngredientRow(c echo.Context) error {
 }
 
 func (h *FoodHandler) GetFoodUnits(c echo.Context) error {
-	idAsString := c.QueryParam("id")
+	idAsString := c.QueryParam("food_id")
 	unitType := c.QueryParam("unit_type")
 	if (idAsString == "" || idAsString == "-1") && unitType == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "Invalid ID or Unit Type")

@@ -34,7 +34,7 @@ templ CreateScheduleModal(props *utils.ModalProps) {
                     hx-target-400="#dynamic-modal-container"
                     hx-swap="innerHTML"
                     class="space-y-4"
-                    @htmx:after-request="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); refreshCalendar();}"
+                    @htmx:afterRequest="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); refreshCalendar();}"
                 >
                     <input type="hidden" name="date" value={ props.Date.Format("2006-01-02") } />
 
@@ -259,7 +259,7 @@ templ CreateEditFoodModal(props *utils.FoodFormProps) {
                     }
                     hx-target="#dynamic-modal-container"
                     hx-target-400="#dynamic-modal-container"
-                    @htmx:after-request="handleSuccessfulFoodCreateOrUpdate(event)"
+                    @htmx:afterRequest="handleSuccessfulFoodCreateOrUpdate(event)"
                     class="space-y-4"
                 >
                     <!-- Basic Info -->
@@ -474,8 +474,8 @@ templ IngredientRow(ing *models.RecipeItem, index int, availableFoods []*models.
             hx-get="/foods/units"
             hx-trigger="change"
             hx-swap="innerHTML"
-            hx-params="id"
-            hx-vals="js:{id: event.target.value}"
+            hx-params="food_id"
+            hx-vals="js:{food_id: event.target.value}"
             hx-target="next div > select"
         >
             <option value="">Select Food</option>

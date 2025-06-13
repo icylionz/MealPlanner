@@ -240,7 +240,7 @@ templ CreateShoppingListModal(props *utils.ShoppingListFormProps) {
                     hx-target="#dynamic-modal-container"
                     hx-target-400="#dynamic-modal-container"
                     hx-swap="innerHTML"
-                    @htmx:after-request="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); $store.mealPlanner.navigateToShoppingLists(); }"
+                    @htmx:afterRequest="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); $store.mealPlanner.navigateToShoppingLists(); }"
                     class="space-y-4"
                 >
                     <div>
@@ -374,7 +374,7 @@ templ ManualItemForm(props *utils.AddItemsModalProps) {
         hx-post={ fmt.Sprintf("/shopping-lists/%d/items/manual", props.ListID) }
         hx-target="#dynamic-modal-container"
         hx-target-400="#dynamic-modal-container"
-        @htmx:after-request="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); location.reload(); }"
+        @htmx:afterRequest="if(event.detail.xhr.status === 200 ) { console.log('reloading $event.detail.elt'); $store.mealPlanner.toggleModal(false); location.reload(); }"
         class="space-y-4"
     >
         <div>
@@ -462,7 +462,7 @@ templ RecipeItemForm(props *utils.AddItemsModalProps) {
         hx-post={ fmt.Sprintf("/shopping-lists/%d/items/recipe", props.ListID) }
         hx-target="#dynamic-modal-container"
         hx-target-400="#dynamic-modal-container"
-        @htmx:after-request="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); location.reload(); }"
+        @htmx:afterRequest="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); location.reload(); }"
         class="space-y-4"
     >
         <div>
@@ -520,7 +520,7 @@ templ SchedulesItemForm(props *utils.AddItemsModalProps) {
         hx-post={ fmt.Sprintf("/shopping-lists/%d/items/schedules", props.ListID) }
         hx-target="#dynamic-modal-container"
         hx-target-400="#dynamic-modal-container"
-        @htmx:after-request="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); location.reload(); }"
+        @htmx:afterRequest="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); location.reload(); }"
         class="space-y-4"
     >
         <div>
@@ -573,7 +573,7 @@ templ DateRangeItemForm(props *utils.AddItemsModalProps) {
         hx-post={ fmt.Sprintf("/shopping-lists/%d/items/date-range", props.ListID) }
         hx-target="#dynamic-modal-container"
         hx-target-400="#dynamic-modal-container"
-        @htmx:after-request="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); location.reload(); }"
+        @htmx:afterRequest="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); location.reload(); }"
         class="space-y-4"
     >
         <div class="grid grid-cols-2 gap-4">
