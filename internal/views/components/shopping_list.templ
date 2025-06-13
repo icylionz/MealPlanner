@@ -8,7 +8,12 @@ import (
 )
 
 templ ShoppingListDetail(list *models.ShoppingList) {
-    <div x-data="shoppingList" class="bg-white rounded-lg shadow">
+    <div x-data="shoppingList" class="bg-white rounded-lg shadow"
+	    hx-get={ fmt.Sprintf("/shopping-lists/%d", list.ID) }
+        hx-trigger="refreshShoppingList from:body"
+        hx-target="this"
+        hx-swap="outerHTML"
+    >
         <div class="p-6 border-b">
             <div class="flex justify-between items-center mb-4">
                 <div>
@@ -216,6 +221,7 @@ templ ShoppingListSource(source *models.ShoppingListSource, listID int) {
             <button
                 hx-delete={ fmt.Sprintf("/shopping-lists/%d/sources/%d", listID, source.ID) }
                 hx-target="#main-content"
+                hx-swap="innerHTML"
                 hx-confirm={ fmt.Sprintf("Remove all items from \"%s\"?", source.SourceName) }
                 class="p-1 text-gray-400 hover:text-red-600 rounded"
                 title="Remove all items from this source"
@@ -372,7 +378,7 @@ templ AddItemsModal(props *utils.AddItemsModalProps) {
 templ ManualItemForm(props *utils.AddItemsModalProps) {
     <form
         hx-post={ fmt.Sprintf("/shopping-lists/%d/items/manual", props.ListID) }
-        hx-target="#main-content"
+        hx-target="#dynamic-modal-container"
         hx-target-400="#dynamic-modal-container"
         @htmx:afterRequest="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); }" 
         class="space-y-4"
@@ -460,7 +466,7 @@ templ ManualItemForm(props *utils.AddItemsModalProps) {
 templ RecipeItemForm(props *utils.AddItemsModalProps) {
     <form
         hx-post={ fmt.Sprintf("/shopping-lists/%d/items/recipe", props.ListID) }
-        hx-target="#main-content"
+        hx-target="#dynamic-modal-container"
         hx-target-400="#dynamic-modal-container"
         @htmx:afterRequest="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); }" 
         class="space-y-4"
@@ -518,7 +524,7 @@ templ RecipeItemForm(props *utils.AddItemsModalProps) {
 templ SchedulesItemForm(props *utils.AddItemsModalProps) {
     <form
         hx-post={ fmt.Sprintf("/shopping-lists/%d/items/schedules", props.ListID) }
-        hx-target="#main-content"
+        hx-target="#dynamic-modal-container"
         hx-target-400="#dynamic-modal-container"
         @htmx:afterRequest="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); }" 
         class="space-y-4"
@@ -571,7 +577,7 @@ templ SchedulesItemForm(props *utils.AddItemsModalProps) {
 templ DateRangeItemForm(props *utils.AddItemsModalProps) {
     <form
         hx-post={ fmt.Sprintf("/shopping-lists/%d/items/date-range", props.ListID) }
-        hx-target="#main-content"
+        hx-target="#dynamic-modal-container"
         hx-target-400="#dynamic-modal-container"
         @htmx:afterRequest="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); }" 
         class="space-y-4"

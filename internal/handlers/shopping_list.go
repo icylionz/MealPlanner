@@ -216,11 +216,8 @@ func (h *ShoppingListHandler) HandleAddManualItem(c echo.Context) error {
 		return err
 	}
 	
-	list, err := h.shoppingService.GetShoppingListById(c.Request().Context(), listId)
-	if err != nil {
-		return err
-	}
-	return components.ShoppingListDetail(list).Render(c.Request().Context(), c.Response().Writer)
+	c.Response().Header().Set("HX-Trigger", "refreshShoppingList,closeModal")
+	return c.NoContent(http.StatusOK)
 }
 
 // Recipe addition
@@ -270,11 +267,10 @@ func (h *ShoppingListHandler) HandleAddRecipe(c echo.Context) error {
 		return err
 	}
 
-	list, err := h.shoppingService.GetShoppingListById(c.Request().Context(), listId)
-	if err != nil {
-		return err
-	}
-	return components.ShoppingListDetail(list).Render(c.Request().Context(), c.Response().Writer)
+
+	c.Response().Header().Set("HX-Trigger", "refreshShoppingList,closeModal")
+	return c.NoContent(http.StatusOK)
+
 }
 
 // Schedule addition
@@ -319,11 +315,10 @@ func (h *ShoppingListHandler) HandleAddSchedules(c echo.Context) error {
 		return err
 	}
 
-	list, err := h.shoppingService.GetShoppingListById(c.Request().Context(), listId)
-	if err != nil {
-		return err
-	}
-	return components.ShoppingListDetail(list).Render(c.Request().Context(), c.Response().Writer)
+
+	c.Response().Header().Set("HX-Trigger", "refreshShoppingList,closeModal")
+	return c.NoContent(http.StatusOK)
+
 }
 
 // Date range addition
@@ -376,11 +371,10 @@ func (h *ShoppingListHandler) HandleAddDateRange(c echo.Context) error {
 		return err
 	}
 
-	list, err := h.shoppingService.GetShoppingListById(c.Request().Context(), listId)
-	if err != nil {
-		return err
-	}
-	return components.ShoppingListDetail(list).Render(c.Request().Context(), c.Response().Writer)
+
+	c.Response().Header().Set("HX-Trigger", "refreshShoppingList,closeModal")
+	return c.NoContent(http.StatusOK)
+
 }
 
 // Item management

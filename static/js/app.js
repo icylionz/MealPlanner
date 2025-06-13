@@ -163,3 +163,7 @@ document.addEventListener("htmx:configRequest", function (evt) {
   evt.detail.headers["X-Timezone"] = timezone;
   localStorage.setItem("userTimezone", timezone);
 });
+
+document.addEventListener('closeModal', function() {
+  Alpine.store('mealPlanner').toggleModal(false);
+});
