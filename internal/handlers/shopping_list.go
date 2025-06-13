@@ -21,7 +21,7 @@ type ShoppingListHandler struct {
 }
 
 func NewShoppingListHandler(
-	shoppingService *services.ShoppingService, 
+	shoppingService *services.ShoppingService,
 	scheduleService *services.ScheduleService,
 	foodService *services.FoodService,
 ) *ShoppingListHandler {
@@ -43,25 +43,25 @@ func (h *ShoppingListHandler) HandleShoppingListsPage(c echo.Context) error {
 	return pages.ShoppingListsPage(lists).Render(c.Request().Context(), c.Response().Writer)
 }
 func (h *ShoppingListHandler) HandleViewShoppingList(c echo.Context) error {
-    id, err := strconv.Atoi(c.Param("id"))
-    if err != nil {
-        return echo.NewHTTPError(http.StatusBadRequest, "Invalid ID")
-    }
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "Invalid ID")
+	}
 
-    list, err := h.shoppingService.GetShoppingListById(c.Request().Context(), id)
-    if err != nil {
-        log.Printf("Error getting shopping list: %v", err)
-        return err
-    }
+	list, err := h.shoppingService.GetShoppingListById(c.Request().Context(), id)
+	if err != nil {
+		log.Printf("Error getting shopping list: %v", err)
+		return err
+	}
 
-    // Check if this is an HTMX request
-    if c.Request().Header.Get("HX-Request") != "" {
-        // Return partial for HTMX
-        return components.ShoppingListDetail(list).Render(c.Request().Context(), c.Response().Writer)
-    }
-    
-    // Return full page for direct navigation  
-    return pages.ShoppingListDetailPage(list).Render(c.Request().Context(), c.Response().Writer)
+	// Check if this is an HTMX request
+	if c.Request().Header.Get("HX-Request") != "" {
+		// Return partial for HTMX
+		return components.ShoppingListDetail(list).Render(c.Request().Context(), c.Response().Writer)
+	}
+
+	// Return full page for direct navigation
+	return pages.ShoppingListDetailPage(list).Render(c.Request().Context(), c.Response().Writer)
 }
 
 // Shopping list CRUD
@@ -215,8 +215,12 @@ func (h *ShoppingListHandler) HandleAddManualItem(c echo.Context) error {
 		log.Printf("Error adding manual item: %v", err)
 		return err
 	}
-
-	return c.NoContent(http.StatusOK)
+	
+	list, err := h.shoppingService.GetShoppingListById(c.Request().Context(), listId)
+	if err != nil {
+		return err
+	}
+	return components.ShoppingListDetail(list).Render(c.Request().Context(), c.Response().Writer)
 }
 
 // Recipe addition
@@ -266,7 +270,11 @@ func (h *ShoppingListHandler) HandleAddRecipe(c echo.Context) error {
 		return err
 	}
 
-	return c.NoContent(http.StatusOK)
+	list, err := h.shoppingService.GetShoppingListById(c.Request().Context(), listId)
+	if err != nil {
+		return err
+	}
+	return components.ShoppingListDetail(list).Render(c.Request().Context(), c.Response().Writer)
 }
 
 // Schedule addition
@@ -275,13 +283,13 @@ func (h *ShoppingListHandler) HandleAddSchedules(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "Invalid list ID")
 	}
-	
+
 	err = c.Request().ParseForm()
 	if err != nil {
 		log.Default().Printf("Error parsing form: %s", err)
 		return err
 	}
-	
+
 	// Parse schedule IDs from form
 	scheduleIDStrs := c.Request().Form["schedule_ids"]
 	log.Default().Printf("Schedule IDs: %v", scheduleIDStrs)
@@ -311,7 +319,11 @@ func (h *ShoppingListHandler) HandleAddSchedules(c echo.Context) error {
 		return err
 	}
 
-	return c.NoContent(http.StatusOK)
+	list, err := h.shoppingService.GetShoppingListById(c.Request().Context(), listId)
+	if err != nil {
+		return err
+	}
+	return components.ShoppingListDetail(list).Render(c.Request().Context(), c.Response().Writer)
 }
 
 // Date range addition
@@ -332,7 +344,7 @@ func (h *ShoppingListHandler) HandleAddDateRange(c echo.Context) error {
 
 	// Validate and parse dates
 	errors := make(map[string]string)
-	
+
 	startDate, err := time.Parse("2006-01-02", form.StartDate)
 	if err != nil {
 		errors["start_date"] = "Invalid start date"
@@ -356,7 +368,7 @@ func (h *ShoppingListHandler) HandleAddDateRange(c echo.Context) error {
 		StartDate: startDate,
 		EndDate:   endDate,
 	}
-	
+
 	timeZone := utils.GetTimezone(c)
 	err = h.shoppingService.AddDateRange(c.Request().Context(), listId, req, timeZone)
 	if err != nil {
@@ -364,7 +376,11 @@ func (h *ShoppingListHandler) HandleAddDateRange(c echo.Context) error {
 		return err
 	}
 
-	return c.NoContent(http.StatusOK)
+	list, err := h.shoppingService.GetShoppingListById(c.Request().Context(), listId)
+	if err != nil {
+		return err
+	}
+	return components.ShoppingListDetail(list).Render(c.Request().Context(), c.Response().Writer)
 }
 
 // Item management
@@ -470,18 +486,18 @@ func (h *ShoppingListHandler) HandleDeleteItemsBySource(c echo.Context) error {
 	}
 
 	err = h.shoppingService.RemoveItemsBySource(c.Request().Context(), sourceId)
-    if err != nil {
-        log.Printf("Error deleting items by source: %v", err)
-        return err
-    }
+	if err != nil {
+		log.Printf("Error deleting items by source: %v", err)
+		return err
+	}
 
-    // Return the full shopping list detail
-    list, err := h.shoppingService.GetShoppingListById(c.Request().Context(), listId)
-    if err != nil {
-        return err
-    }
+	// Return the full shopping list detail
+	list, err := h.shoppingService.GetShoppingListById(c.Request().Context(), listId)
+	if err != nil {
+		return err
+	}
 
-    return components.ShoppingListDetail(list).Render(c.Request().Context(), c.Response().Writer)
+	return components.ShoppingListDetail(list).Render(c.Request().Context(), c.Response().Writer)
 }
 
 // Export
