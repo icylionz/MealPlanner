@@ -5,7 +5,15 @@ document.addEventListener("alpine:init", () => {
     currentDate: new Date().toLocaleDateString("en-CA"),
 
     init() {
-      this.activeTab = "calendar";
+      const path = window.location.pathname;
+      if (path.startsWith("/shopping-lists")) {
+        this.activeTab = "shoppinglists";
+      } else if (path.startsWith("/foods")) {
+        this.activeTab = "foods";
+      } else {
+        // default for '/' and '/calendar'
+        this.activeTab = "calendar";
+      }
       this.showModal = false;
       this.currentDate = this.getToday();
     },
@@ -131,7 +139,7 @@ document.addEventListener("alpine:init", () => {
         values: { date: this.currentDate },
       });
     },
-    
+
     showCreateShoppingListModal() {
       this.showModal = true;
       this.ensureModalContainer();
@@ -164,6 +172,6 @@ document.addEventListener("htmx:configRequest", function (evt) {
   localStorage.setItem("userTimezone", timezone);
 });
 
-document.addEventListener('closeModal', function() {
-  Alpine.store('mealPlanner').toggleModal(false);
+document.addEventListener("closeModal", function () {
+  Alpine.store("mealPlanner").toggleModal(false);
 });
