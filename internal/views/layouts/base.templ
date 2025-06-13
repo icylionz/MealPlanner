@@ -1,5 +1,7 @@
 package layouts
 
+import "mealplanner/internal/views/components"
+
 templ Base() {
     <!doctype html>
     <html lang="en">
@@ -17,15 +19,22 @@ templ Base() {
             <script src="/static/js/calendar.js"></script>
             <script src="/static/js/shopping.js"></script>
         </head>
-        <body 
-        	class="bg-gray-100 h-screen"
-	        x-init="$store.mealPlanner.init()"
-			x-data="{}"
-			hx-ext="response-targets"
-			
-        >
-            <div class="container mx-auto px-4 py-8">
-                { children... }
+        <body class="bg-gray-100 h-screen flex" x-data="{ sidebarOpen: false }"> // Add flex and sidebar state>
+            <!-- Sidebar -->
+            @components.Navigation()
+            
+            <!-- Main Content Area -->
+            <div class="flex-1 flex flex-col lg:ml-64"> <!-- Account for sidebar width -->
+                <main class="flex-1 p-6 lg:p-8">
+                	<div id="main-content">
+	                    { children... }
+                    </div>
+                </main>
+            </div>
+            
+            <!-- Mobile overlay -->
+            <div x-show="sidebarOpen" @click="sidebarOpen = false" 
+                 class="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden">
             </div>
         </body>
     </html>

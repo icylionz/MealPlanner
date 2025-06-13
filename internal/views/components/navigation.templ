@@ -1,30 +1,62 @@
 package components
 
 templ Navigation() {
-	<nav class="flex border-b border-gray-200 mb-8">
-        <button
-            @click="$store.mealPlanner.navigateToCalendar()"
-            :class="{'border-b-2 border-blue-500': $store.mealPlanner.activeTab === 'calendar'}"
-            class="px-4 py-2 font-medium"
-        >
-            Calendar
-        </button>
-        <button
-            @click="$store.mealPlanner.navigateToFoods()"
-            :class="{'border-b-2 border-blue-500': $store.mealPlanner.activeTab === 'foods'}"
-            class="px-4 py-2 font-medium"
-        >
-            Foods
-        </button>
-        <button
-            hx-get="/shopping-lists"
-            hx-target="#main-content"
-            hx-push-url="/shopping-lists"
-            @click="$store.mealPlanner.activeTab = 'shoppinglists'" 
-            :class="{'border-b-2 border-blue-500': $store.mealPlanner.activeTab === 'shoppinglists'}"
-            class="px-4 py-2 font-medium"
-        >
-            Shopping Lists
-        </button>
+    <!-- Mobile hamburger button -->
+    <button @click="sidebarOpen = !sidebarOpen" 
+            class="lg:hidden fixed top-4 left-4 z-50 p-2 bg-white rounded-md shadow-md">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+    </button>
+
+    <!-- Sidebar -->
+    <nav class="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0"
+         :class="{'translate-x-0': sidebarOpen, '-translate-x-full': !sidebarOpen}">
+        
+        <!-- Logo/Header -->
+        <div class="p-6 border-b border-gray-200">
+            <h1 class="text-xl font-bold text-gray-800">Meal Planner</h1>
+        </div>
+        
+        <!-- Navigation Links -->
+        <div class="py-6">
+            <div class="space-y-2 px-4">
+                <button
+                    @click="$store.mealPlanner.navigateToCalendar(); sidebarOpen = false"
+                    :class="{'bg-blue-100 text-blue-700 border-r-2 border-blue-500': $store.mealPlanner.activeTab === 'calendar'}"
+                    class="w-full text-left px-4 py-3 rounded-lg font-medium text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-3"
+                >
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                    </svg>
+                    Calendar
+                </button>
+                
+                <button
+                    @click="$store.mealPlanner.navigateToFoods(); sidebarOpen = false"
+                    :class="{'bg-blue-100 text-blue-700 border-r-2 border-blue-500': $store.mealPlanner.activeTab === 'foods'}"
+                    class="w-full text-left px-4 py-3 rounded-lg font-medium text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-3"
+                >
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                    </svg>
+                    Foods
+                </button>
+                
+                <button
+                    hx-get="/shopping-lists"
+                    hx-target="#main-content"
+                    hx-push-url="/shopping-lists"
+                    @click="$store.mealPlanner.activeTab = 'shoppinglists'; sidebarOpen = false"
+                    :class="{'bg-blue-100 text-blue-700 border-r-2 border-blue-500': $store.mealPlanner.activeTab === 'shoppinglists'}"
+                    class="w-full text-left px-4 py-3 rounded-lg font-medium text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-3"
+                >
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                    </svg>
+                    Shopping Lists
+                </button>
+            </div>
+        </div>
     </nav>
 }

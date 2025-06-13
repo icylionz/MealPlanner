@@ -7,9 +7,6 @@ import (
 
 templ FoodsFullPage() {
     @layouts.Base() {
-        @components.Navigation()
-        <div id="main-content">
-            @components.FoodsPage()
-        </div>
+        @components.FoodsPage()
     }
 }

@@ -1,14 +1,10 @@
 package pages
 
 import "mealplanner/internal/views/layouts"
-import "mealplanner/internal/views/components"
-
 
 templ Index() {
     @layouts.Base() {
-        @components.Navigation()
-        
-        <div id="main-content" x-init="
+        <div x-init="
             setTimeout(() => {
                 htmx.ajax('GET', `/calendar` , 
                 {target: '#main-content', swap:'innerHTML'})
@@ -16,8 +12,5 @@ templ Index() {
         ">
             <!-- Content will be loaded via HTMX -->
         </div>
-        // @components.schedule.Modal()
-        // @components.food.Modal()
-        // @components.ConfirmationModal()
     }
 }

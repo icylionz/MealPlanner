@@ -8,9 +8,6 @@ import (
 
 templ ShoppingListDetailPage(list *models.ShoppingList) {
     @layouts.Base() {
-        @components.Navigation()
-        <div id="main-content">
-            @components.ShoppingListDetail(list)
-        </div>
+        @components.ShoppingListDetail(list)
     }
 }
