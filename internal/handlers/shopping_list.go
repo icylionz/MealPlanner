@@ -470,12 +470,18 @@ func (h *ShoppingListHandler) HandleDeleteItemsBySource(c echo.Context) error {
 	}
 
 	err = h.shoppingService.RemoveItemsBySource(c.Request().Context(), sourceId)
-	if err != nil {
-		log.Printf("Error deleting items by source: %v", err)
-		return err
-	}
+    if err != nil {
+        log.Printf("Error deleting items by source: %v", err)
+        return err
+    }
 
-	return h.returnUpdatedItems(c, listId)
+    // Return the full shopping list detail
+    list, err := h.shoppingService.GetShoppingListById(c.Request().Context(), listId)
+    if err != nil {
+        return err
+    }
+
+    return components.ShoppingListDetail(list).Render(c.Request().Context(), c.Response().Writer)
 }
 
 // Export

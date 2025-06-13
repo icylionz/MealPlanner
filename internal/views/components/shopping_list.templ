@@ -215,7 +215,7 @@ templ ShoppingListSource(source *models.ShoppingListSource, listID int) {
             </div>
             <button
                 hx-delete={ fmt.Sprintf("/shopping-lists/%d/sources/%d", listID, source.ID) }
-                hx-target="#items-container"
+                hx-target="#main-content"
                 hx-confirm={ fmt.Sprintf("Remove all items from \"%s\"?", source.SourceName) }
                 class="p-1 text-gray-400 hover:text-red-600 rounded"
                 title="Remove all items from this source"
