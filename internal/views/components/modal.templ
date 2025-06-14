@@ -6,517 +6,481 @@ import "strconv"
 import "time"
 import "mealplanner/internal/utils"
 
-
 templ DeleteConfirmationModal() {
 }
 
 templ CreateScheduleModal(props *utils.ModalProps) {
 	<div class="flex items-center justify-center min-h-screen p-4" x-data="calendar">
-        <div class="fixed inset-0 bg-black opacity-50"></div>
-
-        <div class="relative bg-white rounded-lg shadow-xl max-w-md w-full">
-            <div class="p-6">
-                <h3 class="text-lg font-medium mb-4">
-                    if props.IsEdit {
-                        Edit Schedule - { props.Date.Format("January 2, 2006") }
-                    } else {
-                        { props.Date.Format("January 2, 2006") }
-                    }
-                </h3>
-
-                <form
-                    if props.IsEdit {
-                        hx-put={ fmt.Sprintf("/schedules/%d/edit", props.ScheduleID) }
-                    } else {
-                        hx-post="/schedules"
-                    }
-                    hx-target="#dynamic-modal-container"
-                    hx-target-400="#dynamic-modal-container"
-                    hx-swap="innerHTML"
-                    class="space-y-4"
-                    @htmx:afterRequest="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); refreshCalendar();}"
-                >
-                    <input type="hidden" name="date" value={ props.Date.Format("2006-01-02") } />
-
-                    <!-- Food Select -->
-                    <div class="mb-4">
-                        <label class="block text-sm font-medium mb-1">Food</label>
-                        <select
-                            name="food_id"
-                            class={
-	                            "w-full rounded border p-2",
-	                            templ.KV("border-red-500", props.Errors["food"] != "")
-                            }
-                        >
-                            <option value="">Select Food</option>
-                            for _, food := range props.Foods {
-                                <option value={ strconv.Itoa(food.ID) } selected?={ props.FoodChosen.ID == food.ID }>{ food.Name }</option>
-                            }
-                        </select>
-                        if err := props.Errors["food"]; err != "" {
-                            <div class="text-red-500 text-sm mt-1">{ err }</div>
-                        }
-                    </div>
-
-                    <!-- Time Select -->
-                    <div class="mb-6">
-                        <label class="block text-sm font-medium mb-1">Time</label>
-                        <input
-                            type="time"
-                            name="time"
-                            value={
-	                            func(t time.Time) string {
+		<div class="fixed inset-0 bg-black opacity-50"></div>
+		<div class="relative bg-white rounded-lg shadow-xl max-w-md w-full">
+			<div class="p-6">
+				<h3 class="text-lg font-medium mb-4">
+					if props.IsEdit {
+						Edit Schedule - { props.Date.Format("January 2, 2006") }
+					} else {
+						{ props.Date.Format("January 2, 2006") }
+					}
+				</h3>
+				<form
+					if props.IsEdit {
+						hx-put={ fmt.Sprintf("/schedules/%d/edit", props.ScheduleID) }
+					} else {
+						hx-post="/schedules"
+					}
+					hx-target="#dynamic-modal-container"
+					hx-target-400="#dynamic-modal-container"
+					hx-swap="innerHTML"
+					class="space-y-4"
+					@htmx:afterRequest="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); refreshCalendar();}"
+				>
+					<input type="hidden" name="date" value={ props.Date.Format("2006-01-02") }/>
+					<!-- Food Select -->
+					<div class="mb-4">
+						<label class="block text-sm font-medium mb-1">Food</label>
+						<select
+							name="food_id"
+							class={ "w-full rounded border p-2",
+	                            templ.KV("border-red-500", props.Errors["food"] != "") }
+						>
+							<option value="">Select Food</option>
+							for _, food := range props.Foods {
+								<option value={ strconv.Itoa(food.ID) } selected?={ props.FoodChosen.ID == food.ID }>{ food.Name }</option>
+							}
+						</select>
+						if err := props.Errors["food"]; err != "" {
+							<div class="text-red-500 text-sm mt-1">{ err }</div>
+						}
+					</div>
+					<!-- Time Select -->
+					<div class="mb-6">
+						<label class="block text-sm font-medium mb-1">Time</label>
+						<input
+							type="time"
+							name="time"
+							value={ func(t time.Time) string {
 									if t.IsZero() {
                                         return ""
                                     }
                                     return t.Format("15:04")
-                                }(props.TimeChosen)
-                            }
-                            class={
-	                            "w-full rounded border p-2",
-	                            templ.KV("border-red-500", props.Errors["time"] != "")
-                            }
-                        />
-                        if err := props.Errors["time"]; err != "" {
-                            <div class="text-red-500 text-sm mt-1">{ err }</div>
-                        }
-                    </div>
-
-                    <!-- Servings Input -->
-                    <div class="mb-4">
-                        <label class="block text-sm font-medium mb-1">Servings</label>
-                        <input
-                            type="number"
-                            name="servings"
-                            value={
-                                func(servings float64) string {
+                                }(props.TimeChosen) }
+							class={ "w-full rounded border p-2",
+	                            templ.KV("border-red-500", props.Errors["time"] != "") }
+						/>
+						if err := props.Errors["time"]; err != "" {
+							<div class="text-red-500 text-sm mt-1">{ err }</div>
+						}
+					</div>
+					<!-- Servings Input -->
+					<div class="mb-4">
+						<label class="block text-sm font-medium mb-1">Servings</label>
+						<input
+							type="number"
+							name="servings"
+							value={ func(servings float64) string {
                                     if servings <= 0 {
                                         return "1"
                                     }
                                     return fmt.Sprintf("%.1f", servings)
-                                }(props.Servings)
-                            }
-                            min="0.1"
-                            step="0.1"
-                            class={
-                                "w-full rounded border p-2",
-                                templ.KV("border-red-500", props.Errors["servings"] != "")
-                            }
-                        />
-                        if err := props.Errors["servings"]; err != "" {
-                            <div class="text-red-500 text-sm mt-1">{ err }</div>
-                        }
-                    </div>
-
-                    <!-- Actions -->
-                    <div class="flex justify-end gap-3">
-                        <button
-                            type="button"
-                            class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded"
-                            @click="$store.mealPlanner.toggleModal(false)"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                        >
-                            if props.IsEdit {
-                                Update
-                            } else {
-                                Schedule
-                            }
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
+                                }(props.Servings) }
+							min="0.1"
+							step="0.1"
+							class={ "w-full rounded border p-2",
+                                templ.KV("border-red-500", props.Errors["servings"] != "") }
+						/>
+						if err := props.Errors["servings"]; err != "" {
+							<div class="text-red-500 text-sm mt-1">{ err }</div>
+						}
+					</div>
+					<!-- Actions -->
+					<div class="flex justify-end gap-3">
+						<button
+							type="button"
+							class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded"
+							@click="$store.mealPlanner.toggleModal(false)"
+						>
+							Cancel
+						</button>
+						<button
+							type="submit"
+							class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+						>
+							if props.IsEdit {
+								Update
+							} else {
+								Schedule
+							}
+						</button>
+					</div>
+				</form>
+			</div>
+		</div>
+	</div>
 }
 
 templ ViewFoodDetailsModal(food *models.Food) {
-    <div class="flex items-center justify-center min-h-screen p-4">
-        <div class="fixed inset-0 bg-black opacity-50"></div>
-        <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full">
-            <div class="p-6">
-                <div class="mb-6">
-                    <div class="flex justify-between items-start">
-                        <h2 class="text-xl font-semibold">{ food.Name }</h2>
-                        <button
-                            class="p-2 hover:bg-gray-100 rounded"
-                            @click="$store.mealPlanner.toggleModal(false)"
-                        >
-                            <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
-                                <path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"/>
-                            </svg>
-                        </button>
-                    </div>
-                    <p class="text-sm text-gray-600 mt-1">
-                       	if food.IsRecipe {
-                            Recipe
-                        } else {
-                            Basic Food
-                        }
-                        • { food.BaseUnit }
-                    </p>
-                </div>
-
-                if food.IsRecipe && food.Recipe != nil {
-                    <div class="space-y-4">
-                        if food.Recipe.URL != "" {
-                            <div>
-                                <h3 class="font-medium mb-2">Recipe URL</h3>
-                                <a href={ templ.SafeURL(food.Recipe.URL) }
-                                    target="_blank"
-                                    class="text-blue-600 hover:underline break-all">
-                                    { food.Recipe.URL }
-                                </a>
-                            </div>
-                        }
-
-                        <div>
-                            <h3 class="font-medium mb-2">Ingredients</h3>
-                            <ul class="divide-y divide-gray-200">
-                                for _, ing := range food.Recipe.Ingredients {
-                                    @viewIngredientRow(ing)
-                                }
-                            </ul>
-                        </div>
-
-                        if food.Recipe.Instructions != "" {
-                            <div>
-                                <h3 class="font-medium mb-2">Instructions</h3>
-                                <p class="whitespace-pre-line">
-                                    { food.Recipe.Instructions }
-                                </p>
-                            </div>
-                        }
-
-                        <div>
-                            <h3 class="font-medium mb-2">Yield</h3>
-                            <p>
-                                { fmt.Sprintf("%.2f %s", food.Recipe.YieldQuantity, food.BaseUnit) }
-                            </p>
-                        </div>
-                    </div>
-                }
-
-                <div class="flex justify-end gap-3 mt-6">
-                    <button
-                        @click="$store.mealPlanner.toggleModal(false)"
-                        class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded">
-                        Close
-                    </button>
-                    <button
-                        @click={ fmt.Sprintf("$store.mealPlanner.showEditFoodModal({id:%d})", food.ID) }
-                        class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                        Edit
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+	<div class="flex items-center justify-center min-h-screen p-4">
+		<div class="fixed inset-0 bg-black opacity-50"></div>
+		<div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full">
+			<div class="p-6">
+				<div class="mb-6">
+					<div class="flex justify-between items-start">
+						<h2 class="text-xl font-semibold">{ food.Name }</h2>
+						<button
+							class="p-2 hover:bg-gray-100 rounded"
+							@click="$store.mealPlanner.toggleModal(false)"
+						>
+							<svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+								<path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"></path>
+							</svg>
+						</button>
+					</div>
+					<p class="text-sm text-gray-600 mt-1">
+						if food.IsRecipe {
+							Recipe
+						} else {
+							Basic Food
+						}
+						• { food.BaseUnit }
+					</p>
+				</div>
+				if food.IsRecipe && food.Recipe != nil {
+					<div class="space-y-4">
+						if food.Recipe.URL != "" {
+							<div>
+								<h3 class="font-medium mb-2">Recipe URL</h3>
+								<a
+									href={ templ.SafeURL(food.Recipe.URL) }
+									target="_blank"
+									class="text-blue-600 hover:underline break-all"
+								>
+									{ food.Recipe.URL }
+								</a>
+							</div>
+						}
+						<div>
+							<h3 class="font-medium mb-2">Ingredients</h3>
+							<ul class="divide-y divide-gray-200">
+								for _, ing := range food.Recipe.Ingredients {
+									@viewIngredientRow(ing)
+								}
+							</ul>
+						</div>
+						if food.Recipe.Instructions != "" {
+							<div>
+								<h3 class="font-medium mb-2">Instructions</h3>
+								<p class="whitespace-pre-line">
+									{ food.Recipe.Instructions }
+								</p>
+							</div>
+						}
+						<div>
+							<h3 class="font-medium mb-2">Yield</h3>
+							<p>
+								{ fmt.Sprintf("%.2f %s", food.Recipe.YieldQuantity, food.BaseUnit) }
+							</p>
+						</div>
+					</div>
+				}
+				<div class="flex justify-end gap-3 mt-6">
+					<button
+						@click="$store.mealPlanner.toggleModal(false)"
+						class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded"
+					>
+						Close
+					</button>
+					<button
+						@click={ fmt.Sprintf("$store.mealPlanner.showEditFoodModal({id:%d})", food.ID) }
+						class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+					>
+						Edit
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
 }
 
 // Helper template for ingredient rows
 templ viewIngredientRow(ing *models.RecipeItem) {
-    <li class="flex items-center justify-between py-2">
-        <div class="flex items-center">
-            <span>{ fmt.Sprintf("%.2f %s %s", ing.Quantity, ing.Unit, ing.Food.Name) }</span>
-        </div>
-        if ing.Food.IsRecipe {
-            <button
-                class="text-blue-600 hover:text-blue-800 text-sm flex items-center"
-                @click={fmt.Sprintf("$store.mealPlanner.showViewFoodModal({id: %v})", ing.Food.ID)}
-            >
-                View Recipe
-                <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                </svg>
-            </button>
-        }
-    </li>
+	<li class="flex items-center justify-between py-2">
+		<div class="flex items-center">
+			<span>{ fmt.Sprintf("%.2f %s %s", ing.Quantity, ing.Unit, ing.Food.Name) }</span>
+		</div>
+		if ing.Food.IsRecipe {
+			<button
+				class="text-blue-600 hover:text-blue-800 text-sm flex items-center"
+				@click={ fmt.Sprintf("$store.mealPlanner.showViewFoodModal({id: %v})", ing.Food.ID) }
+			>
+				View Recipe
+				<svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+				</svg>
+			</button>
+		}
+	</li>
 }
 
 templ CreateEditFoodModal(props *utils.FoodFormProps) {
-    <div class="flex items-center justify-center min-h-screen p-4" x-data="foodManager">
-        <div class="fixed inset-0 bg-black opacity-50"></div>
-        <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full">
-            <div class="p-6">
-                <h2 class="text-xl font-semibold mb-4">
-                    if props.IsEdit {
-                        Edit Food
-                    } else {
-                        New Food
-                    }
-                </h2>
-
-                <form
-                    if props.IsEdit {
-                        hx-put={fmt.Sprintf("/foods/%d/edit", props.Food.ID)}
-                    } else {
-                        hx-post="/foods/new"
-                    }
-                    hx-target="#dynamic-modal-container"
-                    hx-target-400="#dynamic-modal-container"
-                    @htmx:afterRequest="handleSuccessfulFoodCreateOrUpdate(event)"
-                    class="space-y-4"
-                >
-                    <!-- Basic Info -->
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Name</label>
-                        <input
-                            type="text"
-                            name="name"
-                            value={props.Food.Name}
-                            class={
-                                "w-full px-3 py-2 border rounded",
-                                templ.KV("border-red-500", props.Errors["name"] != "")
-                            }
-                        />
-                        if err := props.Errors["name"]; err != "" {
-                            <div class="text-red-500 text-sm mt-1">{err}</div>
-                        }
-                    </div>
-
-                    <!-- Unit Type and Base Unit -->
-                    <div class="flex gap-4">
-                        @unitTypeSelect(props)
-                        @baseUnitSelect(props)
-                    </div>
-
-                    <!-- Recipe Toggle -->
-                    <div class="flex items-center">
-                        <input
-                            type="checkbox"
-                            name="is_recipe"
-                            checked?={ props.Food.IsRecipe }
-                            value="true"
-                            hx-get="/foods/recipe-fields"
-                            hx-target="#recipe-fields"
-                            hx-trigger="change"
-                            class="rounded border-gray-300"
-                        />
-                        <span class="ml-2">This is a recipe</span>
-                    </div>
-
-                    <!-- Recipe Fields -->
-                    <div id="recipe-fields">
-                        if props.Food.IsRecipe {
-                            @RecipeFields(props)
-                        }
-                    </div>
-
-                    <!-- Actions -->
-                    <div class="flex justify-end gap-3 mt-6">
-                        <button
-                            type="button"
-                            @click="$store.mealPlanner.toggleModal(false)"
-                            class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                        >
-                            Save
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
+	<div class="flex items-center justify-center min-h-screen p-4" x-data="foodManager">
+		<div class="fixed inset-0 bg-black opacity-50"></div>
+		<div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full">
+			<div class="p-6">
+				<h2 class="text-xl font-semibold mb-4">
+					if props.IsEdit {
+						Edit Food
+					} else {
+						New Food
+					}
+				</h2>
+				<form
+					if props.IsEdit {
+						hx-put={ fmt.Sprintf("/foods/%d/edit", props.Food.ID) }
+					} else {
+						hx-post="/foods/new"
+					}
+					hx-target="#dynamic-modal-container"
+					hx-target-400="#dynamic-modal-container"
+					@htmx:afterRequest="handleSuccessfulFoodCreateOrUpdate(event)"
+					class="space-y-4"
+				>
+					<!-- Basic Info -->
+					<div>
+						<label class="block text-sm font-medium mb-1">Name</label>
+						<input
+							type="text"
+							name="name"
+							value={ props.Food.Name }
+							class={ "w-full px-3 py-2 border rounded",
+                                templ.KV("border-red-500", props.Errors["name"] != "") }
+						/>
+						if err := props.Errors["name"]; err != "" {
+							<div class="text-red-500 text-sm mt-1">{ err }</div>
+						}
+					</div>
+					<!-- Unit Type and Base Unit -->
+					<div class="flex gap-4">
+						@unitTypeSelect(props)
+						@baseUnitSelect(props)
+					</div>
+					<!-- Recipe Toggle -->
+					<div class="flex items-center">
+						<input
+							type="checkbox"
+							name="is_recipe"
+							checked?={ props.Food.IsRecipe }
+							value="true"
+							hx-get="/foods/recipe-fields"
+							hx-target="#recipe-fields"
+							hx-trigger="change"
+							class="rounded border-gray-300"
+						/>
+						<span class="ml-2">This is a recipe</span>
+					</div>
+					<!-- Recipe Fields -->
+					<div id="recipe-fields">
+						if props.Food.IsRecipe {
+							@RecipeFields(props)
+						}
+					</div>
+					<!-- Actions -->
+					<div class="flex justify-end gap-3 mt-6">
+						<button
+							type="button"
+							@click="$store.mealPlanner.toggleModal(false)"
+							class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded"
+						>
+							Cancel
+						</button>
+						<button
+							type="submit"
+							class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+						>
+							Save
+						</button>
+					</div>
+				</form>
+			</div>
+		</div>
+	</div>
 }
 
 // Unit type selection component
 templ unitTypeSelect(props *utils.FoodFormProps) {
-    <div class="flex-1">
-        <label class="block text-sm font-medium mb-1">Type</label>
-        <select
-            name="unit_type"
-            class={
-                "w-full px-3 py-2 border rounded",
-                templ.KV("border-red-500", props.Errors["unit_type"] != "")
-            }
-            hx-get="/foods/units"
-            hx-trigger="load, change"
-            hx-include="[name='unit_type']"
-            hx-target="#base-unit-select"
-            hx-swap="innerHTML"
-        >
-            <option value="mass" selected?={props.Food.UnitType == "mass"}>Mass</option>
-            <option value="volume" selected?={props.Food.UnitType == "volume"}>Volume</option>
-            <option value="count" selected?={props.Food.UnitType == "count"}>Count</option>
-        </select>
-        if err := props.Errors["unit_type"]; err != "" {
-            <div class="text-red-500 text-sm mt-1">{err}</div>
-        }
-    </div>
-
+	<div class="flex-1">
+		<label class="block text-sm font-medium mb-1">Type</label>
+		<select
+			name="unit_type"
+			class={ "w-full px-3 py-2 border rounded",
+                templ.KV("border-red-500", props.Errors["unit_type"] != "") }
+			hx-get="/foods/units"
+			hx-trigger="load, change"
+			hx-include="[name='unit_type']"
+			hx-target="#base-unit-select"
+			hx-swap="innerHTML"
+		>
+			<option value="mass" selected?={ props.Food.UnitType == "mass" }>Mass</option>
+			<option value="volume" selected?={ props.Food.UnitType == "volume" }>Volume</option>
+			<option value="count" selected?={ props.Food.UnitType == "count" }>Count</option>
+		</select>
+		if err := props.Errors["unit_type"]; err != "" {
+			<div class="text-red-500 text-sm mt-1">{ err }</div>
+		}
+	</div>
 }
 
 // Base unit selection component
 templ baseUnitSelect(props *utils.FoodFormProps) {
-    <div class="flex-1">
-        <label class="block text-sm font-medium mb-1">Base Unit</label>
-        <select
-	        id="base-unit-select"
-	        name="base_unit"
-            class={
-                "w-full px-3 py-2 border rounded",
-                templ.KV("border-red-500", props.Errors["base_unit"] != "")
-            }
-        >
-        </select>
-        if err := props.Errors["base_unit"]; err != "" {
-            <div class="text-red-500 text-sm mt-1">{err}</div>
-        }
-    </div>
+	<div class="flex-1">
+		<label class="block text-sm font-medium mb-1">Base Unit</label>
+		<select
+			id="base-unit-select"
+			name="base_unit"
+			class={ "w-full px-3 py-2 border rounded",
+                templ.KV("border-red-500", props.Errors["base_unit"] != "") }
+		></select>
+		if err := props.Errors["base_unit"]; err != "" {
+			<div class="text-red-500 text-sm mt-1">{ err }</div>
+		}
+	</div>
 }
 
 // Recipe fields component
 templ RecipeFields(props *utils.FoodFormProps) {
 	<div class="space-y-4">
-        <!-- Recipe URL -->
-        <div>
-            <label class="block text-sm font-medium mb-1">Recipe URL (optional)</label>
-            <input
-                type="url"
-                name="recipe_url"
-                value={props.Food.Recipe.URL}
-                class="w-full px-3 py-2 border rounded"
-            />
-        </div>
-
-        <!-- Ingredients -->
-        <div>
-            <div class="flex justify-between items-center mb-2">
-                <label class="block text-sm font-medium">Ingredients</label>
-                <button
-                    type="button"
-                    hx-get={ fmt.Sprintf("/foods/new-ingredient-row?id=%d", props.Food.ID) }
-                    hx-target="#ingredients-list"
-                    hx-vals="js:{index: document.querySelectorAll('#ingredients-list > div').length}"
-                    hx-swap="beforeend"
-                    class="text-sm text-blue-600 hover:text-blue-700"
-                >
-                    Add Ingredient
-                </button>
-            </div>
-            <div id="ingredients-list" class="space-y-2">
-	            @IngredientsList(props.Food.Recipe.Ingredients, props.Foods)
-            </div>
-        </div>
-
-        <!-- Instructions -->
-        <div>
-            <label class="block text-sm font-medium mb-1">Instructions (optional)</label>
-            <textarea
-                name="instructions"
-                class="w-full px-3 py-2 border rounded"
-                rows="4"
-            >{ props.Food.Recipe.Instructions }</textarea>
-        </div>
-
-        <!-- Yield -->
-        <div class="flex gap-4">
-            <div class="flex-1">
-                <label class="block text-sm font-medium mb-1">Yield Amount</label>
-                <input
-                    type="number"
-                    name="yield_quantity"
-                    value={fmt.Sprintf("%.2f", props.Food.Recipe.YieldQuantity)}
-                    class={
-                        "w-full px-3 py-2 border rounded",
-                        templ.KV("border-red-500", props.Errors["yield_quantity"] != "")
-                    }
-                />
-                if err := props.Errors["yield_quantity"]; err != "" {
-                    <div class="text-red-500 text-sm mt-1">{err}</div>
-                }
-            </div>
-            // <div class="flex-1">
-            //     <label class="block text-sm font-medium mb-1">Yield Unit</label>
-            //     <select
-	           //      id="yield-unit-select"
-            //         name="yield_unit"
-            //         class={
-            //             "w-full px-3 py-2 border rounded",
-            //             templ.KV("border-red-500", props.Errors["yield_unit"] != "")
-            //         }
-            //         hx-get="/foods/units"
-            //         hx-trigger="load"
-            //         hx-include="[name='unit_type']"
-            //         hx-target="this"
-            //     >
-
-            //     </select>
-            //     if err := props.Errors["yield_unit"]; err != "" {
-            //         <div class="text-red-500 text-sm mt-1">{err}</div>
-            //     }
-            // </div>
-        </div>
-    </div>
+		<!-- Recipe URL -->
+		<div>
+			<label class="block text-sm font-medium mb-1">Recipe URL (optional)</label>
+			<input
+				type="url"
+				name="recipe_url"
+				value={ props.Food.Recipe.URL }
+				class="w-full px-3 py-2 border rounded"
+			/>
+		</div>
+		<!-- Ingredients -->
+		<div>
+			<div class="flex justify-between items-center mb-2">
+				<label class="block text-sm font-medium">Ingredients</label>
+				<button
+					type="button"
+					hx-get={ fmt.Sprintf("/foods/new-ingredient-row?id=%d", props.Food.ID) }
+					hx-target="#ingredients-list"
+					hx-vals="js:{index: document.querySelectorAll('#ingredients-list > div').length}"
+					hx-swap="beforeend"
+					class="text-sm text-blue-600 hover:text-blue-700"
+				>
+					Add Ingredient
+				</button>
+			</div>
+			<div id="ingredients-list" class="space-y-2">
+				@IngredientsList(props.Food.Recipe.Ingredients, props.Foods)
+			</div>
+		</div>
+		<!-- Instructions -->
+		<div>
+			<label class="block text-sm font-medium mb-1">Instructions (optional)</label>
+			<textarea
+				name="instructions"
+				class="w-full px-3 py-2 border rounded"
+				rows="4"
+			>{ props.Food.Recipe.Instructions }</textarea>
+		</div>
+		<!-- Yield -->
+		<div class="flex gap-4">
+			<div class="flex-1">
+				<label class="block text-sm font-medium mb-1">Yield Amount</label>
+				<input
+					type="number"
+					name="yield_quantity"
+					value={ fmt.Sprintf("%.2f", props.Food.Recipe.YieldQuantity) }
+					class={ "w-full px-3 py-2 border rounded",
+                        templ.KV("border-red-500", props.Errors["yield_quantity"] != "") }
+				/>
+				if err := props.Errors["yield_quantity"]; err != "" {
+					<div class="text-red-500 text-sm mt-1">{ err }</div>
+				}
+			</div>
+			// <div class="flex-1">
+			//     <label class="block text-sm font-medium mb-1">Yield Unit</label>
+			//     <select
+			//      id="yield-unit-select"
+			//         name="yield_unit"
+			//         class={
+			//             "w-full px-3 py-2 border rounded",
+			//             templ.KV("border-red-500", props.Errors["yield_unit"] != "")
+			//         }
+			//         hx-get="/foods/units"
+			//         hx-trigger="load"
+			//         hx-include="[name='unit_type']"
+			//         hx-target="this"
+			//     >
+			//     </select>
+			//     if err := props.Errors["yield_unit"]; err != "" {
+			//         <div class="text-red-500 text-sm mt-1">{err}</div>
+			//     }
+			// </div>
+		</div>
+	</div>
 }
 
 templ IngredientsList(ings []*models.RecipeItem, availableFoods []*models.Food) {
-        for index, ing := range ings {
-            @IngredientRow(ing, index, availableFoods)
-        }
+	for index, ing := range ings {
+		@IngredientRow(ing, index, availableFoods)
+	}
 }
+
 // Ingredient row component
 templ IngredientRow(ing *models.RecipeItem, index int, availableFoods []*models.Food) {
-    <div class="flex flex-col sm:flex-row gap-2 items-start" id={fmt.Sprintf("ingredient-%d", index)}>
-        <select
-            name={fmt.Sprintf("ingredients[%d].food_id", index)}
-            class="flex-1 px-3 py-2 border rounded"
-            hx-get="/foods/units"
-            hx-trigger="change"
-            hx-swap="innerHTML"
-            hx-params="food_id"
-            hx-vals="js:{food_id: event.target.value}"
-            hx-target="next div > select"
-        >
-            <option value="">Select Food</option>
-            for _, food := range availableFoods {
-                <option
-                    value={strconv.Itoa(food.ID)}
-                    selected?={ing.Food.ID == food.ID}
-                >
-                    {food.Name}
-                </option>
-            }
-        </select>
-        <div class="flex gap-2 w-full sm:w-auto">
-            <input
-                type="number"
-                name={fmt.Sprintf("ingredients[%d].quantity", index)}
-                value={fmt.Sprintf("%.2f", ing.Quantity)}
-                class="w-20 px-3 py-2 border rounded"
-                placeholder="Amount"
-            />
-            <select
-                name={fmt.Sprintf("ingredients[%d].unit", index)}
-                class="w-24 px-3 py-2 border rounded"
-            >
-                @BaseUnitsOptions([]string{ing.Unit}, ing.Unit)
-            </select>
-            <button
-                type="button"
-                @click={fmt.Sprintf("document.getElementById('ingredient-%d').remove()", index)}
-                class="p-2 text-gray-400 hover:text-red-600"
-            >
-                <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-                </svg>
-            </button>
-        </div>
-    </div>
+	<div class="flex flex-col sm:flex-row gap-2 items-start" id={ fmt.Sprintf("ingredient-%d", index) }>
+		<select
+			name={ fmt.Sprintf("ingredients[%d].food_id", index) }
+			class="flex-1 px-3 py-2 border rounded"
+			hx-get="/foods/units"
+			hx-trigger="change"
+			hx-swap="innerHTML"
+			hx-params="food_id"
+			hx-vals="js:{food_id: event.target.value}"
+			hx-target="next div > select"
+		>
+			<option value="">Select Food</option>
+			for _, food := range availableFoods {
+				<option
+					value={ strconv.Itoa(food.ID) }
+					selected?={ ing.Food.ID == food.ID }
+				>
+					{ food.Name }
+				</option>
+			}
+		</select>
+		<div class="flex gap-2 w-full sm:w-auto">
+			<input
+				type="number"
+				name={ fmt.Sprintf("ingredients[%d].quantity", index) }
+				value={ fmt.Sprintf("%.2f", ing.Quantity) }
+				class="w-20 px-3 py-2 border rounded"
+				placeholder="Amount"
+			/>
+			<select
+				name={ fmt.Sprintf("ingredients[%d].unit", index) }
+				class="w-24 px-3 py-2 border rounded"
+			>
+				@BaseUnitsOptions([]string{ing.Unit}, ing.Unit)
+			</select>
+			<button
+				type="button"
+				@click={ fmt.Sprintf("document.getElementById('ingredient-%d').remove()", index) }
+				class="p-2 text-gray-400 hover:text-red-600"
+			>
+				<svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+					<path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+				</svg>
+			</button>
+		</div>
+	</div>
 }
 
 templ BaseUnitsOptions(units []string, selectedUnit string) {
 	for _, unit := range units {
-		<option value={unit} selected?={unit == selectedUnit}>{unit}</option>
+		<option value={ unit } selected?={ unit == selectedUnit }>{ unit }</option>
 	}
 }

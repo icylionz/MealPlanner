@@ -6,11 +6,13 @@ import (
 	"mealplanner/internal/services"
 	"mealplanner/internal/utils"
 	"mealplanner/internal/views/components"
+	"mealplanner/internal/views/layouts"
 	"mealplanner/internal/views/pages"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/a-h/templ"
 	"github.com/labstack/echo/v4"
 )
 
@@ -40,8 +42,16 @@ func (h *ShoppingListHandler) HandleShoppingListsPage(c echo.Context) error {
 		return err
 	}
 
-	return pages.ShoppingListsPage(lists).Render(c.Request().Context(), c.Response().Writer)
+	// Check if this is an HTMX request
+	if c.Request().Header.Get("HX-Request") != "" {
+		// Return content only for HTMX
+		return pages.ShoppingListsPage(lists).Render(c.Request().Context(), c.Response().Writer)
+	}
+
+	// Return full page with layout for direct navigation
+	return layouts.Base([]templ.Component{pages.ShoppingListsPage(lists)}).Render(c.Request().Context(), c.Response().Writer)
 }
+
 func (h *ShoppingListHandler) HandleViewShoppingList(c echo.Context) error {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -57,11 +67,11 @@ func (h *ShoppingListHandler) HandleViewShoppingList(c echo.Context) error {
 	// Check if this is an HTMX request
 	if c.Request().Header.Get("HX-Request") != "" {
 		// Return partial for HTMX
-		return components.ShoppingListDetail(list).Render(c.Request().Context(), c.Response().Writer)
+		return pages.ShoppingListDetailPage(list).Render(c.Request().Context(), c.Response().Writer)
 	}
 
 	// Return full page for direct navigation
-	return pages.ShoppingListDetailPage(list).Render(c.Request().Context(), c.Response().Writer)
+	return layouts.Base([]templ.Component{pages.ShoppingListDetailPage(list)}).Render(c.Request().Context(), c.Response().Writer)
 }
 
 // Shopping list CRUD
@@ -215,7 +225,7 @@ func (h *ShoppingListHandler) HandleAddManualItem(c echo.Context) error {
 		log.Printf("Error adding manual item: %v", err)
 		return err
 	}
-	
+
 	c.Response().Header().Set("HX-Trigger", "refreshShoppingList,closeModal")
 	return c.NoContent(http.StatusOK)
 }
@@ -267,7 +277,6 @@ func (h *ShoppingListHandler) HandleAddRecipe(c echo.Context) error {
 		return err
 	}
 
-
 	c.Response().Header().Set("HX-Trigger", "refreshShoppingList,closeModal")
 	return c.NoContent(http.StatusOK)
 
@@ -314,7 +323,6 @@ func (h *ShoppingListHandler) HandleAddSchedules(c echo.Context) error {
 		log.Printf("Error adding schedules: %v", err)
 		return err
 	}
-
 
 	c.Response().Header().Set("HX-Trigger", "refreshShoppingList,closeModal")
 	return c.NoContent(http.StatusOK)
@@ -370,7 +378,6 @@ func (h *ShoppingListHandler) HandleAddDateRange(c echo.Context) error {
 		log.Printf("Error adding date range: %v", err)
 		return err
 	}
-
 
 	c.Response().Header().Set("HX-Trigger", "refreshShoppingList,closeModal")
 	return c.NoContent(http.StatusOK)
@@ -479,7 +486,7 @@ func (h *ShoppingListHandler) HandleDeleteItemsBySource(c echo.Context) error {
 		return err
 	}
 
-	return components.ShoppingListDetail(list).Render(c.Request().Context(), c.Response().Writer)
+	return pages.ShoppingListDetailPage(list).Render(c.Request().Context(), c.Response().Writer)
 }
 
 // Export

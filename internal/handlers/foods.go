@@ -8,10 +8,12 @@ import (
 	"mealplanner/internal/services"
 	"mealplanner/internal/utils"
 	"mealplanner/internal/views/components"
+	"mealplanner/internal/views/layouts"
 	"mealplanner/internal/views/pages"
 	"net/http"
 	"strconv"
 
+	"github.com/a-h/templ"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/labstack/echo/v4"
 )
@@ -23,12 +25,12 @@ type FoodHandler struct {
 func (h *FoodHandler) HandleFoodsPage(c echo.Context) error {
 	// Check if this is an HTMX request
 	if c.Request().Header.Get("HX-Request") != "" {
-		// Return partial for HTMX
-		return components.FoodsPage().Render(c.Request().Context(), c.Response().Writer)
+		// Return content only for HTMX
+		return pages.FoodsPage().Render(c.Request().Context(), c.Response().Writer)
 	}
 
-	// Return full page for direct navigation
-	return pages.FoodsFullPage().Render(c.Request().Context(), c.Response().Writer)
+	// Return full page with layout for direct navigation
+	return layouts.Base([]templ.Component{pages.FoodsPage()}).Render(c.Request().Context(), c.Response().Writer)
 }
 func (h *FoodHandler) HandleViewFoodDetailsModal(c echo.Context) error {
 	id := c.QueryParam("id")

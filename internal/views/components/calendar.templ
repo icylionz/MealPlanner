@@ -1,122 +1,56 @@
 package components
 
-import "mealplanner/internal/utils"
-import "mealplanner/internal/models"
-import "fmt"
-
-templ Calendar(day *utils.DayData) {
-    <div x-data="calendar" hx-get="/calendar" hx-trigger="calendarRefresh from:body" hx-vals="js:{date: event.detail.date}" hx-target="this" hx-swap="outerHTML" id="calendar-container">
-        <!-- Date Picker Header -->
-        <div class="flex items-center justify-between p-4 bg-white rounded-lg shadow mb-4">
-            <div class="flex items-center gap-3">
-                <button @click="previousDay()" class="p-2 hover:bg-gray-100 rounded">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                    </svg>
-                </button>
-                
-                <input 
-                    type="date" 
-                    x-model="$store.mealPlanner.currentDate"
-                    @change="changeDate($event.target.value)"
-                    class="px-3 py-2 border border-gray-300 rounded focus:border-blue-500"
-                />
-                
-                <button @click="nextDay()" class="p-2 hover:bg-gray-100 rounded">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                </button>
-            </div>
-            
-            <button @click="goToToday()" class="px-3 py-1 text-sm bg-blue-100 text-blue-600 rounded hover:bg-blue-200">
-                Today
-            </button>
-        </div>
-
-        <!-- Day Content -->
-        <div class="bg-white rounded-lg shadow">
-            <div class="p-4 border-b">
-                <h2 class="text-lg font-semibold">{day.Date.Format("Monday, January 2, 2006")}</h2>
-            </div>
-            
-            <div class="p-4">
-                if len(day.Schedules) == 0 {
-                    <div class="text-center py-8 text-gray-500">
-                        <p class="mb-4">No meals scheduled for this day</p>
-                        <button 
-                            @click={fmt.Sprintf("$store.mealPlanner.showScheduleModal({date: '%s'})", day.Date.Format("2006-01-02"))}
-                            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                        >
-                            Schedule First Meal
-                        </button>
-                    </div>
-                } else {
-                    <div class="space-y-3 mb-4">
-                        for _, schedule := range day.Schedules {
-                            @ScheduleItem(schedule)
-                        }
-                    </div>
-                    
-                    <button 
-                        @click={fmt.Sprintf("$store.mealPlanner.showScheduleModal({date: '%s'})", day.Date.Format("2006-01-02"))}
-                        class="w-full py-3 border-2 border-dashed border-gray-300 text-gray-600 rounded hover:border-blue-400 hover:text-blue-600 transition-colors"
-                    >
-                        + Add Another Meal
-                    </button>
-                }
-            </div>
-        </div>
-    </div>
-}
+import (
+	"fmt"
+	"mealplanner/internal/models"
+)
 
 templ ScheduleItem(schedule *models.Schedule) {
-    <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-        <div class="flex items-center gap-4">
-            <div class="text-sm font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                {schedule.ScheduledAt.Format("3:04 PM")}
-            </div>
-            <div>
-                <div class="font-medium text-gray-900">{schedule.FoodName}</div>
-                <div class="text-sm text-gray-500">
-                    if schedule.Servings != 1.0 {
-                        { fmt.Sprintf("%.1f servings", schedule.Servings) }
-                    } else {
-                        Scheduled meal
-                    }
-                </div>
-            </div>
-        </div>
-        
-        <div class="flex items-center gap-2">
-            <button 
-                @click={fmt.Sprintf("$store.mealPlanner.showViewFoodModal({id: %d})", schedule.FoodID)}
-                class="p-2 text-gray-400 hover:text-blue-600 rounded"
-                title="View details"
-            >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-                </svg>
-            </button>
-            <button 
-                @click={fmt.Sprintf("$store.mealPlanner.showEditScheduleModal({id: %d})", schedule.ID)}
-                class="p-2 text-gray-400 hover:text-yellow-600 rounded"
-                title="Edit schedule"
-            >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                </svg>
-            </button>
-            <button 
-                @click={fmt.Sprintf("deleteScheduleById(%d)", schedule.ID)}
-                class="p-2 text-gray-400 hover:text-red-600 rounded"
-                title="Delete schedule"
-            >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                </svg>
-            </button>
-        </div>
-    </div>
+	<div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+		<div class="flex items-center gap-4">
+			<div class="text-sm font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded">
+				{ schedule.ScheduledAt.Format("3:04 PM") }
+			</div>
+			<div>
+				<div class="font-medium text-gray-900">{ schedule.FoodName }</div>
+				<div class="text-sm text-gray-500">
+					if schedule.Servings != 1.0 {
+						{ fmt.Sprintf("%.1f servings", schedule.Servings) }
+					} else {
+						Scheduled meal
+					}
+				</div>
+			</div>
+		</div>
+		<div class="flex items-center gap-2">
+			<button
+				@click={ fmt.Sprintf("$store.mealPlanner.showViewFoodModal({id: %d})", schedule.FoodID) }
+				class="p-2 text-gray-400 hover:text-blue-600 rounded"
+				title="View details"
+			>
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+				</svg>
+			</button>
+			<button
+				@click={ fmt.Sprintf("$store.mealPlanner.showEditScheduleModal({id: %d})", schedule.ID) }
+				class="p-2 text-gray-400 hover:text-yellow-600 rounded"
+				title="Edit schedule"
+			>
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+				</svg>
+			</button>
+			<button
+				@click={ fmt.Sprintf("deleteScheduleById(%d)", schedule.ID) }
+				class="p-2 text-gray-400 hover:text-red-600 rounded"
+				title="Delete schedule"
+			>
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+				</svg>
+			</button>
+		</div>
+	</div>
 }

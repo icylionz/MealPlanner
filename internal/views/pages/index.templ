@@ -3,14 +3,5 @@ package pages
 import "mealplanner/internal/views/layouts"
 
 templ Index() {
-    @layouts.Base() {
-        <div x-init="
-            setTimeout(() => {
-                htmx.ajax('GET', `/calendar` , 
-                {target: '#main-content', swap:'innerHTML'})
-            }, 0)
-        ">
-            <!-- Content will be loaded via HTMX -->
-        </div>
-    }
+	@layouts.Base([]templ.Component{})
 }

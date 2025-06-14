@@ -6,9 +6,10 @@ import (
 	"mealplanner/internal/utils"
 	"time"
 
-	"mealplanner/internal/views/components"
+	"mealplanner/internal/views/layouts"
 	"mealplanner/internal/views/pages"
 
+	"github.com/a-h/templ"
 	"github.com/labstack/echo/v4"
 )
 
@@ -44,12 +45,12 @@ func (h *CalendarHandler) HandleCalendarView(c echo.Context) error {
 
 	// Check if this is an HTMX request
 	if c.Request().Header.Get("HX-Request") != "" {
-		// Return partial for HTMX
-		return components.Calendar(dayData).Render(c.Request().Context(), c.Response())
+		// Return content only for HTMX
+		return pages.CalendarPage(dayData).Render(c.Request().Context(), c.Response())
 	}
 
-	// Return full page for direct navigation
-	return pages.CalendarFullPage(dayData).Render(c.Request().Context(), c.Response())
+	// Return full page with layout for direct navigation
+	return layouts.Base([]templ.Component{pages.CalendarPage(dayData)}).Render(c.Request().Context(), c.Response().Writer)
 }
 
 func NewCalendarHandler(scheduleService *services.ScheduleService) *CalendarHandler {

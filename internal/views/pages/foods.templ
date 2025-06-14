@@ -1,12 +1,16 @@
 package pages
 
-import (
-    "mealplanner/internal/views/components"
-    "mealplanner/internal/views/layouts"
-)
+import "mealplanner/internal/views/components"
 
-templ FoodsFullPage() {
-    @layouts.Base() {
-        @components.FoodsPage()
-    }
+templ FoodsPage() {
+	<div class="container mx-auto px-4 py-8" x-data="foodManager">
+		@components.SearchBar()
+		<div
+			id="food-list"
+			class="bg-white rounded-lg shadow overflow-hidden"
+			hx-get="/foods/search"
+			hx-target="#food-list"
+			hx-trigger="load, refreshFoodView from:body"
+		></div>
+	</div>
 }

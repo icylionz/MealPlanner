@@ -1,13 +1,180 @@
 package pages
 
 import (
-    "mealplanner/internal/views/layouts"
-    "mealplanner/internal/views/components"
-    "mealplanner/internal/models"
+	"fmt"
+	"mealplanner/internal/models"
+	"mealplanner/internal/views/components"
 )
 
+templ ShoppingListsPage(lists []*models.ShoppingList) {
+	<div class="container mx-auto p-4">
+		<div class="flex justify-between items-center mb-6">
+			<h1 class="text-2xl font-bold">Shopping Lists</h1>
+			<button
+				@click="$store.mealPlanner.showCreateShoppingListModal()"
+				class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+			>
+				Create New List
+			</button>
+		</div>
+		<div id="shopping-lists-container">
+			if len(lists) == 0 {
+				<div class="text-center py-16">
+					<div class="max-w-md mx-auto">
+						<svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path>
+						</svg>
+						<h3 class="text-lg font-medium text-gray-900 mb-2">No shopping lists yet</h3>
+						<p class="text-gray-500 mb-6">
+							Create your first shopping list to start organizing your grocery shopping.
+							You can add items manually, from recipes, or from your scheduled meals.
+						</p>
+						<div class="space-y-3">
+							<button
+								@click="$store.mealPlanner.showCreateShoppingListModal()"
+								class="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+							>
+								Create Your First List
+							</button>
+							<p class="text-sm text-gray-400">
+								Pro tip: You can add ingredients from multiple sources to the same list!
+							</p>
+						</div>
+					</div>
+				</div>
+			} else {
+				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+					for _, list := range lists {
+						@components.ShoppingListCard(list)
+					}
+				</div>
+				<!-- Quick Actions Footer -->
+				<div class="mt-12 bg-gray-50 rounded-lg p-6">
+					<h3 class="font-medium text-gray-900 mb-3">Quick Actions</h3>
+					<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+						<button
+							@click="$store.mealPlanner.showCreateShoppingListModal()"
+							class="flex items-center p-3 bg-white rounded border hover:bg-gray-50 transition-colors"
+						>
+							<svg class="w-5 h-5 text-blue-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+							</svg>
+							<div class="text-left">
+								<div class="font-medium">Create New List</div>
+								<div class="text-sm text-gray-500">Start a fresh shopping list</div>
+							</div>
+						</button>
+						<button
+							@click="$store.mealPlanner.navigateToCalendar()"
+							class="flex items-center p-3 bg-white rounded border hover:bg-gray-50 transition-colors"
+						>
+							<svg class="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+							</svg>
+							<div class="text-left">
+								<div class="font-medium">Plan Meals</div>
+								<div class="text-sm text-gray-500">Schedule meals to shop for</div>
+							</div>
+						</button>
+						<button
+							@click="$store.mealPlanner.navigateToFoods()"
+							class="flex items-center p-3 bg-white rounded border hover:bg-gray-50 transition-colors"
+						>
+							<svg class="w-5 h-5 text-purple-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+							</svg>
+							<div class="text-left">
+								<div class="font-medium">Manage Recipes</div>
+								<div class="text-sm text-gray-500">Add foods and recipes</div>
+							</div>
+						</button>
+					</div>
+				</div>
+			}
+		</div>
+	</div>
+}
+
 templ ShoppingListDetailPage(list *models.ShoppingList) {
-    @layouts.Base() {
-        @components.ShoppingListDetail(list)
-    }
+	<div
+		x-data="shoppingList"
+		class="bg-white rounded-lg shadow"
+		hx-get={ fmt.Sprintf("/shopping-lists/%d", list.ID) }
+		hx-trigger="refreshShoppingList from:body"
+		hx-target="this"
+		hx-swap="outerHTML"
+	>
+		<div class="p-6 border-b">
+			<div class="flex justify-between items-center mb-4">
+				<div>
+					<h2 class="text-xl font-semibold">{ list.Name }</h2>
+					if list.Notes != "" {
+						<p class="text-gray-600 mt-1">{ list.Notes }</p>
+					}
+				</div>
+				<div class="flex gap-2">
+					<button
+						@click="$store.mealPlanner.showAddItemsModal()"
+						class="px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
+					>
+						Add Items
+					</button>
+					<a
+						href={ templ.SafeURL(fmt.Sprintf("/shopping-lists/%d/export", list.ID)) }
+						class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+						target="_blank"
+					>
+						Export
+					</a>
+					<button
+						hx-delete={ fmt.Sprintf("/shopping-lists/%d", list.ID) }
+						hx-target="#main-content"
+						hx-push-url="/shopping-lists"
+						hx-confirm={ fmt.Sprintf("Are you sure you want to delete \"%s\"?", list.Name) }
+						class="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
+					>
+						Delete
+					</button>
+				</div>
+			</div>
+			<div class="flex justify-between text-sm text-gray-600">
+				<span>
+					Created { list.CreatedAt.Format("January 2, 2006") }
+				</span>
+				<span>
+					{ fmt.Sprintf("%d items, %d sources", len(list.Items), len(list.Sources)) }
+				</span>
+			</div>
+		</div>
+		<div class="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+			<!-- Items Column (2/3 width) -->
+			<div class="lg:col-span-2">
+				<div class="flex justify-between items-center mb-4">
+					<h3 class="font-medium">Items to Buy</h3>
+					<div class="text-sm text-gray-500">
+						{ fmt.Sprintf("%d of %d purchased", 
+                            func() int {
+                                count := 0
+                                for _, item := range list.Items {
+                                    if item.Purchased { count++ }
+                                }
+                                return count
+                            }(), 
+                            len(list.Items),
+                        ) }
+					</div>
+				</div>
+				<div id="items-container">
+					@components.ShoppingListItems(list.Items)
+				</div>
+			</div>
+			<!-- Sources Column (1/3 width) -->
+			<div>
+				<h3 class="font-medium mb-4">Sources</h3>
+				<div id="sources-container" class="space-y-3">
+					@components.ShoppingListSources(list.Sources, list.ID)
+				</div>
+			</div>
+		</div>
+	</div>
 }

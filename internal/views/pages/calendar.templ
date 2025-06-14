@@ -1,13 +1,67 @@
 package pages
 
 import (
-    "mealplanner/internal/views/components"
-    "mealplanner/internal/views/layouts"
-    "mealplanner/internal/utils"
+	"fmt"
+	"mealplanner/internal/utils"
+	"mealplanner/internal/views/components"
 )
 
-templ CalendarFullPage(dayData *utils.DayData) {
-    @layouts.Base() {
-        @components.Calendar(dayData)
-    }
+templ CalendarPage(day *utils.DayData) {
+	<div x-data="calendar" hx-get="/calendar" hx-trigger="calendarRefresh from:body" hx-vals="js:{date: event.detail.date}" hx-target="this" hx-swap="outerHTML" id="calendar-container">
+		<!-- Date Picker Header -->
+		<div class="flex items-center justify-between p-4 bg-white rounded-lg shadow mb-4">
+			<div class="flex items-center gap-3">
+				<button @click="previousDay()" class="p-2 hover:bg-gray-100 rounded">
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+					</svg>
+				</button>
+				<input
+					type="date"
+					x-model="$store.mealPlanner.currentDate"
+					@change="changeDate($event.target.value)"
+					class="px-3 py-2 border border-gray-300 rounded focus:border-blue-500"
+				/>
+				<button @click="nextDay()" class="p-2 hover:bg-gray-100 rounded">
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+					</svg>
+				</button>
+			</div>
+			<button @click="goToToday()" class="px-3 py-1 text-sm bg-blue-100 text-blue-600 rounded hover:bg-blue-200">
+				Today
+			</button>
+		</div>
+		<!-- Day Content -->
+		<div class="bg-white rounded-lg shadow">
+			<div class="p-4 border-b">
+				<h2 class="text-lg font-semibold">{ day.Date.Format("Monday, January 2, 2006") }</h2>
+			</div>
+			<div class="p-4">
+				if len(day.Schedules) == 0 {
+					<div class="text-center py-8 text-gray-500">
+						<p class="mb-4">No meals scheduled for this day</p>
+						<button
+							@click={ fmt.Sprintf("$store.mealPlanner.showScheduleModal({date: '%s'})", day.Date.Format("2006-01-02")) }
+							class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+						>
+							Schedule First Meal
+						</button>
+					</div>
+				} else {
+					<div class="space-y-3 mb-4">
+						for _, schedule := range day.Schedules {
+							@components.ScheduleItem(schedule)
+						}
+					</div>
+					<button
+						@click={ fmt.Sprintf("$store.mealPlanner.showScheduleModal({date: '%s'})", day.Date.Format("2006-01-02")) }
+						class="w-full py-3 border-2 border-dashed border-gray-300 text-gray-600 rounded hover:border-blue-400 hover:text-blue-600 transition-colors"
+					>
+						+ Add Another Meal
+					</button>
+				}
+			</div>
+		</div>
+	</div>
 }
