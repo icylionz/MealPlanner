@@ -21,11 +21,16 @@ templ Navigation() {
         <!-- Navigation Links -->
         <div class="py-6">
             <div class="space-y-2 px-4">
-                <button
-                    @click="$store.mealPlanner.navigateToCalendar(); sidebarOpen = false"
-                    :class="{'bg-blue-100 text-blue-700 border-r-2 border-blue-500': $store.mealPlanner.activeTab === 'calendar'}"
-                    class="w-full text-left px-4 py-3 rounded-lg font-medium text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-3"
-                >
+                
+	            <button
+	                hx-get="/calendar"
+	                hx-target="#main-content" 
+	                hx-push-url="/calendar"
+	                @click="$store.mealPlanner.activeTab = 'calendar'; sidebarOpen = false"
+	                :class="{'bg-blue-100 text-blue-700 border-r-2 border-blue-500': $store.mealPlanner.activeTab === 'calendar'}"
+	                class="w-full text-left px-4 py-3 rounded-lg font-medium text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-3"
+	            >
+
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                     </svg>
@@ -33,7 +38,10 @@ templ Navigation() {
                 </button>
                 
                 <button
-                    @click="$store.mealPlanner.navigateToFoods(); sidebarOpen = false"
+                    hx-get="/foods"
+                    hx-target="#main-content"
+                    hx-push-url="/foods" 
+                    @click="$store.mealPlanner.activeTab = 'foods'; sidebarOpen = false"
                     :class="{'bg-blue-100 text-blue-700 border-r-2 border-blue-500': $store.mealPlanner.activeTab === 'foods'}"
                     class="w-full text-left px-4 py-3 rounded-lg font-medium text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-3"
                 >

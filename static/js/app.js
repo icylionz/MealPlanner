@@ -113,25 +113,6 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
-    navigateToCalendar() {
-      this.activeTab = "calendar";
-      htmx.ajax("GET", "/calendar", {
-        target: "#main-content",
-      });
-    },
-    navigateToFoods() {
-      this.activeTab = "foods";
-      htmx.ajax("GET", "/foods", {
-        target: "#main-content",
-      });
-    },
-
-    navigateToShoppingLists() {
-      this.activeTab = "shoppinglists";
-      htmx.ajax("GET", "/shopping-lists", {
-        target: "#main-content",
-      });
-    },
     refreshCalendar() {
       htmx.ajax("GET", "/calendar", {
         target: "#calendar-container",
