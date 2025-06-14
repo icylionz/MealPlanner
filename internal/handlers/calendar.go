@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"mealplanner/internal/views/components"
+	"mealplanner/internal/views/pages"
 
 	"github.com/labstack/echo/v4"
 )
@@ -40,7 +41,15 @@ func (h *CalendarHandler) HandleCalendarView(c echo.Context) error {
 	}
 
 	dayData := utils.GetDayData(&chosenDate, schedules)
-	return components.Calendar(dayData).Render(c.Request().Context(), c.Response())
+
+	// Check if this is an HTMX request
+	if c.Request().Header.Get("HX-Request") != "" {
+		// Return partial for HTMX
+		return components.Calendar(dayData).Render(c.Request().Context(), c.Response())
+	}
+
+	// Return full page for direct navigation
+	return pages.CalendarFullPage(dayData).Render(c.Request().Context(), c.Response())
 }
 
 func NewCalendarHandler(scheduleService *services.ScheduleService) *CalendarHandler {

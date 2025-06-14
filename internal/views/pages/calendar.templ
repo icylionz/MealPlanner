@@ -1,0 +1,13 @@
+package pages
+
+import (
+    "mealplanner/internal/views/components"
+    "mealplanner/internal/views/layouts"
+    "mealplanner/internal/utils"
+)
+
+templ CalendarFullPage(dayData *utils.DayData) {
+    @layouts.Base() {
+        @components.Calendar(dayData)
+    }
+}
