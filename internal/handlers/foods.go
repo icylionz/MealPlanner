@@ -83,6 +83,7 @@ func (h *FoodHandler) HandleCreateFoodModal(c echo.Context) error {
 				log.Default().Printf("Error binding ingredients form: %v", err)
 				return err
 			}
+			form.CombineDuplicateIngredients()
 		}
 
 		// Validate form

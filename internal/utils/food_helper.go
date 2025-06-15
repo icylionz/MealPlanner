@@ -63,6 +63,36 @@ func (f *FoodForm) BindIngredients(c echo.Context) error {
 	return nil
 }
 
+func (f *FoodForm) CombineDuplicateIngredients() {
+    if len(f.Ingredients) <= 1 {
+        return
+    }
+
+    // Group by FoodID + Unit combination
+    combined := make(map[string]IngredientForm)
+    
+    for _, ing := range f.Ingredients {
+        if ing.FoodID == "" {
+            continue
+        }
+        
+        key := fmt.Sprintf("%s_%s", ing.FoodID, ing.Unit)
+        
+        if existing, exists := combined[key]; exists {
+            existing.Quantity += ing.Quantity
+            combined[key] = existing
+        } else {
+            combined[key] = ing
+        }
+    }
+    
+    // Convert back to slice
+    f.Ingredients = make([]IngredientForm, 0, len(combined))
+    for _, ing := range combined {
+        f.Ingredients = append(f.Ingredients, ing)
+    }
+}
+
 func (f *FoodForm) Validate() *ValidationError {
 	errors := make(map[string]string)
 
