@@ -35,17 +35,6 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
-    handleSuccessfulFoodCreateOrUpdate(event) {
-      if (
-        event.detail.xhr.status === 200 &&
-        event.detail.target.id.includes("modal-container")
-      ) {
-        /* make sure the modal doesnt close when retrieving the recipe and ingredient fields */ console.log(
-          "closing",
-        );
-        this.$store.mealPlanner.toggleModal(false);
-      }
-    },
     // This section of code will remain in remembrance of the time wasted doing this. only to realize as soon 
     // as i finished, that i didn't need the yield unit select. It was so that everytime the user changed the 
     // unit type, the base unit select and yield unit select would change with the associated units for the type. 

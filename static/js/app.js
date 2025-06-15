@@ -156,3 +156,4 @@ document.addEventListener("htmx:configRequest", function (evt) {
 document.addEventListener("closeModal", function () {
   Alpine.store("mealPlanner").toggleModal(false);
 });
+

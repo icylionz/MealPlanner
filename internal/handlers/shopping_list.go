@@ -119,7 +119,8 @@ func (h *ShoppingListHandler) handleCreateShoppingList(c echo.Context) error {
 		log.Printf("Error creating shopping list: %v", err)
 		return err
 	}
-
+	
+	c.Response().Header().Set("HX-Trigger", "closeModal,refreshShoppingList")
 	return c.NoContent(http.StatusOK)
 }
 
@@ -134,7 +135,8 @@ func (h *ShoppingListHandler) HandleDeleteShoppingList(c echo.Context) error {
 		log.Printf("Error deleting shopping list: %v", err)
 		return err
 	}
-
+	
+	c.Response().Header().Set("HX-Trigger", "refreshShoppingList")
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -226,7 +228,7 @@ func (h *ShoppingListHandler) HandleAddManualItem(c echo.Context) error {
 		return err
 	}
 
-	c.Response().Header().Set("HX-Trigger", "refreshShoppingList,closeModal")
+	c.Response().Header().Set("HX-Trigger", "closeModal,refreshShoppingListDetail")
 	return c.NoContent(http.StatusOK)
 }
 
@@ -277,7 +279,7 @@ func (h *ShoppingListHandler) HandleAddRecipe(c echo.Context) error {
 		return err
 	}
 
-	c.Response().Header().Set("HX-Trigger", "refreshShoppingList,closeModal")
+	c.Response().Header().Set("HX-Trigger", "closeModal,refreshShoppingListDetail")
 	return c.NoContent(http.StatusOK)
 
 }
@@ -324,7 +326,7 @@ func (h *ShoppingListHandler) HandleAddSchedules(c echo.Context) error {
 		return err
 	}
 
-	c.Response().Header().Set("HX-Trigger", "refreshShoppingList,closeModal")
+	c.Response().Header().Set("HX-Trigger", "closeModal,refreshShoppingListDetail")
 	return c.NoContent(http.StatusOK)
 
 }
@@ -379,7 +381,7 @@ func (h *ShoppingListHandler) HandleAddDateRange(c echo.Context) error {
 		return err
 	}
 
-	c.Response().Header().Set("HX-Trigger", "refreshShoppingList,closeModal")
+	c.Response().Header().Set("HX-Trigger", "closeModal,refreshShoppingListDetail")
 	return c.NoContent(http.StatusOK)
 
 }

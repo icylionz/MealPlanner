@@ -148,7 +148,7 @@ func (h *FoodHandler) HandleCreateFoodModal(c echo.Context) error {
 			}
 		}
 
-		c.Response().Header().Set("HX-Trigger", "refreshFoodView")
+		c.Response().Header().Set("HX-Trigger", "closeModal,refreshFoodView")
 		return c.NoContent(http.StatusOK)
 	}
 
@@ -246,7 +246,7 @@ func (h *FoodHandler) HandleEditFoodModal(c echo.Context) error {
 			return err
 		}
 
-		c.Response().Header().Set("HX-Trigger", "refreshFoodView")
+		c.Response().Header().Set("HX-Trigger", "closeModal,refreshFoodView")
 		return c.NoContent(http.StatusOK)
 	}
 

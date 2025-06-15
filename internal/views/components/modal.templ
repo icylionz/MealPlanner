@@ -31,7 +31,6 @@ templ CreateScheduleModal(props *utils.ModalProps) {
 					hx-target-400="#dynamic-modal-container"
 					hx-swap="innerHTML"
 					class="space-y-4"
-					@htmx:afterRequest="if(event.detail.xhr.status === 200) { $store.mealPlanner.toggleModal(false); refreshCalendar();}"
 				>
 					<input type="hidden" name="date" value={ props.Date.Format("2006-01-02") }/>
 					<!-- Food Select -->

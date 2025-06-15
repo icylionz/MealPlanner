@@ -102,6 +102,7 @@ func (h *SchedulesHandler) HandleAddSchedule(c echo.Context) error {
 	}
 
 	// Return updated calendar view
+	c.Response().Header().Set("HX-Trigger", "closeModal,refreshCalendar")
 	return c.NoContent(http.StatusOK)
 }
 
@@ -196,6 +197,7 @@ func (h *SchedulesHandler) HandleEditScheduleModal(c echo.Context) error {
 		}
 
 		// Return success
+		c.Response().Header().Set("HX-Trigger", "closeModal,refreshCalendar")
 		return c.NoContent(http.StatusOK)
 	}
 
