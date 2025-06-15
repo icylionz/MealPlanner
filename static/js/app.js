@@ -113,14 +113,6 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
-    refreshCalendar() {
-      htmx.ajax("GET", "/calendar", {
-        target: "#calendar-container",
-        swap: "outerHTML",
-        values: { date: this.currentDate },
-      });
-    },
-
     showCreateShoppingListModal() {
       this.showModal = true;
       this.ensureModalContainer();
@@ -156,4 +148,3 @@ document.addEventListener("htmx:configRequest", function (evt) {
 document.addEventListener("closeModal", function () {
   Alpine.store("mealPlanner").toggleModal(false);
 });
-

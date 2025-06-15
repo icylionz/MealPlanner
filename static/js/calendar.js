@@ -26,7 +26,7 @@ document.addEventListener("alpine:init", () => {
     },
 
     refreshCalendar() {
-      htmx.trigger("body", "calendarRefresh", {
+      htmx.trigger("body", "refreshCalendar", {
         date: this.$store.mealPlanner.currentDate
       });
     },

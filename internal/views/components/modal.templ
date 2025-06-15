@@ -239,7 +239,6 @@ templ CreateEditFoodModal(props *utils.FoodFormProps) {
 					}
 					hx-target="#dynamic-modal-container"
 					hx-target-400="#dynamic-modal-container"
-					@htmx:afterRequest="handleSuccessfulFoodCreateOrUpdate(event)"
 					class="space-y-4"
 				>
 					<!-- Basic Info -->

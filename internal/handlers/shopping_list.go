@@ -120,7 +120,7 @@ func (h *ShoppingListHandler) handleCreateShoppingList(c echo.Context) error {
 		return err
 	}
 	
-	c.Response().Header().Set("HX-Trigger", "closeModal,refreshShoppingList")
+	c.Response().Header().Set("HX-Trigger", "refreshShoppingList,closeModal")
 	return c.NoContent(http.StatusOK)
 }
 
@@ -228,7 +228,7 @@ func (h *ShoppingListHandler) HandleAddManualItem(c echo.Context) error {
 		return err
 	}
 
-	c.Response().Header().Set("HX-Trigger", "closeModal,refreshShoppingListDetail")
+	c.Response().Header().Set("HX-Trigger", "refreshShoppingListDetail,closeModal")
 	return c.NoContent(http.StatusOK)
 }
 
@@ -279,7 +279,7 @@ func (h *ShoppingListHandler) HandleAddRecipe(c echo.Context) error {
 		return err
 	}
 
-	c.Response().Header().Set("HX-Trigger", "closeModal,refreshShoppingListDetail")
+	c.Response().Header().Set("HX-Trigger", "refreshShoppingListDetail,closeModal")
 	return c.NoContent(http.StatusOK)
 
 }
@@ -326,7 +326,7 @@ func (h *ShoppingListHandler) HandleAddSchedules(c echo.Context) error {
 		return err
 	}
 
-	c.Response().Header().Set("HX-Trigger", "closeModal,refreshShoppingListDetail")
+	c.Response().Header().Set("HX-Trigger", "refreshShoppingListDetail,closeModal")
 	return c.NoContent(http.StatusOK)
 
 }
@@ -381,7 +381,7 @@ func (h *ShoppingListHandler) HandleAddDateRange(c echo.Context) error {
 		return err
 	}
 
-	c.Response().Header().Set("HX-Trigger", "closeModal,refreshShoppingListDetail")
+	c.Response().Header().Set("HX-Trigger", "refreshShoppingListDetail,closeModal")
 	return c.NoContent(http.StatusOK)
 
 }

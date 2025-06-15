@@ -28,7 +28,7 @@ document.addEventListener("alpine:init", () => {
         htmx.ajax("DELETE", `/foods/${food.id}`, {
           handler: (_, xhr) => {
             if (xhr.xhr.status >= 200 && xhr.xhr.status < 300) {
-              htmx.trigger("#food-list", "refreshFoodView");
+              htmx.trigger("#food-list", "refreshFoodList");
             }
           },
         });
