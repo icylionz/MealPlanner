@@ -518,6 +518,7 @@ templ ShoppingListCard(list *models.ShoppingList) {
 				<a
 					hx-get={ fmt.Sprintf("/shopping-lists/%d", list.ID) }
 					hx-target="#main-content"
+					hx-swap="innerHTML"
 					hx-push-url="true"
 					class="p-2 hover:bg-blue-100 rounded"
 					title="View list"
