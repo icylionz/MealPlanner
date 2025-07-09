@@ -107,8 +107,8 @@ templ ShoppingListDetailPage(list *models.ShoppingList) {
 		class="bg-white rounded-lg shadow"
 		hx-get={ fmt.Sprintf("/shopping-lists/%d", list.ID) }
 		hx-trigger="refreshShoppingListDetail from:body"
-		hx-target="this"
-		hx-swap="outerHTML"
+		hx-target="#main-content"
+		hx-swap="innerHTML"
 	>
 		<div class="p-6 border-b">
 			<div class="flex justify-between items-center mb-4">
