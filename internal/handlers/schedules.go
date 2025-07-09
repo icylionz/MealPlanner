@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"mealplanner/internal/models"
 	"mealplanner/internal/services"
@@ -22,9 +23,9 @@ type SchedulesHandler struct {
 
 func (h *SchedulesHandler) HandleAddSchedule(c echo.Context) error {
 	var input struct {
-		Date   string `form:"date"`
-		Time   string `form:"time"`
-		FoodID string `form:"food_id"`
+		Date     string `form:"date"`
+		Time     string `form:"time"`
+		FoodID   string `form:"food_id"`
 		Servings string `form:"servings"`
 	}
 
@@ -61,14 +62,14 @@ func (h *SchedulesHandler) HandleAddSchedule(c echo.Context) error {
 	}
 	var servings float64 = 1.0
 	if input.Servings != "" {
-	    parsedServings, err := strconv.ParseFloat(input.Servings, 64)
-	    if err != nil || parsedServings <= 0 {
-	        errors["servings"] = "Servings must be a positive number"
-	    } else {
-	        servings = parsedServings
-	    }
+		parsedServings, err := strconv.ParseFloat(input.Servings, 64)
+		if err != nil || parsedServings <= 0 {
+			errors["servings"] = "Servings must be a positive number"
+		} else {
+			servings = parsedServings
+		}
 	}
-	
+
 	if len(errors) > 0 {
 		// Re-render form with errors
 		date, _ := time.Parse("2006-01-02", input.Date)
@@ -82,7 +83,7 @@ func (h *SchedulesHandler) HandleAddSchedule(c echo.Context) error {
 			FoodChosen: models.Food{
 				ID: selectedFoodId,
 			},
-			Servings: servings,
+			Servings:   servings,
 			TimeChosen: timeOfSchedule,
 		}
 
@@ -102,7 +103,8 @@ func (h *SchedulesHandler) HandleAddSchedule(c echo.Context) error {
 	}
 
 	// Return updated calendar view
-	c.Response().Header().Set("HX-Trigger", "refreshCalendar,closeModal")
+	triggerData := fmt.Sprintf(`{"refreshCalendar": {"date": "%s"}, "closeModal": {}}`, input.Date)
+	c.Response().Header().Set("HX-Trigger", triggerData)
 	return c.NoContent(http.StatusOK)
 }
 
@@ -197,7 +199,8 @@ func (h *SchedulesHandler) HandleEditScheduleModal(c echo.Context) error {
 		}
 
 		// Return success
-		c.Response().Header().Set("HX-Trigger", "refreshCalendar,closeModal")
+		triggerData := fmt.Sprintf(`{"refreshCalendar": {"date": "%s"}, "closeModal": {}}`, input.Date)
+		c.Response().Header().Set("HX-Trigger", triggerData)
 		return c.NoContent(http.StatusOK)
 	}
 
@@ -293,6 +296,6 @@ func (h *SchedulesHandler) HandleScheduleModal(c echo.Context) error {
 func NewSchedulesHandler(scheduleService *services.ScheduleService, foodService *services.FoodService) *SchedulesHandler {
 	return &SchedulesHandler{
 		scheduleService: scheduleService,
-		foodService: foodService,
+		foodService:     foodService,
 	}
 }
