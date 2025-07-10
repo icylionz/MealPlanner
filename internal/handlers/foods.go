@@ -43,17 +43,66 @@ func (h *FoodHandler) HandleViewFoodDetailsModal(c echo.Context) error {
 }
 
 func (h *FoodHandler) HandleSearchFoods(c echo.Context) error {
-	// Get query parameters
 	query := c.QueryParam("search")
+	
+	// Parse pagination parameters
+	page, _ := strconv.Atoi(c.QueryParam("page"))
+	if page < 1 {
+		page = 1
+	}
+	pageSize, _ := strconv.Atoi(c.QueryParam("page_size"))
+	if pageSize < 1 {
+		pageSize = 10
+	}
 
-	// Get foods from service
-	foods, err := h.service.GetFoods(c.Request().Context(), query)
+	// Use paginated method for main list
+	foods, pagination, err := h.service.GetFoodsPaginated(c.Request().Context(), query, page, pageSize)
 	if err != nil {
 		return c.String(500, "Error searching foods")
 	}
 
-	// Render only the food list component
-	return components.FoodList(foods).Render(c.Request().Context(), c.Response().Writer)
+	return components.FoodListWithPagination(foods, pagination).Render(c.Request().Context(), c.Response().Writer)
+}
+
+// New autocomplete handler
+func (h *FoodHandler) HandleAutocomplete(c echo.Context) error {
+	query := c.QueryParam("query")
+	limitStr := c.QueryParam("limit")
+	
+	limit := 10
+	if limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+	
+	foods, err := h.service.SearchFoodsAutocomplete(c.Request().Context(), query, limit)
+	if err != nil {
+		log.Default().Printf("Error in autocomplete search: %v", err)
+		return c.String(500, "Error searching foods")
+	}
+	
+	return components.AutocompleteResults(foods).Render(c.Request().Context(), c.Response().Writer)
+}
+
+// Handler for getting recent foods
+func (h *FoodHandler) HandleRecentFoods(c echo.Context) error {
+	limitStr := c.QueryParam("limit")
+	
+	limit := 10
+	if limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+	
+	foods, err := h.service.GetRecentFoods(c.Request().Context(), limit)
+	if err != nil {
+		log.Default().Printf("Error getting recent foods: %v", err)
+		return c.String(500, "Error getting recent foods")
+	}
+	
+	return components.AutocompleteResults(foods).Render(c.Request().Context(), c.Response().Writer)
 }
 
 func (h *FoodHandler) HandleDeleteFood(c echo.Context) error {

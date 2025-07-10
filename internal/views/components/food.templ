@@ -78,4 +78,58 @@ templ FoodList(foods []*models.Food) {
 	}
 }
 
-// templ FoodDetails(food *models.Food) {
+templ FoodListWithPagination(foods []*models.Food, pagination *models.PaginationMeta) {
+	@FoodList(foods)
+	@PaginationControls(pagination)
+}
+
+templ PaginationControls(meta *models.PaginationMeta) {
+	if meta.TotalPages > 1 {
+		<div class="flex items-center justify-between px-4 py-3 bg-white border-t border-gray-200">
+			<div class="text-sm text-gray-700">
+				Showing { fmt.Sprintf("%d-%d of %d", 
+					(meta.CurrentPage-1)*meta.PageSize+1,
+					min(meta.CurrentPage*meta.PageSize, meta.TotalItems),
+					meta.TotalItems) } results
+			</div>
+			<div class="flex items-center space-x-2">
+				<button
+					hx-get="/foods/search"
+					hx-target="#food-list"
+					hx-include="[name='search']"
+					hx-vals={ fmt.Sprintf(`{"page": %d}`, meta.CurrentPage-1) }
+					disabled?={ !meta.HasPrevious }
+					class={ "px-3 py-1 text-sm border rounded",
+						templ.KV("bg-gray-100 text-gray-400 cursor-not-allowed", !meta.HasPrevious),
+						templ.KV("bg-white text-gray-700 hover:bg-gray-50", meta.HasPrevious) }
+				>
+					Previous
+				</button>
+				
+				<span class="text-sm text-gray-700">
+					{ fmt.Sprintf("%d of %d", meta.CurrentPage, meta.TotalPages) }
+				</span>
+				
+				<button
+					hx-get="/foods/search"
+					hx-target="#food-list"
+					hx-include="[name='search']"
+					hx-vals={ fmt.Sprintf(`{"page": %d}`, meta.CurrentPage+1) }
+					disabled?={ !meta.HasNext }
+					class={ "px-3 py-1 text-sm border rounded",
+						templ.KV("bg-gray-100 text-gray-400 cursor-not-allowed", !meta.HasNext),
+						templ.KV("bg-white text-gray-700 hover:bg-gray-50", meta.HasNext) }
+				>
+					Next
+				</button>
+			</div>
+		</div>
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

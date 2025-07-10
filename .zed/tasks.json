@@ -1,0 +1,30 @@
+[
+  {
+    "label": "templ generate",
+    "command": "templ",
+    "args": ["generate"],
+    "use_new_terminal": true,
+    "reveal": "always"
+  },
+  {
+    "label": "sqlc generate",
+    "command": "sqlc",
+    "args": ["generate"],
+    "use_new_terminal": true,
+    "reveal": "always"
+  },
+  {
+    "label": "build: generate",
+    "command": "bash",
+    "args": ["-c", "templ generate && sqlc generate"],
+    "use_new_terminal": true,
+    "reveal": "always"
+  },
+  {
+    "label": "run: main.go",
+    "command": "bash",
+    "args": ["-c", "templ generate && sqlc generate && go run main.go"],
+    "use_new_terminal": true,
+    "reveal": "always"
+  }
+]

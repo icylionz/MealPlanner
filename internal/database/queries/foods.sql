@@ -14,8 +14,30 @@ WHERE
         WHEN COALESCE(TRIM($1), '') = '' THEN TRUE
         ELSE (name ILIKE '%' || $1 || '%') OR (CAST(id AS TEXT) LIKE '%' || $1 || '%')
     END
-ORDER BY name;
+ORDER BY name
+LIMIT $2 OFFSET $3;
 
+-- name: SearchFoodsAutocomplete :many
+SELECT id, name, unit_type, base_unit, is_recipe, density FROM foods
+WHERE name ILIKE $1 || '%'
+ORDER BY 
+    CASE WHEN name ILIKE $1 || '%' THEN 1 ELSE 2 END,
+    LENGTH(name),
+    name
+LIMIT $2;
+
+-- name: GetRecentFoods :many  
+SELECT id, name, unit_type, base_unit, is_recipe, density FROM foods
+ORDER BY updated_at DESC
+LIMIT $1;
+-- name: CountSearchFoods :one
+SELECT COUNT(*) FROM foods
+WHERE 
+    CASE 
+        WHEN COALESCE(TRIM($1), '') = '' THEN TRUE
+        ELSE (name ILIKE '%' || $1 || '%') OR (CAST(id AS TEXT) LIKE '%' || $1 || '%')
+    END;
+    
 -- name: SearchFoodsWithDependencies :many
 WITH RECURSIVE recipe_tree AS (
     -- Base case: foods matching id or name

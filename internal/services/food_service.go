@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"math"
 	"mealplanner/internal/database"
 	"mealplanner/internal/database/db"
 	"mealplanner/internal/models"
@@ -52,7 +53,11 @@ func (s *FoodService) CreateRecipeWithIngredients(ctx context.Context, recipePar
 }
 
 func (s *FoodService) GetFoods(ctx context.Context, queryString string) ([]*models.Food, error) {
-	dbFoods, err := s.db.Queries.SearchFoods(ctx, queryString)
+	dbFoods, err := s.db.Queries.SearchFoods(ctx, db.SearchFoodsParams{
+		Btrim: queryString,
+		Limit:   1000,
+		Offset:  0,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +78,134 @@ func (s *FoodService) GetFoods(ctx context.Context, queryString string) ([]*mode
 			IsRecipe: dbFood.IsRecipe,
 		}
 	}
+	return foods, nil
+}
 
+// New paginated method for main food list
+func (s *FoodService) GetFoodsPaginated(ctx context.Context, queryString string, page, pageSize int) ([]*models.Food, *models.PaginationMeta, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+	
+	offset := (page - 1) * pageSize
+	
+	totalCount, err := s.db.Queries.CountSearchFoods(ctx, queryString)
+	if err != nil {
+		log.Default().Printf("Error counting foods: %v", err)
+		return nil, nil, err
+	}
+	
+	dbFoods, err := s.db.Queries.SearchFoods(ctx, db.SearchFoodsParams{
+		Btrim: queryString,
+		Limit:   int32(pageSize),
+		Offset:  int32(offset),
+	})
+	if err != nil {
+		log.Default().Printf("Error searching foods: %v", err)
+		return nil, nil, err
+	}
+
+	foods := make([]*models.Food, len(dbFoods))
+	for i, dbFood := range dbFoods {
+		density, err := dbFood.Density.Float64Value()
+		if err != nil {
+			log.Default().Println("Error parsing density: ", err)
+			return nil, nil, err
+		}
+		foods[i] = &models.Food{
+			ID:       int(dbFood.ID),
+			Name:     dbFood.Name,
+			UnitType: dbFood.UnitType,
+			BaseUnit: dbFood.BaseUnit,
+			Density:  density.Float64,
+			IsRecipe: dbFood.IsRecipe,
+		}
+	}
+
+	totalPages := int(math.Ceil(float64(totalCount) / float64(pageSize)))
+	
+	pagination := &models.PaginationMeta{
+		CurrentPage: page,
+		PageSize:    pageSize,
+		TotalItems:  int(totalCount),
+		TotalPages:  totalPages,
+		HasPrevious: page > 1,
+		HasNext:     page < totalPages,
+	}
+
+	return foods, pagination, nil
+}
+
+// Autocomplete search - fast, limited results
+func (s *FoodService) SearchFoodsAutocomplete(ctx context.Context, query string, limit int) ([]*models.Food, error) {
+	if query == "" {
+		// Return recent foods if no query
+		return s.GetRecentFoods(ctx, 10)
+	}
+	
+	if limit <= 0 || limit > 20 {
+		limit = 10
+	}
+	
+	dbFoods, err := s.db.Queries.SearchFoodsAutocomplete(ctx, db.SearchFoodsAutocompleteParams{
+		Column1: pgtype.Text{String: query},
+		Limit:   int32(limit),
+	})
+	if err != nil {
+		log.Default().Printf("Error searching foods for autocomplete: %v", err)
+		return nil, err
+	}
+
+	foods := make([]*models.Food, len(dbFoods))
+	for i, dbFood := range dbFoods {
+		density, err := dbFood.Density.Float64Value()
+		if err != nil {
+			log.Default().Println("Error parsing density: ", err)
+			return nil, err
+		}
+		foods[i] = &models.Food{
+			ID:       int(dbFood.ID),
+			Name:     dbFood.Name,
+			UnitType: dbFood.UnitType,
+			BaseUnit: dbFood.BaseUnit,
+			Density:  density.Float64,
+			IsRecipe: dbFood.IsRecipe,
+		}
+	}
+	return foods, nil
+}
+
+// Get recent foods for empty autocomplete
+func (s *FoodService) GetRecentFoods(ctx context.Context, limit int) ([]*models.Food, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 10
+	}
+	
+	dbFoods, err := s.db.Queries.GetRecentFoods(ctx, int32(limit))
+	if err != nil {
+		log.Default().Printf("Error getting recent foods: %v", err)
+		return nil, err
+	}
+
+	foods := make([]*models.Food, len(dbFoods))
+	for i, dbFood := range dbFoods {
+		density, err := dbFood.Density.Float64Value()
+		if err != nil {
+			log.Default().Println("Error parsing density: ", err)
+			return nil, err
+		}
+		foods[i] = &models.Food{
+			ID:       int(dbFood.ID),
+			Name:     dbFood.Name,
+			UnitType: dbFood.UnitType,
+			BaseUnit: dbFood.BaseUnit,
+			Density:  density.Float64,
+			IsRecipe: dbFood.IsRecipe,
+		}
+	}
 	return foods, nil
 }
 
@@ -143,75 +275,75 @@ func (s *FoodService) UpdateFood(ctx context.Context, updateParams db.UpdateFood
 }
 
 func SearchResultToFoods(rows []*db.SearchFoodsWithDependenciesRow) []*models.Food {
-    foodMap := make(map[int32]*models.Food)
+	foodMap := make(map[int32]*models.Food)
 
-    // First pass: Create all food objects
-    for _, row := range rows {
-        if _, exists := foodMap[row.ID]; exists {
-            continue
-        }
+	// First pass: Create all food objects
+	for _, row := range rows {
+		if _, exists := foodMap[row.ID]; exists {
+			continue
+		}
 
-        food := &models.Food{
-            ID:       int(row.ID),
-            Name:     row.Name,
-            UnitType: row.UnitType,
-            BaseUnit: row.BaseUnit,
-            IsRecipe: row.IsRecipe,
-        }
+		food := &models.Food{
+			ID:       int(row.ID),
+			Name:     row.Name,
+			UnitType: row.UnitType,
+			BaseUnit: row.BaseUnit,
+			IsRecipe: row.IsRecipe,
+		}
 
-        if row.Density.Valid {
-            val, _ := row.Density.Float64Value()
-            food.Density = val.Float64
-        }
+		if row.Density.Valid {
+			val, _ := row.Density.Float64Value()
+			food.Density = val.Float64
+		}
 
-        if row.IsRecipe {
-            yieldQty := 0.0
-            if row.YieldQuantity.Valid {
-                val, _ := row.YieldQuantity.Float64Value()
-                yieldQty = val.Float64
-            }
+		if row.IsRecipe {
+			yieldQty := 0.0
+			if row.YieldQuantity.Valid {
+				val, _ := row.YieldQuantity.Float64Value()
+				yieldQty = val.Float64
+			}
 
-            food.Recipe = &models.Recipe{
-                Instructions:   row.Instructions.String,
-                URL:           row.Url.String,
-                YieldQuantity: yieldQty,
-                Ingredients:   make([]*models.RecipeItem, 0),
-            }
-        }
+			food.Recipe = &models.Recipe{
+				Instructions:  row.Instructions.String,
+				URL:           row.Url.String,
+				YieldQuantity: yieldQty,
+				Ingredients:   make([]*models.RecipeItem, 0),
+			}
+		}
 
-        foodMap[row.ID] = food
-    }
+		foodMap[row.ID] = food
+	}
 
-    // Second pass: Build recipe relationships
-    for _, row := range rows {
-        if row.Depth > 0 && row.Quantity.Valid {
-            parentFood := foodMap[rows[0].ID] // Root food
-            if parentFood != nil && parentFood.Recipe != nil {
-                quantity, _ := row.Quantity.Float64Value()
+	// Second pass: Build recipe relationships
+	for _, row := range rows {
+		if row.Depth > 0 && row.Quantity.Valid {
+			parentFood := foodMap[rows[0].ID] // Root food
+			if parentFood != nil && parentFood.Recipe != nil {
+				quantity, _ := row.Quantity.Float64Value()
 
-                ingredient := &models.RecipeItem{
-                    FoodID:   int(row.ID),
-                    Food:     foodMap[row.ID],
-                    Quantity: quantity.Float64,
-                    Unit:     row.Unit.String,
-                }
+				ingredient := &models.RecipeItem{
+					FoodID:   int(row.ID),
+					Food:     foodMap[row.ID],
+					Quantity: quantity.Float64,
+					Unit:     row.Unit.String,
+				}
 
-                parentFood.Recipe.Ingredients = append(parentFood.Recipe.Ingredients, ingredient)
-            }
-        }
-    }
+				parentFood.Recipe.Ingredients = append(parentFood.Recipe.Ingredients, ingredient)
+			}
+		}
+	}
 
-    // Return root foods
-    var result []*models.Food
-    for _, row := range rows {
-        if row.Depth == 0 {
-            if food, exists := foodMap[row.ID]; exists {
-                result = append(result, food)
-            }
-        }
-    }
+	// Return root foods
+	var result []*models.Food
+	for _, row := range rows {
+		if row.Depth == 0 {
+			if food, exists := foodMap[row.ID]; exists {
+				result = append(result, food)
+			}
+		}
+	}
 
-    return result
+	return result
 }
 
 // Helper function to convert pgtype.Numeric to float64
@@ -230,7 +362,7 @@ func (s *FoodService) GetFoodUnits(ctx context.Context, id string) ([]string, st
 		return nil, "", err
 	}
 	units := utils.GetUnitsByType(targetFood.UnitType)
-	if units == nil ||  len(units) == 0 {
+	if units == nil || len(units) == 0 {
 		log.Default().Printf("Invalid unit type: %s", targetFood.UnitType)
 		return nil, "", errors.New("invalid unit type")
 	}

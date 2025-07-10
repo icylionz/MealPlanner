@@ -1,0 +1,85 @@
+package components
+
+import (
+	"mealplanner/internal/models"
+	"strconv"
+)
+
+templ FoodAutocomplete(name, placeholder string, selectedFood *models.Food, errors map[string]string) {
+	<div class="relative" x-data="foodAutocomplete()" x-init="init()">
+		<input
+			type="hidden"
+			name={ name }
+			x-model="selectedFoodId"
+		/>
+		<input
+			type="text"
+			x-model="searchQuery"
+			@input="handleInput($event.target.value)"
+			@focus="handleFocus()"
+			@click.away="closeDropdown()"
+			@keydown.arrow-down.prevent="navigateDown()"
+			@keydown.arrow-up.prevent="navigateUp()"
+			@keydown.enter.prevent="selectCurrentItem()"
+			@keydown.escape="closeDropdown()"
+			placeholder={ placeholder }
+			class={ "w-full px-3 py-2 border rounded",
+				templ.KV("border-red-500", errors != nil && errors[name] != "") }
+			autocomplete="off"
+		/>
+		<div 
+			class="absolute z-50 w-full bg-white border border-gray-200 rounded-b shadow-lg max-h-60 overflow-y-auto"
+			x-show="showDropdown && (loading || results.length > 0)"
+			x-cloak
+		>
+			<div x-show="loading" class="p-3 text-gray-500 text-sm">
+				Searching...
+			</div>
+			<template x-for="(food, index) in results" :key="food.id">
+				<button
+					type="button"
+					@click="selectFood(food)"
+					:class="{'bg-blue-50': index === selectedIndex}"
+					class="w-full text-left p-3 hover:bg-gray-100 border-b last:border-b-0 focus:bg-blue-50 focus:outline-none"
+				>
+					<div class="font-medium" x-text="food.name"></div>
+					<div class="text-sm text-gray-500">
+						<span x-text="food.isRecipe ? 'Recipe' : 'Basic Food'"></span>
+						<span x-text="' • ' + food.baseUnit"></span>
+					</div>
+				</button>
+			</template>
+			<div x-show="!loading && results.length === 0 && searchQuery.length > 0" class="p-3 text-gray-500 text-sm">
+				No foods found for "<span x-text="searchQuery"></span>"
+			</div>
+		</div>
+		if errors != nil && errors[name] != "" {
+			<div class="text-red-500 text-sm mt-1">{ errors[name] }</div>
+		}
+	</div>
+}
+
+templ AutocompleteResults(foods []*models.Food) {
+	if len(foods) == 0 {
+		<div class="p-3 text-gray-500 text-sm">No foods found</div>
+	} else {
+		for _, food := range foods {
+			<div 
+				class="food-result p-3 hover:bg-gray-100 border-b last:border-b-0 cursor-pointer"
+				data-food-id={ strconv.Itoa(food.ID) }
+				data-food-name={ food.Name }
+				data-food-is-recipe={ strconv.FormatBool(food.IsRecipe) }
+				data-food-base-unit={ food.BaseUnit }
+			>
+				<div class="font-medium">{ food.Name }</div>
+				<div class="text-sm text-gray-500">
+					if food.IsRecipe {
+						Recipe • { food.BaseUnit }
+					} else {
+						Basic Food • { food.BaseUnit }
+					}
+				</div>
+			</div>
+		}
+	}
+}
