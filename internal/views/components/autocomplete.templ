@@ -27,7 +27,7 @@ templ FoodAutocomplete(name, placeholder string, selectedFood *models.Food, erro
 				templ.KV("border-red-500", errors != nil && errors[name] != "") }
 			autocomplete="off"
 		/>
-		<div 
+		<div
 			class="absolute z-50 w-full bg-white border border-gray-200 rounded-b shadow-lg max-h-60 overflow-y-auto"
 			x-show="showDropdown && (loading || results.length > 0)"
 			x-cloak
@@ -64,7 +64,7 @@ templ AutocompleteResults(foods []*models.Food) {
 		<div class="p-3 text-gray-500 text-sm">No foods found</div>
 	} else {
 		for _, food := range foods {
-			<div 
+			<div
 				class="food-result p-3 hover:bg-gray-100 border-b last:border-b-0 cursor-pointer"
 				data-food-id={ strconv.Itoa(food.ID) }
 				data-food-name={ food.Name }

@@ -25,7 +25,7 @@ document.addEventListener("alpine:init", () => {
 
     handleInput(value) {
       this.searchQuery = value;
-      
+
       // Clear selection if user is typing
       if (value !== this.selectedFoodName) {
         this.selectedFoodId = "";
@@ -62,16 +62,31 @@ document.addEventListener("alpine:init", () => {
       this.selectedIndex = -1;
 
       try {
-        // Determine which endpoint to use based on field name
-        const hiddenInput = this.$el.querySelector('input[type="hidden"]');
-        const fieldName = hiddenInput ? hiddenInput.name : '';
-        
-        let endpoint = '/foods/autocomplete';
-        if (fieldName === 'recipe_id' || fieldName.includes('recipe')) {
-          endpoint = '/foods/recipes-autocomplete';
+        // Find the autocomplete container to get the hidden input
+        let autocompleteContainer = this.$el;
+        while (
+          autocompleteContainer &&
+          !autocompleteContainer.hasAttribute("x-data")
+        ) {
+          autocompleteContainer = autocompleteContainer.parentElement;
         }
 
-        const response = await fetch(`${endpoint}?query=${encodeURIComponent(query)}&limit=10`);
+        // Determine which endpoint to use based on field name
+        let endpoint = "/foods/autocomplete";
+        if (autocompleteContainer) {
+          const hiddenInput = autocompleteContainer.querySelector(
+            'input[type="hidden"]',
+          );
+          const fieldName = hiddenInput ? hiddenInput.name : "";
+
+          if (fieldName === "recipe_id" || fieldName.includes("recipe")) {
+            endpoint = "/foods/recipes-autocomplete";
+          }
+        }
+
+        const response = await fetch(
+          `${endpoint}?query=${encodeURIComponent(query)}&limit=10`,
+        );
         if (response.ok) {
           const html = await response.text();
           this.parseResults(html);
@@ -91,9 +106,26 @@ document.addEventListener("alpine:init", () => {
       this.loading = true;
       this.showDropdown = true;
       this.selectedIndex = -1;
-
+    
       try {
-        const response = await fetch("/foods/recent?limit=10");
+        // Find the autocomplete container to get the hidden input
+        let autocompleteContainer = this.$el;
+        while (autocompleteContainer && !autocompleteContainer.hasAttribute('x-data')) {
+          autocompleteContainer = autocompleteContainer.parentElement;
+        }
+        
+        // Determine which endpoint to use based on field name
+        let endpoint = '/foods/recent';
+        if (autocompleteContainer) {
+          const hiddenInput = autocompleteContainer.querySelector('input[type="hidden"]');
+          const fieldName = hiddenInput ? hiddenInput.name : '';
+          
+          if (fieldName === 'recipe_id' || fieldName.includes('recipe')) {
+            endpoint = '/foods/recipes-autocomplete'; // Use recipe endpoint with empty query
+          }
+        }
+    
+        const response = await fetch(`${endpoint}?limit=10`);
         if (response.ok) {
           const html = await response.text();
           this.parseResults(html);
@@ -108,15 +140,15 @@ document.addEventListener("alpine:init", () => {
 
     parseResults(html) {
       // Create temporary element to parse HTML
-      const temp = document.createElement('div');
+      const temp = document.createElement("div");
       temp.innerHTML = html;
-      
-      const foodElements = temp.querySelectorAll('.food-result');
-      this.results = Array.from(foodElements).map(el => ({
+
+      const foodElements = temp.querySelectorAll(".food-result");
+      this.results = Array.from(foodElements).map((el) => ({
         id: el.dataset.foodId,
         name: el.dataset.foodName,
-        isRecipe: el.dataset.foodIsRecipe === 'true',
-        baseUnit: el.dataset.foodBaseUnit
+        isRecipe: el.dataset.foodIsRecipe === "true",
+        baseUnit: el.dataset.foodBaseUnit,
       }));
     },
 
@@ -125,6 +157,44 @@ document.addEventListener("alpine:init", () => {
       this.selectedFoodName = food.name;
       this.searchQuery = food.name;
       this.closeDropdown();
+
+      // Find the autocomplete container and update units dropdown
+      let autocompleteContainer = this.$el;
+      while (
+        autocompleteContainer &&
+        !autocompleteContainer.hasAttribute("x-data")
+      ) {
+        autocompleteContainer = autocompleteContainer.parentElement;
+      }
+
+      if (autocompleteContainer) {
+        const hiddenInput = autocompleteContainer.querySelector(
+          'input[type="hidden"]',
+        );
+        if (hiddenInput) {
+          let unitsSelect = null;
+
+          // Handle different form types
+          if (hiddenInput.name.includes("ingredients[")) {
+            // Recipe ingredient form
+            const match = hiddenInput.name.match(/ingredients\[(\d+)\]/);
+            if (match) {
+              const index = match[1];
+              unitsSelect = document.getElementById(`units-select-${index}`);
+            }
+          } else if (hiddenInput.name === "food_id") {
+            // Manual shopping list item form
+            unitsSelect = document.getElementById("manual-units");
+          }
+
+          if (unitsSelect) {
+            htmx.ajax("GET", `/foods/units?food_id=${food.id}`, {
+              target: unitsSelect,
+              swap: "innerHTML",
+            });
+          }
+        }
+      }
     },
 
     navigateDown() {
@@ -148,6 +218,6 @@ document.addEventListener("alpine:init", () => {
     closeDropdown() {
       this.showDropdown = false;
       this.selectedIndex = -1;
-    }
+    },
   }));
 });

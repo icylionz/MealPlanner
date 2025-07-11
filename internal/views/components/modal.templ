@@ -430,6 +430,7 @@ templ IngredientRow(ing *models.RecipeItem, index int, availableFoods []*models.
 				placeholder="Amount"
 			/>
 			<select
+				id={ fmt.Sprintf("units-select-%d", index) }
 				name={ fmt.Sprintf("ingredients[%d].unit", index) }
 				class="w-24 px-3 py-2 border rounded"
 			>

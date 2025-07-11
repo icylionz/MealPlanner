@@ -105,11 +105,9 @@ templ PaginationControls(meta *models.PaginationMeta) {
 				>
 					Previous
 				</button>
-				
 				<span class="text-sm text-gray-700">
 					{ fmt.Sprintf("%d of %d", meta.CurrentPage, meta.TotalPages) }
 				</span>
-				
 				<button
 					hx-get="/foods/search"
 					hx-target="#food-list"
