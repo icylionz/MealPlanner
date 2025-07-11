@@ -151,7 +151,7 @@ func (s *FoodService) SearchFoodsAutocomplete(ctx context.Context, query string,
 	}
 	
 	dbFoods, err := s.db.Queries.SearchFoodsAutocomplete(ctx, db.SearchFoodsAutocompleteParams{
-		Column1: pgtype.Text{String: query},
+		Column1: pgtype.Text{String: query, Valid: true},
 		Limit:   int32(limit),
 	})
 	if err != nil {
