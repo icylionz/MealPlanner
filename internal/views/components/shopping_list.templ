@@ -284,21 +284,7 @@ templ ManualItemForm(props *utils.AddItemsModalProps) {
 	>
 		<div>
 			<label class="block text-sm font-medium mb-1">Food</label>
-			<select
-				name="food_id"
-				class={ "w-full px-3 py-2 border rounded",
-                    templ.KV("border-red-500", props.Errors["food_id"] != "") }
-				hx-get="/foods/units"
-				hx-trigger="change"
-				hx-target="#manual-units"
-				hx-include="this"
-				required
-			>
-				<option value="">Select a food...</option>
-				for _, food := range props.Foods {
-					<option value={ strconv.Itoa(food.ID) }>{ food.Name }</option>
-				}
-			</select>
+			@FoodAutocomplete("food_id", "Search for a food...", nil, props.Errors)
 			if props.Errors["food_id"] != "" {
 				<div class="text-red-500 text-sm mt-1">{ props.Errors["food_id"] }</div>
 			}
@@ -362,19 +348,7 @@ templ RecipeItemForm(props *utils.AddItemsModalProps) {
 	>
 		<div>
 			<label class="block text-sm font-medium mb-1">Recipe</label>
-			<select
-				name="recipe_id"
-				class={ "w-full px-3 py-2 border rounded",
-                    templ.KV("border-red-500", props.Errors["recipe_id"] != "") }
-				required
-			>
-				<option value="">Select a recipe...</option>
-				for _, food := range props.Foods {
-					if food.IsRecipe {
-						<option value={ strconv.Itoa(food.ID) }>{ food.Name }</option>
-					}
-				}
-			</select>
+			@FoodAutocomplete("recipe_id", "Search for a recipe...", nil, props.Errors)
 			if props.Errors["recipe_id"] != "" {
 				<div class="text-red-500 text-sm mt-1">{ props.Errors["recipe_id"] }</div>
 			}

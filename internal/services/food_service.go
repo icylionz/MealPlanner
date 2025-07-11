@@ -141,13 +141,13 @@ func (s *FoodService) GetFoodsPaginated(ctx context.Context, queryString string,
 
 // Autocomplete search - fast, limited results
 func (s *FoodService) SearchFoodsAutocomplete(ctx context.Context, query string, limit int) ([]*models.Food, error) {
-	if query == "" {
-		// Return recent foods if no query
-		return s.GetRecentFoods(ctx, 10)
-	}
-	
 	if limit <= 0 || limit > 20 {
 		limit = 10
+	}
+	
+	if query == "" {
+		// Return recent foods if no query
+		return s.GetRecentFoods(ctx, limit)
 	}
 	
 	dbFoods, err := s.db.Queries.SearchFoodsAutocomplete(ctx, db.SearchFoodsAutocompleteParams{
@@ -157,6 +157,9 @@ func (s *FoodService) SearchFoodsAutocomplete(ctx context.Context, query string,
 	if err != nil {
 		log.Default().Printf("Error searching foods for autocomplete: %v", err)
 		return nil, err
+	}
+	if len(dbFoods) == 0 {
+		log.Default().Printf("No foods found for query: %s", query)
 	}
 
 	foods := make([]*models.Food, len(dbFoods))
@@ -362,7 +365,7 @@ func (s *FoodService) GetFoodUnits(ctx context.Context, id string) ([]string, st
 		return nil, "", err
 	}
 	units := utils.GetUnitsByType(targetFood.UnitType)
-	if units == nil || len(units) == 0 {
+	if len(units) == 0 {
 		log.Default().Printf("Invalid unit type: %s", targetFood.UnitType)
 		return nil, "", errors.New("invalid unit type")
 	}

@@ -68,6 +68,7 @@ func (h *FoodHandler) HandleSearchFoods(c echo.Context) error {
 func (h *FoodHandler) HandleAutocomplete(c echo.Context) error {
 	query := c.QueryParam("query")
 	limitStr := c.QueryParam("limit")
+	log.Default().Printf("GET /autocomplete?query=%s&limit=%s", query, limitStr)
 	
 	limit := 10
 	if limitStr != "" {
@@ -85,7 +86,27 @@ func (h *FoodHandler) HandleAutocomplete(c echo.Context) error {
 	return components.AutocompleteResults(foods).Render(c.Request().Context(), c.Response().Writer)
 }
 
-// Handler for getting recent foods
+func (h *FoodHandler) HandleRecipeAutocomplete(c echo.Context) error {
+    query := c.QueryParam("query")
+    limit, _ := strconv.Atoi(c.QueryParam("limit"))
+    if limit <= 0 { limit = 10 }
+    
+    foods, err := h.service.SearchFoodsAutocomplete(c.Request().Context(), query, limit)
+    if err != nil {
+        return c.String(500, "Error searching recipes")
+    }
+    
+    // Filter to only recipes
+    recipes := make([]*models.Food, 0)
+    for _, food := range foods {
+        if food.IsRecipe {
+            recipes = append(recipes, food)
+        }
+    }
+    
+    return components.AutocompleteResults(recipes).Render(c.Request().Context(), c.Response().Writer)
+}
+
 func (h *FoodHandler) HandleRecentFoods(c echo.Context) error {
 	limitStr := c.QueryParam("limit")
 	

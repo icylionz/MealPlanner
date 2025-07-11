@@ -2,7 +2,6 @@ package components
 
 import "fmt"
 import "mealplanner/internal/models"
-import "strconv"
 import "time"
 import "mealplanner/internal/utils"
 
@@ -36,16 +35,7 @@ templ CreateScheduleModal(props *utils.ModalProps) {
 					<!-- Food Select -->
 					<div class="mb-4">
 						<label class="block text-sm font-medium mb-1">Food</label>
-						<select
-							name="food_id"
-							class={ "w-full rounded border p-2",
-	                            templ.KV("border-red-500", props.Errors["food"] != "") }
-						>
-							<option value="">Select Food</option>
-							for _, food := range props.Foods {
-								<option value={ strconv.Itoa(food.ID) } selected?={ props.FoodChosen.ID == food.ID }>{ food.Name }</option>
-							}
-						</select>
+						@FoodAutocomplete("food_id", "Search for food...", &props.FoodChosen, props.Errors)
 						if err := props.Errors["food"]; err != "" {
 							<div class="text-red-500 text-sm mt-1">{ err }</div>
 						}
@@ -430,26 +420,7 @@ templ IngredientsList(ings []*models.RecipeItem, availableFoods []*models.Food) 
 // Ingredient row component
 templ IngredientRow(ing *models.RecipeItem, index int, availableFoods []*models.Food) {
 	<div class="flex flex-col sm:flex-row gap-2 items-start" id={ fmt.Sprintf("ingredient-%d", index) }>
-		<select
-			name={ fmt.Sprintf("ingredients[%d].food_id", index) }
-			class="flex-1 px-3 py-2 border rounded"
-			hx-get="/foods/units"
-			hx-trigger="change"
-			hx-swap="innerHTML"
-			hx-params="food_id"
-			hx-vals="js:{food_id: event.target.value}"
-			hx-target="next div > select"
-		>
-			<option value="">Select Food</option>
-			for _, food := range availableFoods {
-				<option
-					value={ strconv.Itoa(food.ID) }
-					selected?={ ing.Food.ID == food.ID }
-				>
-					{ food.Name }
-				</option>
-			}
-		</select>
+		@FoodAutocomplete(fmt.Sprintf("ingredients[%d].food_id", index), "Search for ingredient...", ing.Food, nil)
 		<div class="flex gap-2 w-full sm:w-auto">
 			<input
 				type="number"

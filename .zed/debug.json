@@ -5,11 +5,12 @@
     "request": "launch",
     "mode": "exec",
     "program": "${ZED_WORKTREE_ROOT}/main_exec",
+    "dlvFlags": ["--check-go-version=false"],
     "build": {
       "command": "bash",
       "args": [
         "-c",
-        "templ generate && sqlc generate && go build -gcflags=\"all=-N -l\" -o main_exec main.go"
+        "templ generate; sqlc generate; go build -gcflags=\"all=-N -l\" -o main_exec main.go"
       ]
     }
   }

@@ -88,6 +88,7 @@ func main() {
 	e.GET("/foods/search", foodHandler.HandleSearchFoods)
 	e.GET("/foods/modal/details", foodHandler.HandleViewFoodDetailsModal)
 	e.GET("/foods/autocomplete", foodHandler.HandleAutocomplete)
+	e.GET("/foods/recipes-autocomplete", foodHandler.HandleRecipeAutocomplete)
 	e.GET("/foods/recent", foodHandler.HandleRecentFoods)
 	e.DELETE("/foods/:id", foodHandler.HandleDeleteFood)
 

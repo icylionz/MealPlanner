@@ -62,10 +62,22 @@ document.addEventListener("alpine:init", () => {
       this.selectedIndex = -1;
 
       try {
-        const response = await fetch(`/foods/autocomplete?query=${encodeURIComponent(query)}&limit=10`);
+        // Determine which endpoint to use based on field name
+        const hiddenInput = this.$el.querySelector('input[type="hidden"]');
+        const fieldName = hiddenInput ? hiddenInput.name : '';
+        
+        let endpoint = '/foods/autocomplete';
+        if (fieldName === 'recipe_id' || fieldName.includes('recipe')) {
+          endpoint = '/foods/recipes-autocomplete';
+        }
+
+        const response = await fetch(`${endpoint}?query=${encodeURIComponent(query)}&limit=10`);
         if (response.ok) {
           const html = await response.text();
           this.parseResults(html);
+        } else {
+          console.error("Search failed:", response.status);
+          this.results = [];
         }
       } catch (error) {
         console.error("Search error:", error);
