@@ -355,3 +355,27 @@ LEFT JOIN (
 LEFT JOIN shopping_list_item_sources slis ON sli.id = slis.shopping_list_item_id
 WHERE sli.shopping_list_id = $1
 ORDER BY sli.food_name, slis.shopping_list_source_id;
+
+-- name: BatchCreateShoppingListItems :many
+INSERT INTO shopping_list_items (shopping_list_id, food_id, food_name, unit, unit_type, notes)
+SELECT 
+    @shopping_list_id::int,
+    unnest(@food_ids::int[]),
+    unnest(@food_names::text[]),
+    unnest(@units::text[]),
+    unnest(@unit_types::text[]),
+    unnest(@notes::text[])
+RETURNING id, food_id, unit;
+
+-- name: BatchFindCompatibleItems :many
+SELECT id, food_id, unit 
+FROM shopping_list_items 
+WHERE shopping_list_id = $1 
+  AND (food_id, unit) = ANY(SELECT unnest($2::int[]), unnest($3::text[]));
+
+-- name: BatchCreateShoppingListItemSources :exec  
+INSERT INTO shopping_list_item_sources (shopping_list_item_id, shopping_list_source_id, contributed_quantity)
+SELECT 
+    unnest(@item_ids::int[]),
+    @source_id::int,
+    unnest(@quantities::numeric[]);

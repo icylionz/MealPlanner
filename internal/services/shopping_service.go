@@ -102,13 +102,28 @@ func (s *ShoppingService) DeleteShoppingList(ctx context.Context, id int) error 
 	return s.db.DeleteShoppingList(ctx, int32(id))
 }
 
+func (s *ShoppingService) addBasicFood(ctx context.Context, q *db.Queries, listId int32, sourceID int, food *models.Food, quantity float64) error {
+	// Use same batch approach for consistency
+	collected := map[string]*CollectedIngredient{
+		fmt.Sprintf("%d|%s", food.ID, food.BaseUnit): {
+			FoodID:   food.ID,
+			FoodName: food.Name,
+			Unit:     food.BaseUnit,
+			UnitType: food.UnitType,
+			Quantity: quantity,
+		},
+	}
+
+	return s.batchInsertIngredients(ctx, q, listId, sourceID, collected)
+}
+
 // Adding items from different sources
 func (s *ShoppingService) AddManualItem(ctx context.Context, listId int, req *models.AddManualItemRequest) error {
 	return s.db.WithTx(ctx, func(q *db.Queries) error {
-		// Get food details for proper unit type
-		food, err := q.GetFood(ctx, int32(req.FoodID))
+		// Get food details
+		food, err := s.foodService.GetFoodDetails(ctx, fmt.Sprintf("%d", req.FoodID), 1)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get food %d: %w", req.FoodID, err)
 		}
 
 		// Create source record
@@ -118,29 +133,30 @@ func (s *ShoppingService) AddManualItem(ctx context.Context, listId int, req *mo
 			SourceName:     fmt.Sprintf("Manual: %s", food.Name),
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create manual source: %w", err)
 		}
 
-		// Add or update item
-		return s.addOrUpdateItem(ctx, q, int32(listId), &itemInfo{
-			FoodID:    req.FoodID,
-			FoodName:  food.Name,
-			Quantity:  req.Quantity,
-			Unit:      req.Unit,
-			UnitType:  food.UnitType,
-			Notes:     req.Notes,
-			SourceID:  int(source.ID),
-			SourceQty: req.Quantity,
-		})
+		// Add single item using batch approach for consistency
+		collected := map[string]*CollectedIngredient{
+			fmt.Sprintf("%d|%s", req.FoodID, req.Unit): {
+				FoodID:   req.FoodID,
+				FoodName: food.Name,
+				Unit:     req.Unit,
+				UnitType: food.UnitType,
+				Quantity: req.Quantity,
+			},
+		}
+
+		return s.batchInsertIngredients(ctx, q, int32(listId), int(source.ID), collected)
 	})
 }
 
 func (s *ShoppingService) AddRecipe(ctx context.Context, listId int, req *models.AddRecipeRequest) error {
 	return s.db.WithTx(ctx, func(q *db.Queries) error {
 		// Get recipe details
-		recipe, err := s.foodService.GetFoodDetails(ctx, fmt.Sprintf("%d", req.RecipeID), 15)
+		recipe, err := s.foodService.GetFoodDetails(ctx, fmt.Sprintf("%d", req.RecipeID), 1)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get recipe %d: %w", req.RecipeID, err)
 		}
 
 		if !recipe.IsRecipe || recipe.Recipe == nil {
@@ -156,13 +172,11 @@ func (s *ShoppingService) AddRecipe(ctx context.Context, listId int, req *models
 			Servings:       utils.Float64ToNumeric(req.Servings),
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create source: %w", err)
 		}
 
-		// Calculate scaling factor
+		// Calculate scaling factor and add ingredients
 		scaleFactor := req.Servings / recipe.Recipe.YieldQuantity
-
-		// Add all base ingredients (recursive extraction)
 		return s.addRecipeIngredients(ctx, q, int32(listId), recipe, scaleFactor, int(source.ID))
 	})
 }
@@ -173,15 +187,13 @@ func (s *ShoppingService) AddSchedules(ctx context.Context, listId int, req *mod
 			// Get schedule details
 			schedule, err := s.scheduleService.GetScheduleById(ctx, scheduleID, timeZone)
 			if err != nil {
-				log.Default().Printf("Error getting schedule %d: %v", scheduleID, err)
-				return err
+				return fmt.Errorf("failed to get schedule %d: %w", scheduleID, err)
 			}
 
 			// Get food/recipe details
-			food, err := s.foodService.GetFoodDetails(ctx, fmt.Sprintf("%d", schedule.FoodID), 15)
+			food, err := s.foodService.GetFoodDetails(ctx, fmt.Sprintf("%d", schedule.FoodID), 1)
 			if err != nil {
-				log.Default().Printf("Error getting food details for schedule %d: %v", scheduleID, err)
-				return err
+				return fmt.Errorf("failed to get food %d for schedule %d: %w", schedule.FoodID, scheduleID, err)
 			}
 
 			// Create source record
@@ -193,29 +205,19 @@ func (s *ShoppingService) AddSchedules(ctx context.Context, listId int, req *mod
 				Servings:       utils.Float64ToNumeric(schedule.Servings),
 			})
 			if err != nil {
-				log.Default().Printf("Error creating source for schedule %d: %v", scheduleID, err)
-				return err
+				return fmt.Errorf("failed to create source for schedule %d: %w", scheduleID, err)
 			}
 
+			// Add ingredients based on food type
 			if food.IsRecipe && food.Recipe != nil {
-				// Add recipe ingredients
 				scaleFactor := schedule.Servings / food.Recipe.YieldQuantity
 				err = s.addRecipeIngredients(ctx, q, int32(listId), food, scaleFactor, int(source.ID))
 			} else {
-				// Add basic food
-				err = s.addOrUpdateItem(ctx, q, int32(listId), &itemInfo{
-					FoodID:    food.ID,
-					FoodName:  food.Name,
-					Quantity:  schedule.Servings,
-					Unit:      food.BaseUnit,
-					UnitType:  food.UnitType,
-					SourceID:  int(source.ID),
-					SourceQty: schedule.Servings,
-				})
+				err = s.addBasicFood(ctx, q, int32(listId), int(source.ID), food, schedule.Servings)
 			}
+
 			if err != nil {
-				log.Default().Printf("Error adding schedule %d to list %d: %v", scheduleID, listId, err)
-				return err
+				return fmt.Errorf("failed to add ingredients for schedule %d: %w", scheduleID, err)
 			}
 		}
 		return nil
@@ -291,85 +293,182 @@ type itemInfo struct {
 	SourceQty float64
 }
 
-func (s *ShoppingService) addOrUpdateItem(ctx context.Context, q *db.Queries, listId int32, info *itemInfo) error {
-	existingItem, err := q.FindCompatibleShoppingListItem(ctx, db.FindCompatibleShoppingListItemParams{
-		ShoppingListID: pgtype.Int4{Int32: listId, Valid: true},
-		FoodID:         pgtype.Int4{Int32: int32(info.FoodID), Valid: true},
-		Unit:           info.Unit,
-	})
-
-	if err == nil {
-		return q.CreateShoppingListItemSource(ctx, db.CreateShoppingListItemSourceParams{
-			ShoppingListItemID:   existingItem.ID,
-			ShoppingListSourceID: int32(info.SourceID),
-			ContributedQuantity:  utils.Float64ToNumeric(info.SourceQty),
-		})
-	}
-
-	newItem, err := q.CreateShoppingListItem(ctx, db.CreateShoppingListItemParams{
-		ShoppingListID: pgtype.Int4{Int32: listId, Valid: true},
-		FoodID:         pgtype.Int4{Int32: int32(info.FoodID), Valid: true},
-		FoodName:       info.FoodName,
-		Unit:           info.Unit,
-		UnitType:       info.UnitType,
-		Notes:          pgtype.Text{String: info.Notes, Valid: info.Notes != ""},
-	})
-	if err != nil {
-		return err
-	}
-
-	return q.CreateShoppingListItemSource(ctx, db.CreateShoppingListItemSourceParams{
-		ShoppingListItemID:   newItem.ID,
-		ShoppingListSourceID: int32(info.SourceID),
-		ContributedQuantity:  utils.Float64ToNumeric(info.SourceQty),
-	})
+type CollectedIngredient struct {
+	FoodID   int
+	FoodName string
+	Unit     string
+	UnitType string
+	Quantity float64
 }
 
 func (s *ShoppingService) addRecipeIngredients(ctx context.Context, q *db.Queries, listId int32, recipe *models.Food, scaleFactor float64, sourceID int) error {
-	return s.addRecipeIngredientsRecursive(ctx, q, listId, recipe, scaleFactor, sourceID, 0)
+	// Step 1: Collect all base ingredients (simple recursive logic)
+	collected := make(map[string]*CollectedIngredient)
+	err := s.collectBaseIngredients(ctx, recipe, scaleFactor, collected, 0)
+	if err != nil {
+		return fmt.Errorf("failed to collect ingredients: %w", err)
+	}
+
+	if len(collected) == 0 {
+		log.Default().Printf("No base ingredients found for recipe %s", recipe.Name)
+		return nil
+	}
+
+	// Step 2: Batch insert items and sources (2 DB calls total)
+	return s.batchInsertIngredients(ctx, q, listId, sourceID, collected)
 }
 
-func (s *ShoppingService) addRecipeIngredientsRecursive(ctx context.Context, q *db.Queries, listId int32, recipe *models.Food, scaleFactor float64, sourceID int, depth int) error {
+func (s *ShoppingService) collectBaseIngredients(ctx context.Context, recipe *models.Food, scaleFactor float64, collected map[string]*CollectedIngredient, depth int) error {
 	if depth > 15 {
-		return fmt.Errorf("maximum recipe depth exceeded")
+		return fmt.Errorf("recipe depth limit exceeded")
 	}
 
 	for _, ingredient := range recipe.Recipe.Ingredients {
-		scaledQuantity := ingredient.Quantity * scaleFactor
+		scaledQty := ingredient.Quantity * scaleFactor
 
 		if ingredient.Food.IsRecipe && ingredient.Food.Recipe != nil {
-			// Recursive case: get full ingredient details and recurse
-			fullIngredient, err := s.foodService.GetFoodDetails(ctx, fmt.Sprintf("%d", ingredient.Food.ID), 15)
+			// Get full recipe details and recurse
+			fullRecipe, err := s.foodService.GetFoodDetails(ctx, fmt.Sprintf("%d", ingredient.Food.ID), 1)
 			if err != nil {
-				log.Default().Printf("Error getting full ingredient details: %v", err)
-				return err
+				return fmt.Errorf("failed to get recipe %d: %w", ingredient.Food.ID, err)
 			}
 
-			// Calculate new scale factor
-			ingredientScale := scaledQuantity / fullIngredient.Recipe.YieldQuantity
-			err = s.addRecipeIngredientsRecursive(ctx, q, listId, fullIngredient, ingredientScale, sourceID, depth+1)
+			nestedScale := scaledQty / fullRecipe.Recipe.YieldQuantity
+			err = s.collectBaseIngredients(ctx, fullRecipe, nestedScale, collected, depth+1)
 			if err != nil {
-				log.Default().Printf("Error adding recipe ingredients: %v", err)
 				return err
 			}
 		} else {
-			// Base case: add the ingredient
-			err := s.addOrUpdateItem(ctx, q, listId, &itemInfo{
-				FoodID:    ingredient.Food.ID,
-				FoodName:  ingredient.Food.Name,
-				Quantity:  scaledQuantity,
-				Unit:      ingredient.Unit,
-				UnitType:  ingredient.Food.UnitType,
-				SourceID:  sourceID,
-				SourceQty: scaledQuantity,
-			})
-			if err != nil {
-				log.Default().Printf("Error adding recipe ingredient: %v", err)
-				return err
+			// Base ingredient - aggregate by food+unit key
+			key := fmt.Sprintf("%d|%s", ingredient.Food.ID, ingredient.Unit)
+
+			if existing := collected[key]; existing != nil {
+				existing.Quantity += scaledQty
+			} else {
+				collected[key] = &CollectedIngredient{
+					FoodID:   ingredient.Food.ID,
+					FoodName: ingredient.Food.Name,
+					Unit:     ingredient.Unit,
+					UnitType: ingredient.Food.UnitType,
+					Quantity: scaledQty,
+				}
 			}
 		}
 	}
-	log.Default().Printf("Added recipe ingredients for %s", recipe.Name)
+	return nil
+}
+
+func (s *ShoppingService) batchInsertIngredients(ctx context.Context, q *db.Queries, listId int32, sourceID int, collected map[string]*CollectedIngredient) error {
+	if len(collected) == 0 {
+		return nil
+	}
+
+	ingredients := make([]*CollectedIngredient, 0, len(collected))
+	for _, ing := range collected {
+		ingredients = append(ingredients, ing)
+	}
+
+	// Prepare arrays for finding existing items
+	foodIds := make([]int32, len(ingredients))
+	units := make([]string, len(ingredients))
+	
+	for i, ing := range ingredients {
+		foodIds[i] = int32(ing.FoodID)
+		units[i] = ing.Unit
+	}
+
+	// Find existing compatible items
+	existingItems, err := q.BatchFindCompatibleItems(ctx, db.BatchFindCompatibleItemsParams{
+		ShoppingListID: pgtype.Int4{Int32: int32(listId), Valid: true},
+		Column2:        foodIds,
+		Column3:          units,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to find existing items: %w", err)
+	}
+
+	// Build lookup for existing items
+	existingLookup := make(map[string]int32)
+	for _, item := range existingItems {
+		key := fmt.Sprintf("%d|%s", item.FoodID.Int32, item.Unit)
+		existingLookup[key] = item.ID
+	}
+
+	// Separate ingredients into existing vs new
+	var newIngredients []*CollectedIngredient
+	itemIds := make([]int32, len(ingredients))
+	quantities := make([]pgtype.Numeric, len(ingredients))
+
+	for i, ing := range ingredients {
+		key := fmt.Sprintf("%d|%s", ing.FoodID, ing.Unit)
+		quantities[i] = utils.Float64ToNumeric(ing.Quantity)
+		
+		if existingId, exists := existingLookup[key]; exists {
+			// Use existing item
+			itemIds[i] = existingId
+		} else {
+			// Mark for creation
+			newIngredients = append(newIngredients, ing)
+			itemIds[i] = -1 // Placeholder
+		}
+	}
+
+	// Create new items if needed
+	if len(newIngredients) > 0 {
+		newFoodIds := make([]int32, len(newIngredients))
+		newFoodNames := make([]string, len(newIngredients))
+		newUnits := make([]string, len(newIngredients))
+		newUnitTypes := make([]string, len(newIngredients))
+		newNotes := make([]string, len(newIngredients))
+
+		for i, ing := range newIngredients {
+			newFoodIds[i] = int32(ing.FoodID)
+			newFoodNames[i] = ing.FoodName
+			newUnits[i] = ing.Unit
+			newUnitTypes[i] = ing.UnitType
+			newNotes[i] = ""
+		}
+
+		newItems, err := q.BatchCreateShoppingListItems(ctx, db.BatchCreateShoppingListItemsParams{
+			ShoppingListID: listId,
+			FoodIds:        newFoodIds,
+			FoodNames:      newFoodNames,
+			Units:          newUnits,
+			UnitTypes:      newUnitTypes,
+			Notes:          newNotes,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create new items: %w", err)
+		}
+
+		// Map new items back to the main arrays
+		newItemLookup := make(map[string]int32)
+		for _, item := range newItems {
+			key := fmt.Sprintf("%d|%s", item.FoodID.Int32, item.Unit)
+			newItemLookup[key] = item.ID
+		}
+
+		// Fill in the -1 placeholders
+		for i, ing := range ingredients {
+			if itemIds[i] == -1 {
+				key := fmt.Sprintf("%d|%s", ing.FoodID, ing.Unit)
+				itemIds[i] = newItemLookup[key]
+			}
+		}
+	}
+
+	// Batch create all source links
+	err = q.BatchCreateShoppingListItemSources(ctx, db.BatchCreateShoppingListItemSourcesParams{
+		ItemIds:    itemIds,
+		SourceID:   int32(sourceID),
+		Quantities: quantities,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create source links: %w", err)
+	}
+
+	log.Default().Printf("Successfully added %d ingredients (%d new, %d existing) for source %d", 
+		len(ingredients), len(newIngredients), len(ingredients)-len(newIngredients), sourceID)
 	return nil
 }
 
