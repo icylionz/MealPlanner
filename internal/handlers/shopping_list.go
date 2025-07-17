@@ -358,6 +358,8 @@ func (h *ShoppingListHandler) HandleAddDateRange(c echo.Context) error {
 	endDate, err := time.Parse("2006-01-02", form.EndDate)
 	if err != nil {
 		errors["end_date"] = "Invalid end date"
+	} else {
+		endDate = endDate.AddDate(0, 0, 1) // Add one day to end date so it includes the last day of the range
 	}
 
 	if len(errors) == 0 && endDate.Before(startDate) {
