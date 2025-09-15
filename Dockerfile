@@ -4,7 +4,7 @@ WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata
 RUN go install github.com/a-h/templ/cmd/templ@latest
 RUN go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
-
+RUN ls -la
 COPY go.mod go.sum ./
 RUN go mod download
 RUN go mod tidy
