@@ -17,6 +17,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -25,9 +26,12 @@ import (
 //go:embed static/*
 var staticFiles embed.FS
 
+//go:embed migrations/*.sql
+var migrationFiles embed.FS
+
 func main() {
 	if err := godotenv.Load(); err != nil {
-		log.Fatal("Error loading .env file")
+		log.Println("Error loading .env file")
 	}
 	postgresPassword := os.Getenv("DB_PASSWORD")
 	postgresUser := os.Getenv("DB_USER")
@@ -39,7 +43,11 @@ func main() {
 	ctx := context.Background()
 	connString := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", postgresUser, postgresPassword, postgresHost, postgresPort, postgresDatabase)
 	// Migrate database
-	m, err := migrate.New("file://migrations", connString)
+	migrationSource, err := iofs.New(migrationFiles, "migrations")
+	if err != nil {
+		log.Fatalf("Failed to create migration source: %v", err)
+	}
+	m, err := migrate.NewWithSourceInstance("iofs", migrationSource, connString)
 	if err != nil {
 		log.Fatalf("Failed to create migration instance: %v", err)
 	}
@@ -69,7 +77,7 @@ func main() {
 	shoppingListHandler := handlers.NewShoppingListHandler(shoppingService, scheduleService, foodService)
 	calendarGroup := e.Group("/", utils.SetTimeZone())
 	e.HTTPErrorHandler = utils.CustomErrorHandler
-	
+
 	// Routes
 	e.GET("/", pageHandler.HandleIndex)
 	// Calendar Routes
@@ -81,7 +89,7 @@ func main() {
 	calendarGroup.GET("schedules/modal", schedulesHandler.HandleScheduleModal)
 	calendarGroup.GET("schedules/:id/edit", schedulesHandler.HandleEditScheduleModal)
 	calendarGroup.PUT("schedules/:id/edit", schedulesHandler.HandleEditScheduleModal)
-	
+
 	// Food Routes
 	e.GET("/foods", foodHandler.HandleFoodsPage)
 	// e.GET("/foods/modal/new", foodHandler.HandleAddFoodModal)
@@ -106,23 +114,23 @@ func main() {
 	e.POST("/shopping-lists/new", shoppingListHandler.HandleCreateShoppingListModal)
 	e.GET("/shopping-lists/:id", shoppingListHandler.HandleViewShoppingList)
 	e.DELETE("/shopping-lists/:id", shoppingListHandler.HandleDeleteShoppingList)
-	
+
 	// Add items routes
 	e.GET("/shopping-lists/:id/add-items", shoppingListHandler.HandleAddItemsModal)
 	e.POST("/shopping-lists/:id/items/manual", shoppingListHandler.HandleAddManualItem)
 	e.POST("/shopping-lists/:id/items/recipe", shoppingListHandler.HandleAddRecipe)
 	e.POST("/shopping-lists/:id/items/schedules", shoppingListHandler.HandleAddSchedules)
 	e.POST("/shopping-lists/:id/items/date-range", shoppingListHandler.HandleAddDateRange)
-	
+
 	// Item management routes
 	e.PUT("/shopping-lists/:id/items/:itemId", shoppingListHandler.HandleUpdateItem)
 	e.POST("/shopping-lists/:id/items/:itemId/purchased", shoppingListHandler.HandleMarkItemPurchased)
 	e.DELETE("/shopping-lists/:id/items/:itemId", shoppingListHandler.HandleDeleteItem)
 	e.DELETE("/shopping-lists/:id/sources/:sourceId", shoppingListHandler.HandleDeleteItemsBySource)
-	
+
 	// Export
 	e.GET("/shopping-lists/:id/export", shoppingListHandler.HandleExportShoppingList)
-	
+
 	// Create sub-FS for static files
 	staticFS, err := fs.Sub(staticFiles, "static")
 	if err != nil {
