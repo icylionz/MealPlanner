@@ -1,0 +1,90 @@
+package partials
+
+import (
+	"fmt"
+	"mealplanner/internal/models"
+	"mealplanner/internal/view/layouts"
+)
+
+templ AgendaDays(page models.AppPageData, days []models.AgendaDay) {
+	<div id="agenda-days" class="agenda-days">
+		for _, day := range days {
+			<section class="day-card">
+				<div class="day-header">
+					<div class="stack">
+						<p class="eyebrow">{ day.Date.Format("Jan 2, 2006") }</p>
+						<h2>{ day.Date.Format("Monday") }</h2>
+					</div>
+					if isToday(day.Date) {
+						<span class="status-pill success">
+							<span class="material-symbols-outlined">today</span>
+							<span>Today</span>
+						</span>
+					} else {
+						<span class="pill">{ day.Date.Format("Jan 2") }</span>
+					}
+				</div>
+				if len(day.Meals) == 0 {
+					<div class="empty-state">
+						<span class="empty-icon">
+							<span class="material-symbols-outlined">restaurant</span>
+						</span>
+						<h3>No meals scheduled</h3>
+						<p class="muted">This day is open. Add a meal when you are ready to anchor recipes and servings here.</p>
+						if page.CurrentUser != nil && page.CurrentUser.IsOwner() {
+							<p class="helper-text">Use the editor panel on the right to create the first meal for this day.</p>
+						}
+					</div>
+				}
+				if len(day.Meals) > 0 {
+					<div class="day-grid">
+						for _, meal := range day.Meals {
+							<article class="meal-card">
+								<div class="meal-title-row">
+									<div class="stack">
+										<h3>{ meal.Title }</h3>
+										<div class="meta-row">
+											<span class="meta-chip">
+												<span class="material-symbols-outlined">schedule</span>
+												<span>{ meal.ScheduledAt.Format("3:04 PM") }</span>
+											</span>
+											<span class="meta-chip">
+												<span class="material-symbols-outlined">room_service</span>
+												<span>{ fmt.Sprintf("%g servings", meal.Servings) }</span>
+											</span>
+										</div>
+									</div>
+									if page.CurrentUser != nil && page.CurrentUser.IsOwner() {
+										<div class="meal-actions">
+											<a class="ghost-button" href={ layouts.Route(page.BasePath, "/agenda") + "?edit=" + meal.ID.String() }>Edit</a>
+										</div>
+									}
+								</div>
+								if len(meal.Recipes) > 0 {
+									<div class="tag-row">
+										for _, recipe := range meal.Recipes {
+											<span class="tag">
+												{ recipe.RecipeTitle }
+												if recipe.ServingsOverride != nil {
+													{ " (" + fmt.Sprintf("%g", *recipe.ServingsOverride) + ")" }
+												}
+											</span>
+										}
+									</div>
+								} else {
+									<p class="helper-text">No recipe attached yet.</p>
+								}
+								if meal.Notes != "" {
+									<p class="meal-notes">{ meal.Notes }</p>
+								}
+								if meal.LinkURL != "" {
+									<a class="inline-link" href={ meal.LinkURL } target="_blank" rel="noreferrer">{ mealLinkLabel(meal) }</a>
+								}
+							</article>
+						}
+					</div>
+				}
+			</section>
+		}
+	</div>
+}

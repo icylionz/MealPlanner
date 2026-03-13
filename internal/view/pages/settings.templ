@@ -1,0 +1,118 @@
+package pages
+
+import (
+	"fmt"
+	"mealplanner/internal/view/layouts"
+)
+
+templ Settings(data SettingsPageData) {
+	@layouts.Base(data.Page, SettingsBody(data))
+}
+
+templ SettingsBody(data SettingsPageData) {
+	<section class="page-shell">
+		<header class="hero-card">
+			<p class="eyebrow">Household control</p>
+			<h1 class="page-title">Settings for { data.Page.HouseholdName }.</h1>
+			<p class="page-summary">Manage who belongs to the household, keep invite access organized, and export the data that powers planning.</p>
+			<div class="stat-row">
+				<div class="stat-chip">
+					<span class="stat-value">{ fmt.Sprintf("%d", len(data.Members)) }</span>
+					<span class="stat-label">Members</span>
+				</div>
+				<div class="stat-chip">
+					<span class="stat-value">{ fmt.Sprintf("%d", len(data.Invites)) }</span>
+					<span class="stat-label">Invites</span>
+				</div>
+			</div>
+		</header>
+		<div class="settings-grid align-start">
+			<div class="stack">
+				<section class="panel stack">
+					<div class="section-head">
+						<div class="stack">
+							<p class="eyebrow">Household profile</p>
+							<h2>Members</h2>
+							<p class="muted">Everyone who can see or manage this kitchen lives here.</p>
+						</div>
+					</div>
+					<div class="member-list">
+						for _, member := range data.Members {
+							<div class="member-row">
+								<div class="member-meta">
+									<span class="avatar-badge">{ memberInitials(member) }</span>
+									<div class="stack">
+										<strong>{ memberLabel(member) }</strong>
+										<p class="muted">{ member.Email }</p>
+									</div>
+								</div>
+								<span class="role-pill">{ member.Role }</span>
+							</div>
+						}
+					</div>
+				</section>
+				<section class="panel stack">
+					<div class="section-head">
+						<div class="stack">
+							<p class="eyebrow">Access</p>
+							<h2>Invites</h2>
+							<p class="muted">Track invite codes, usage, and expiration without leaving the household admin area.</p>
+						</div>
+					</div>
+					if len(data.Invites) == 0 {
+						<div class="empty-state">
+							<span class="empty-icon">
+								<span class="material-symbols-outlined">mail</span>
+							</span>
+							<h3>No invites created</h3>
+							<p class="muted">Create an invite when a new member is ready to join the household.</p>
+						</div>
+					} else {
+						<div class="invite-list">
+							for _, invite := range data.Invites {
+								<div class="invite-card">
+									<div class="section-head">
+										<code>{ invite.Code }</code>
+										<span class={ inviteStateClass(invite) }>{ inviteState(invite) }</span>
+									</div>
+									<div class="meta-row">
+										<span class="meta-chip">
+											<span class="material-symbols-outlined">group_add</span>
+											<span>{ fmt.Sprintf("%d uses", invite.UseCount) }</span>
+										</span>
+										<span class="meta-chip">
+											<span class="material-symbols-outlined">schedule</span>
+											<span>{ inviteExpiryText(invite) }</span>
+										</span>
+									</div>
+								</div>
+							}
+						</div>
+					}
+				</section>
+			</div>
+			if data.Page.CurrentUser != nil && data.Page.CurrentUser.IsOwner() {
+				<section class="editor-panel stack sticky-panel">
+					<div class="stack">
+						<p class="eyebrow">Owner actions</p>
+						<h2>Manage household data</h2>
+						<p class="muted">Invite new members or export the current kitchen data bundle.</p>
+					</div>
+					<div class="action-list">
+						<form method="post" action={ layouts.Route(data.Page.BasePath, "/settings/invites") }>
+							<input type="hidden" name="_csrf" value={ data.Page.CSRFToken }/>
+							<button type="submit">
+								<span class="material-symbols-outlined">person_add</span>
+								<span>Create invite</span>
+							</button>
+						</form>
+						<a class="button-link" href={ layouts.Route(data.Page.BasePath, "/settings/export") }>
+							<span class="material-symbols-outlined">download</span>
+							<span>Export JSON</span>
+						</a>
+					</div>
+				</section>
+			}
+		</div>
+	</section>
+}

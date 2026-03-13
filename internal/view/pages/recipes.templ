@@ -1,0 +1,184 @@
+package pages
+
+import (
+	"fmt"
+	"mealplanner/internal/view/layouts"
+)
+
+templ Recipes(data RecipesPageData) {
+	@layouts.Base(data.Page, RecipesBody(data))
+}
+
+templ RecipesBody(data RecipesPageData) {
+	<section class="page-shell">
+		<header class="hero-card">
+			<p class="eyebrow">Recipe library</p>
+			<h1 class="page-title">Build dishes that scale with the household.</h1>
+			<p class="page-summary">Keep a reusable catalog of standalone dishes, nested components, source links, and tags so planning stays fast later.</p>
+			<div class="stat-row">
+				<div class="stat-chip">
+					<span class="stat-value">{ fmt.Sprintf("%d", len(data.Items)) }</span>
+					<span class="stat-label">Recipes</span>
+				</div>
+				<div class="stat-chip">
+					<span class="stat-value">{ fmt.Sprintf("%d", distinctRecipeTagCount(data.Items)) }</span>
+					<span class="stat-label">Distinct tags</span>
+				</div>
+				<div class="stat-chip">
+					<span class="stat-value">{ fmt.Sprintf("%d", totalRecipeComponentCount(data.Items)) }</span>
+					<span class="stat-label">Nested components</span>
+				</div>
+			</div>
+			<form class="toolbar-card toolbar-form" method="get" action={ layouts.Route(data.Page.BasePath, "/recipes") }>
+				<label class="control-field">
+					Search
+					<input name="q" placeholder="Search recipe titles" value={ data.Search }/>
+				</label>
+				<label class="control-field compact">
+					Tag
+					<input name="tag" placeholder="vegetarian" value={ data.SelectedTag }/>
+				</label>
+				<button type="submit">
+					<span class="material-symbols-outlined">tune</span>
+					<span>Filter library</span>
+				</button>
+			</form>
+		</header>
+		<div class="dashboard-grid with-sidebar align-start">
+			<div class="grow stack">
+				if len(data.Tags) > 0 {
+					<div class="tag-row">
+						for _, tag := range data.Tags {
+							<span class="tag">{ tag }</span>
+						}
+					</div>
+				}
+				if len(data.Items) == 0 {
+					<div class="empty-state">
+						<span class="empty-icon">
+							<span class="material-symbols-outlined">menu_book</span>
+						</span>
+						<h2>No recipes yet</h2>
+						<p class="muted">Once the first recipe is in place, the planner and grocery generator can start working from real dish data.</p>
+					</div>
+				} else {
+					<div class="recipe-grid">
+						for _, item := range data.Items {
+							<article class="recipe-card">
+								<div class="recipe-cover">
+									<div class="stack">
+										<div class="tag-row">
+											if len(item.Tags) == 0 {
+												<span class="tag">Untagged</span>
+											}
+											for _, tag := range item.Tags {
+												<span class="tag">{ tag }</span>
+											}
+										</div>
+										<h2>{ item.Title }</h2>
+									</div>
+								</div>
+								<div class="recipe-body">
+									<div class="meta-row">
+										<span class="meta-chip">
+											<span class="material-symbols-outlined">room_service</span>
+											<span>{ fmt.Sprintf("%g %s", item.YieldAmount, item.YieldUnit) }</span>
+										</span>
+										<span class="meta-chip">
+											<span class="material-symbols-outlined">format_list_bulleted</span>
+											<span>{ fmt.Sprintf("%d ingredients", len(item.Ingredients)) }</span>
+										</span>
+										<span class="meta-chip">
+											<span class="material-symbols-outlined">layers</span>
+											<span>{ fmt.Sprintf("%d components", len(item.Components)) }</span>
+										</span>
+									</div>
+									if item.Description != "" {
+										<p class="muted">{ item.Description }</p>
+									} else {
+										<p class="muted">No description added yet.</p>
+									}
+									<div class="recipe-card-footer">
+										if item.SourceURL != "" {
+											<a class="inline-link" href={ item.SourceURL } target="_blank" rel="noreferrer">View source</a>
+										}
+										if data.Page.CurrentUser != nil && data.Page.CurrentUser.IsOwner() {
+											<a class="ghost-button" href={ layouts.Route(data.Page.BasePath, "/recipes") + "?edit=" + item.ID.String() }>Edit recipe</a>
+										}
+									</div>
+								</div>
+							</article>
+						}
+					</div>
+				}
+			</div>
+			if data.Page.CurrentUser != nil && data.Page.CurrentUser.IsOwner() {
+				<form class="editor-panel stack sticky-panel" method="post" action={ layouts.Route(data.Page.BasePath, "/recipes") }>
+					<input type="hidden" name="_csrf" value={ data.Page.CSRFToken }/>
+					if data.EditRecipe != nil {
+						<input type="hidden" name="id" value={ data.EditRecipe.ID.String() }/>
+						<input type="hidden" name="version" value={ fmt.Sprintf("%d", data.EditRecipe.Version) }/>
+					}
+					<div class="section-head">
+						<div class="stack">
+							<p class="eyebrow">Owner editor</p>
+							<h2>
+								if data.EditRecipe != nil {
+									Edit recipe
+								} else {
+									Add recipe
+								}
+							</h2>
+							<p class="muted">Capture the base recipe, then add ingredient, component, and step lines in a compact text format.</p>
+						</div>
+						if data.EditRecipe != nil {
+							<a class="ghost-button" href={ layouts.Route(data.Page.BasePath, "/recipes") }>Start new</a>
+						}
+					</div>
+					<label>
+						Title
+						<input name="title" value={ recipeTitleValue(data.EditRecipe) } placeholder="Creamy pesto genovese"/>
+					</label>
+					<label>
+						Description
+						<textarea name="description" placeholder="What makes this dish useful in your planning rotation?">{ recipeDescriptionValue(data.EditRecipe) }</textarea>
+					</label>
+					<div class="row-form">
+						<label class="control-field compact">
+							Yield
+							<input type="number" step="0.25" name="yield_amount" value={ recipeYieldAmountValue(data.EditRecipe) }/>
+						</label>
+						<label class="control-field">
+							Yield unit
+							<input name="yield_unit" value={ recipeYieldUnitValue(data.EditRecipe) }/>
+						</label>
+					</div>
+					<label>
+						Source URL
+						<input name="source_url" value={ recipeSourceURLValue(data.EditRecipe) } placeholder="https://example.com/recipe"/>
+					</label>
+					<label>
+						Tags CSV
+						<input name="tags" value={ recipeTagsValue(data.EditRecipe) } placeholder="quick, vegetarian, weeknight"/>
+					</label>
+					<label>
+						Ingredient lines
+						<textarea name="ingredient_lines" rows="8" placeholder="ingredient name|quantity|unit|variant|prep|optional">{ ingredientLinesText(data.EditRecipe) }</textarea>
+					</label>
+					<label>
+						Component lines
+						<textarea name="component_lines" rows="4" placeholder="recipe title|quantity|unit">{ componentLinesText(data.EditRecipe) }</textarea>
+					</label>
+					<label>
+						Steps
+						<textarea name="steps" rows="6" placeholder="One instruction per line">{ stepsText(data.EditRecipe) }</textarea>
+					</label>
+					<button type="submit">
+						<span class="material-symbols-outlined">save</span>
+						<span>Save recipe</span>
+					</button>
+				</form>
+			}
+		</div>
+	</section>
+}

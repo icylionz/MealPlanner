@@ -1,0 +1,148 @@
+package pages
+
+import (
+	"fmt"
+	"mealplanner/internal/view/layouts"
+)
+
+templ Ingredients(data IngredientsPageData) {
+	@layouts.Base(data.Page, IngredientsBody(data))
+}
+
+templ IngredientsBody(data IngredientsPageData) {
+	<section class="page-shell">
+		<header class="hero-card">
+			<p class="eyebrow">Ingredient catalog</p>
+			<h1 class="page-title">Keep pantry language consistent.</h1>
+			<p class="page-summary">Canonical ingredient records, aliases, and density overrides let recipes merge cleanly later when you generate grocery snapshots.</p>
+			<div class="stat-row">
+				<div class="stat-chip">
+					<span class="stat-value">{ fmt.Sprintf("%d", len(data.Items)) }</span>
+					<span class="stat-label">Ingredients</span>
+				</div>
+				<div class="stat-chip">
+					<span class="stat-value">{ fmt.Sprintf("%d", ingredientAliasCount(data.Items)) }</span>
+					<span class="stat-label">Aliases tracked</span>
+				</div>
+				<div class="stat-chip">
+					<span class="stat-value">{ fmt.Sprintf("%d", ingredientDensityCount(data.Items)) }</span>
+					<span class="stat-label">Density rules</span>
+				</div>
+			</div>
+			<form class="toolbar-card toolbar-form" method="get" action={ layouts.Route(data.Page.BasePath, "/ingredients") }>
+				<label class="control-field">
+					Search
+					<input name="q" placeholder="Search canonical names or aliases" value={ data.Search }/>
+				</label>
+				<button type="submit">
+					<span class="material-symbols-outlined">search</span>
+					<span>Search catalog</span>
+				</button>
+			</form>
+		</header>
+		<div class="dashboard-grid with-sidebar align-start">
+			<div class="grow stack">
+				if len(data.Items) == 0 {
+					<div class="empty-state">
+						<span class="empty-icon">
+							<span class="material-symbols-outlined">nutrition</span>
+						</span>
+						<h2>No ingredients yet</h2>
+						<p class="muted">Add canonical ingredients here so recipe lines can reference the same pantry entities over time.</p>
+					</div>
+				} else {
+					<div class="ingredient-grid">
+						for _, item := range data.Items {
+							<article class="ingredient-card">
+								<div class="section-head">
+									<div class="stack">
+										<h2>{ item.CanonicalName }</h2>
+										<p class="muted">Version { fmt.Sprintf("%d", item.Version) }</p>
+									</div>
+									if data.Page.CurrentUser != nil && data.Page.CurrentUser.IsOwner() {
+										<a class="ghost-button" href={ layouts.Route(data.Page.BasePath, "/ingredients") + "?edit=" + item.ID.String() }>Edit</a>
+									}
+								</div>
+								<div class="meta-row">
+									if item.DensityGPerML != nil {
+										<span class="meta-chip">
+											<span class="material-symbols-outlined">scale</span>
+											<span>{ fmt.Sprintf("%g g/ml", *item.DensityGPerML) }</span>
+										</span>
+									}
+									<span class="meta-chip">
+										<span class="material-symbols-outlined">sell</span>
+										<span>{ item.DensitySourceType }</span>
+									</span>
+								</div>
+								if len(item.Aliases) > 0 {
+									<div class="ingredient-list">
+										for _, alias := range item.Aliases {
+											<span class="tag">{ alias }</span>
+										}
+									</div>
+								}
+								if item.Note != "" {
+									<p class="muted">{ item.Note }</p>
+								}
+							</article>
+						}
+					</div>
+				}
+			</div>
+			if data.Page.CurrentUser != nil && data.Page.CurrentUser.IsOwner() {
+				<form class="editor-panel stack sticky-panel" method="post" action={ layouts.Route(data.Page.BasePath, "/ingredients") }>
+					<input type="hidden" name="_csrf" value={ data.Page.CSRFToken }/>
+					if data.EditItem != nil {
+						<input type="hidden" name="id" value={ data.EditItem.ID.String() }/>
+						<input type="hidden" name="version" value={ fmt.Sprintf("%d", data.EditItem.Version) }/>
+					}
+					<div class="section-head">
+						<div class="stack">
+							<p class="eyebrow">Owner editor</p>
+							<h2>
+								if data.EditItem != nil {
+									Edit ingredient
+								} else {
+									Add ingredient
+								}
+							</h2>
+							<p class="muted">Capture the canonical pantry entry and any density metadata used in grocery math.</p>
+						</div>
+						if data.EditItem != nil {
+							<a class="ghost-button" href={ layouts.Route(data.Page.BasePath, "/ingredients") }>Start new</a>
+						}
+					</div>
+					<label>
+						Name
+						<input name="canonical_name" value={ ingredientNameValue(data.EditItem) } placeholder="olive oil"/>
+					</label>
+					<label>
+						Density g/ml
+						<input type="number" step="0.01" name="density_g_per_ml" value={ ingredientDensityValue(data.EditItem) }/>
+					</label>
+					<label>
+						Density source
+						<select name="density_source_type">
+							<option value="none">None</option>
+							<option value="starter">Starter</option>
+							<option value="custom">Custom</option>
+						</select>
+					</label>
+					<label>
+						Aliases CSV
+						<input name="aliases" value={ ingredientAliases(data.EditItem) } placeholder="evoo, extra virgin olive oil"/>
+					</label>
+					<label>
+						Note
+						<textarea name="note" placeholder="Anything special about this canonical ingredient?">{ ingredientNoteValue(data.EditItem) }</textarea>
+					</label>
+					<button type="submit">
+						<span class="material-symbols-outlined">save</span>
+						<span>Save ingredient</span>
+					</button>
+				</form>
+			}
+		</div>
+	</section>
+}

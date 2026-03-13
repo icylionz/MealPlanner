@@ -1,0 +1,67 @@
+package pages
+
+import "mealplanner/internal/view/layouts"
+
+templ Onboarding(data OnboardingPageData) {
+	@layouts.Base(data.Page, OnboardingBody(data))
+}
+
+templ OnboardingBody(data OnboardingPageData) {
+	<section class="page-shell">
+		<header class="welcome-panel">
+			<p class="eyebrow">Step 1 of 2</p>
+			<h1 class="display-title">Choose how this kitchen comes together.</h1>
+			<p class="display-copy">Start a new household if you are organizing the space, or join an existing one with an invite code from another member.</p>
+			<div class="stat-row">
+				<div class="stat-chip">
+					<span class="stat-value">2</span>
+					<span class="stat-label">Ways to begin</span>
+				</div>
+				<div class="stat-chip">
+					<span class="stat-value">1</span>
+					<span class="stat-label">Household required</span>
+				</div>
+			</div>
+		</header>
+		<div class="choice-grid">
+			<form class="choice-card" method="post" action={ layouts.Route(data.Page.BasePath, "/onboarding/create") }>
+				<input type="hidden" name="_csrf" value={ data.Page.CSRFToken }/>
+				<div class="choice-icon">
+					<span class="material-symbols-outlined">cottage</span>
+				</div>
+				<div class="stack">
+					<p class="eyebrow">Create</p>
+					<h2>Open a new household</h2>
+					<p class="muted">Name the kitchen, invite everyone else later, and start building your shared meal rhythm from scratch.</p>
+				</div>
+				<label>
+					Household name
+					<input name="name" value={ data.HouseholdName } placeholder="Sunday Supper Club"/>
+				</label>
+				<button type="submit">
+					<span class="material-symbols-outlined">arrow_forward</span>
+					<span>Create household</span>
+				</button>
+			</form>
+			<form class="choice-card" method="post" action={ layouts.Route(data.Page.BasePath, "/onboarding/join") }>
+				<input type="hidden" name="_csrf" value={ data.Page.CSRFToken }/>
+				<div class="choice-icon">
+					<span class="material-symbols-outlined">key</span>
+				</div>
+				<div class="stack">
+					<p class="eyebrow">Join</p>
+					<h2>Use an invite code</h2>
+					<p class="muted">If someone already set up the household, enter the code they shared and attach your account to that kitchen.</p>
+				</div>
+				<label>
+					Invite code
+					<input name="code" value={ data.InviteCode } placeholder="ABC123"/>
+				</label>
+				<button type="submit">
+					<span class="material-symbols-outlined">login</span>
+					<span>Join household</span>
+				</button>
+			</form>
+		</div>
+	</section>
+}

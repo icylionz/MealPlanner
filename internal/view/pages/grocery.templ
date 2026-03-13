@@ -1,0 +1,195 @@
+package pages
+
+import (
+	"fmt"
+	"time"
+	"mealplanner/internal/view/layouts"
+)
+
+templ Grocery(data GroceryPageData) {
+	@layouts.Base(data.Page, GroceryBody(data))
+}
+
+templ GroceryBody(data GroceryPageData) {
+	<section class="page-shell">
+		<header class="hero-card">
+			<p class="eyebrow">Grocery snapshots</p>
+			<h1 class="page-title">Shop from generated lists, not memory.</h1>
+			<p class="page-summary">Each snapshot is a preserved output from the planner. Pick one to work through, inspect sources, and add quick ad-hoc items without rewriting history.</p>
+			<div class="stat-row">
+				<div class="stat-chip">
+					<span class="stat-value">{ fmt.Sprintf("%d", len(data.Snapshots)) }</span>
+					<span class="stat-label">Snapshots</span>
+				</div>
+				<div class="stat-chip">
+					<span class="stat-value">{ fmt.Sprintf("%d", groceryOpenCount(data.Snapshot)) }</span>
+					<span class="stat-label">Open items</span>
+				</div>
+				<div class="stat-chip">
+					<span class="stat-value">{ fmt.Sprintf("%d", groceryReviewCount(data.Snapshot)) }</span>
+					<span class="stat-label">Needs review</span>
+				</div>
+			</div>
+		</header>
+		<div class="dashboard-grid with-sidebar align-start">
+			<div class="grow stack">
+				<section class="panel stack">
+					<div class="section-head">
+						<div class="stack">
+							<p class="eyebrow">History</p>
+							<h2>Generated lists</h2>
+							<p class="muted">Choose a snapshot to inspect or continue shopping.</p>
+						</div>
+					</div>
+					if len(data.Snapshots) == 0 {
+						<div class="empty-state">
+							<span class="empty-icon">
+								<span class="material-symbols-outlined">shopping_basket</span>
+							</span>
+							<h3>No snapshots yet</h3>
+							<p class="muted">Generate the first grocery list from a date range or selected meals.</p>
+						</div>
+					} else {
+						<div class="snapshot-list">
+							for _, snapshot := range data.Snapshots {
+								<a class={ snapshotCardClass(data.Snapshot, snapshot) } href={ layouts.Route(data.Page.BasePath, "/grocery") + "?snapshot=" + snapshot.ID.String() }>
+									<div class="snapshot-header">
+										<h3>{ snapshot.Name }</h3>
+										<span class="pill">{ snapshot.GenerationMode }</span>
+									</div>
+									<div class="snapshot-meta">
+										<span class="muted">{ snapshot.CreatedAt.Format(time.RFC822) }</span>
+										<span class="muted">{ fmt.Sprintf("%d items", len(snapshot.Items)) }</span>
+									</div>
+								</a>
+							}
+						</div>
+					}
+				</section>
+				if data.Snapshot != nil {
+					<section class="panel stack">
+						<div class="section-head">
+							<div class="stack">
+								<p class="eyebrow">Current snapshot</p>
+								<h2>{ data.Snapshot.Name }</h2>
+								<p class="muted">{ data.Snapshot.CreatedAt.Format(time.RFC822) } | { data.Snapshot.GenerationMode }</p>
+							</div>
+							<div class="stat-row">
+								<span class="meta-chip">
+									<span class="material-symbols-outlined">check_circle</span>
+									<span>{ fmt.Sprintf("%d checked", groceryCheckedCount(data.Snapshot)) }</span>
+								</span>
+								<span class="meta-chip">
+									<span class="material-symbols-outlined">shopping_cart</span>
+									<span>{ fmt.Sprintf("%d total", len(data.Snapshot.Items)) }</span>
+								</span>
+							</div>
+						</div>
+						<form class="quick-entry" method="post" action={ layouts.Route(data.Page.BasePath, "/grocery/" + data.Snapshot.ID.String() + "/adhoc") }>
+							<input type="hidden" name="_csrf" value={ data.Page.CSRFToken }/>
+							<h3>Add ad-hoc item</h3>
+							<div class="row-form">
+								<label class="control-field">
+									Name
+									<input name="display_name" placeholder="Fresh basil"/>
+								</label>
+								<label class="control-field compact">
+									Quantity
+									<input type="number" step="0.25" name="quantity" value="1"/>
+								</label>
+								<label class="control-field compact">
+									Unit
+									<input name="unit" value="unit"/>
+								</label>
+							</div>
+							<label>
+								Note
+								<textarea name="note" placeholder="Optional note for the shopper"></textarea>
+							</label>
+							<button type="submit">
+								<span class="material-symbols-outlined">add</span>
+								<span>Add item</span>
+							</button>
+						</form>
+						<div class="grocery-list">
+							for _, item := range data.Snapshot.Items {
+								<article class={ groceryItemClass(item) }>
+									<form class="grocery-toggle" method="post" action={ layouts.Route(data.Page.BasePath, "/grocery/items/" + item.ID.String() + "/toggle") }>
+										<input type="hidden" name="_csrf" value={ data.Page.CSRFToken }/>
+										<input type="checkbox" name="checked" value="true" checked?={ item.Checked } onchange="this.form.submit()"/>
+										<div class="item-main">
+											<div class="stack">
+												<strong>{ item.DisplayName }</strong>
+												if item.Note != "" {
+													<p class="item-note">{ item.Note }</p>
+												}
+											</div>
+											<span class="item-qty">{ fmt.Sprintf("%g %s", item.Quantity, item.Unit) }</span>
+										</div>
+									</form>
+									if item.NeedsReview {
+										<p class="warning">Needs review because quantities could not be merged cleanly.</p>
+									}
+									if len(item.Sources) > 0 {
+										<details>
+											<summary>Why this is here</summary>
+											<div class="source-list">
+												for _, source := range item.Sources {
+													<p>{ source.MealTitle } -> { source.RecipeTitle } ({ fmt.Sprintf("%g %s", source.Quantity, source.Unit) })</p>
+												}
+											</div>
+										</details>
+									}
+								</article>
+							}
+						</div>
+					</section>
+				}
+			</div>
+			if data.Page.CurrentUser != nil && data.Page.CurrentUser.IsOwner() {
+				<form class="editor-panel stack sticky-panel" method="post" action={ layouts.Route(data.Page.BasePath, "/grocery/generate") }>
+					<input type="hidden" name="_csrf" value={ data.Page.CSRFToken }/>
+					<div class="stack">
+						<p class="eyebrow">Owner action</p>
+						<h2>Generate snapshot</h2>
+						<p class="muted">Create a new immutable list from dates, meals, or a filtered ingredient set.</p>
+					</div>
+					<label>
+						Name
+						<input name="name" placeholder="Weekly shop"/>
+					</label>
+					<label>
+						Mode
+						<select name="mode">
+							<option value="date_range">Date range</option>
+							<option value="meals">Selected meals</option>
+							<option value="mixed">Date range + ingredient filter</option>
+						</select>
+					</label>
+					<div class="row-form">
+						<label class="control-field compact">
+							Start date
+							<input type="date" name="start_date"/>
+						</label>
+						<label class="control-field compact">
+							End date
+							<input type="date" name="end_date"/>
+						</label>
+					</div>
+					<label>
+						Meal IDs CSV
+						<input name="meal_ids" placeholder="optional"/>
+					</label>
+					<label>
+						Ingredient IDs CSV
+						<input name="ingredient_ids" placeholder="optional"/>
+					</label>
+					<button type="submit">
+						<span class="material-symbols-outlined">auto_awesome</span>
+						<span>Generate snapshot</span>
+					</button>
+				</form>
+			}
+		</div>
+	</section>
+}

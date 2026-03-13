@@ -1,0 +1,131 @@
+package pages
+
+import "mealplanner/internal/view/layouts"
+
+templ Login(data AuthPageData) {
+	@layouts.Base(data.Page, LoginBody(data))
+}
+
+templ LoginBody(data AuthPageData) {
+	<section class="auth-card">
+		<div class="auth-hero">
+			<div class="brand-lockup">
+				<span class="brand-mark">
+					<span class="material-symbols-outlined">restaurant</span>
+				</span>
+				<span class="brand-text">
+					<strong>MealPlanner</strong>
+					<small>Welcome back to your kitchen</small>
+				</span>
+			</div>
+			<div class="stack">
+				<p class="eyebrow">Shared kitchen planning</p>
+				<h1 class="display-title">Bring the household back into rhythm.</h1>
+				<p class="display-copy">Plan meals, attach recipes, and turn the week into a grocery run that already knows what matters.</p>
+			</div>
+			<div class="feature-list">
+				<div class="feature-pill">
+					<span class="material-symbols-outlined">calendar_month</span>
+					<span>Day-grouped agenda</span>
+				</div>
+				<div class="feature-pill">
+					<span class="material-symbols-outlined">shopping_cart</span>
+					<span>Snapshot grocery lists</span>
+				</div>
+				<div class="feature-pill">
+					<span class="material-symbols-outlined">menu_book</span>
+					<span>Reusable recipe library</span>
+				</div>
+			</div>
+		</div>
+		<div class="auth-panel">
+			<div class="auth-heading">
+				<p class="eyebrow">Sign in</p>
+				<h2>Access your household board</h2>
+				<p class="muted">Use your username or email to reopen the latest plan.</p>
+			</div>
+			<form class="auth-form" method="post" action={ layouts.Route(data.Page.BasePath, "/auth/login") }>
+				<input type="hidden" name="_csrf" value={ data.Page.CSRFToken }/>
+				<label>
+					Username or email
+					<input name="identifier" value={ data.Identifier } autocomplete="username" placeholder="name@example.com"/>
+				</label>
+				<label>
+					Password
+					<input type="password" name="password" autocomplete="current-password" placeholder="Enter password"/>
+				</label>
+				<button type="submit">
+					<span class="material-symbols-outlined">login</span>
+					<span>Sign in</span>
+				</button>
+			</form>
+			<p class="auth-footer">Don't have an account? <a href={ layouts.Route(data.Page.BasePath, "/auth/signup") }>Create one</a>.</p>
+		</div>
+	</section>
+}
+
+templ Signup(data AuthPageData) {
+	@layouts.Base(data.Page, SignupBody(data))
+}
+
+templ SignupBody(data AuthPageData) {
+	<section class="auth-card">
+		<div class="auth-hero">
+			<div class="brand-lockup">
+				<span class="brand-mark">
+					<span class="material-symbols-outlined">cooking</span>
+				</span>
+				<span class="brand-text">
+					<strong>MealPlanner</strong>
+					<small>Set up a calmer kitchen system</small>
+				</span>
+			</div>
+			<div class="stack">
+				<p class="eyebrow">Start your household</p>
+				<h1 class="display-title">Build one source of truth for meals and groceries.</h1>
+				<p class="display-copy">Create your account, join the household, and keep recipes, pantry rules, and shopping runs in a single place.</p>
+			</div>
+			<div class="feature-list">
+				<div class="feature-pill">
+					<span class="material-symbols-outlined">group</span>
+					<span>Shared household access</span>
+				</div>
+				<div class="feature-pill">
+					<span class="material-symbols-outlined">nutrition</span>
+					<span>Canonical ingredients</span>
+				</div>
+				<div class="feature-pill">
+					<span class="material-symbols-outlined">download</span>
+					<span>Portable household exports</span>
+				</div>
+			</div>
+		</div>
+		<div class="auth-panel">
+			<div class="auth-heading">
+				<p class="eyebrow">Create account</p>
+				<h2>Open your MealPlanner workspace</h2>
+				<p class="muted">A username, email, and password is enough to get you into onboarding.</p>
+			</div>
+			<form class="auth-form" method="post" action={ layouts.Route(data.Page.BasePath, "/auth/signup") }>
+				<input type="hidden" name="_csrf" value={ data.Page.CSRFToken }/>
+				<label>
+					Username
+					<input name="username" autocomplete="username" placeholder="kitchenname"/>
+				</label>
+				<label>
+					Email
+					<input type="email" name="email" autocomplete="email" placeholder="name@example.com"/>
+				</label>
+				<label>
+					Password
+					<input type="password" name="password" autocomplete="new-password" placeholder="Create password"/>
+				</label>
+				<button type="submit">
+					<span class="material-symbols-outlined">arrow_forward</span>
+					<span>Create account</span>
+				</button>
+			</form>
+			<p class="auth-footer">Already registered? <a href={ layouts.Route(data.Page.BasePath, "/auth/login") }>Sign in</a>.</p>
+		</div>
+	</section>
+}

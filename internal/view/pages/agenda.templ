@@ -1,0 +1,161 @@
+package pages
+
+import (
+	"fmt"
+	"mealplanner/internal/view/layouts"
+	"mealplanner/internal/view/partials"
+)
+
+templ Agenda(data AgendaPageData) {
+	@layouts.Base(data.Page, AgendaBody(data))
+}
+
+templ AgendaBody(data AgendaPageData) {
+	<section class="page-shell">
+		<header class="hero-card">
+			<p class="eyebrow">Planning board</p>
+			<h1 class="page-title">Weekly agenda</h1>
+			<p class="page-summary">See the next stretch of meals day by day, jump to a date, and keep every planned meal tied back to real recipes.</p>
+			<div class="stat-row">
+				<div class="stat-chip">
+					<span class="stat-value">{ fmt.Sprintf("%d", len(data.Days)) }</span>
+					<span class="stat-label">Days loaded</span>
+				</div>
+				<div class="stat-chip">
+					<span class="stat-value">{ fmt.Sprintf("%d", agendaMealCount(data.Days)) }</span>
+					<span class="stat-label">Meals scheduled</span>
+				</div>
+				<div class="stat-chip">
+					<span class="stat-value">{ fmt.Sprintf("%d", agendaRecipeSelectionCount(data.Days)) }</span>
+					<span class="stat-label">Recipe links</span>
+				</div>
+			</div>
+			<form class="toolbar-card toolbar-form" method="get" action={ layouts.Route(data.Page.BasePath, "/agenda") } hx-get={ layouts.Route(data.Page.BasePath, "/agenda") } hx-target="#agenda-days" hx-push-url="true">
+				<label class="control-field compact">
+					Start date
+					<input type="date" name="date" value={ data.FilterDate } onchange="this.form.requestSubmit()"/>
+				</label>
+				<button type="submit">
+					<span class="material-symbols-outlined">event_repeat</span>
+					<span>Refresh agenda</span>
+				</button>
+			</form>
+		</header>
+		<div class="dashboard-grid with-sidebar align-start">
+			<div class="grow stack">
+				@partials.AgendaDays(data.Page, data.Days)
+			</div>
+			if data.Page.CurrentUser != nil && data.Page.CurrentUser.IsOwner() {
+				<form class="editor-panel stack sticky-panel" method="post" action={ layouts.Route(data.Page.BasePath, "/meals") }>
+					<input type="hidden" name="_csrf" value={ data.Page.CSRFToken }/>
+					if data.EditMeal != nil {
+						<input type="hidden" name="id" value={ data.EditMeal.ID.String() }/>
+						<input type="hidden" name="version" value={ fmt.Sprintf("%d", data.EditMeal.Version) }/>
+					}
+					<div class="section-head">
+						<div class="stack">
+							<p class="eyebrow">Owner editor</p>
+							<h2>
+								if data.EditMeal != nil {
+									Edit meal
+								} else {
+									Add meal
+								}
+							</h2>
+							<p class="muted">Set the schedule first, then attach recipes, servings, notes, and any recurrence rule.</p>
+						</div>
+						if data.EditMeal != nil {
+							<a class="ghost-button" href={ layouts.Route(data.Page.BasePath, "/agenda") }>Start new</a>
+						}
+					</div>
+					<label>
+						Meal title
+						<input name="title" value={ mealTitleValue(data.EditMeal) } placeholder="Wednesday dinner"/>
+					</label>
+					<div class="row-form">
+						<label class="control-field">
+							Scheduled time
+							<input type="datetime-local" name="scheduled_at" value={ mealDateValue(data) }/>
+						</label>
+						<label class="control-field compact">
+							Servings
+							<input type="number" min="0.25" step="0.25" name="servings" value={ mealServingsValue(data.EditMeal) }/>
+						</label>
+					</div>
+					<label>
+						Notes
+						<textarea name="notes" placeholder="Anything the household should know before this meal happens.">{ mealNotesValue(data.EditMeal) }</textarea>
+					</label>
+					<div class="row-form">
+						<label class="control-field">
+							Link URL
+							<input name="link_url" value={ mealLinkURLValue(data.EditMeal) } placeholder="https://example.com/meal-note"/>
+						</label>
+						<label class="control-field">
+							Link title
+							<input name="link_title" value={ mealLinkTitleValue(data.EditMeal) } placeholder="Reference link title"/>
+						</label>
+					</div>
+					<fieldset class="stack">
+						<legend>Recipes</legend>
+						<p class="helper-text">Attach one or more recipes. Per-recipe serving overrides are optional.</p>
+						<div class="selection-list">
+							if len(data.Recipes) == 0 {
+								<p class="helper-text">No recipes are available yet. Add recipes first, then return to the agenda.</p>
+							}
+							for _, recipe := range data.Recipes {
+								<label class="checkbox-row">
+									<input type="checkbox" name="recipe_ids" value={ recipe.ID.String() } checked?={ recipeSelected(data.EditMeal, recipe.ID) }/>
+									<span>{ recipe.Title }</span>
+									<input class="inline-input" name={ "recipe_override_" + recipe.ID.String() } placeholder="override" value={ recipeOverride(data.EditMeal, recipe.ID) }/>
+								</label>
+							}
+						</div>
+					</fieldset>
+					<fieldset class="stack">
+						<legend>Recurrence</legend>
+						<label class="checkbox-row">
+							<input type="checkbox" name="recurring" value="true"/>
+							<span>Repeat this meal</span>
+						</label>
+						<div class="row-form">
+							<label class="control-field compact">
+								Rule
+								<select name="rule_type">
+									<option value="daily">Daily</option>
+									<option value="weekly">Weekly</option>
+								</select>
+							</label>
+							<label class="control-field compact">
+								Interval
+								<input type="number" min="1" name="interval_value" value="1"/>
+							</label>
+						</div>
+						<label>
+							Weekdays CSV
+							<input name="by_weekday" placeholder="1,3,5"/>
+						</label>
+						<div class="row-form">
+							<label class="control-field compact">
+								End date
+								<input type="date" name="end_date"/>
+							</label>
+							<label class="control-field">
+								Save scope
+								<select name="scope">
+									<option value="occurrence">This occurrence</option>
+									<option value="future">This and future</option>
+									<option value="series">All occurrences</option>
+								</select>
+							</label>
+						</div>
+					</fieldset>
+					<button type="submit">
+						<span class="material-symbols-outlined">save</span>
+						<span>Save meal</span>
+					</button>
+				</form>
+			}
+		</div>
+	</section>
+}

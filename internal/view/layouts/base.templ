@@ -1,0 +1,160 @@
+package layouts
+
+import "mealplanner/internal/models"
+
+templ Base(page models.AppPageData, body templ.Component) {
+	<!doctype html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<meta name="csrf-token" content={ page.CSRFToken }/>
+			<link rel="preconnect" href="https://fonts.googleapis.com"/>
+			<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/>
+			<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700;800;900&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet"/>
+			<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,300,0,0" rel="stylesheet"/>
+			<link rel="manifest" href={ Route(page.BasePath, "/manifest.webmanifest") }/>
+			<link rel="stylesheet" href={ Route(page.BasePath, "/static/css/app.css") }/>
+			<title>{ page.Title }</title>
+			<script src={ Route(page.BasePath, "/static/js/htmx.min.js") } defer></script>
+			<script src={ Route(page.BasePath, "/static/js/app.js") } defer></script>
+		</head>
+		<body class={ bodyClass(page) }>
+			if page.CurrentUser == nil {
+				<div class="auth-shell">
+					<div class="ambient-orb orb-left"></div>
+					<div class="ambient-orb orb-right"></div>
+					<div class="auth-stack">
+						@Flashes(page)
+						@body
+					</div>
+				</div>
+			} else if page.CurrentUser.HouseholdID == nil {
+				<div class="welcome-shell">
+					<header class="welcome-topbar">
+						<a class="brand-lockup" href={ Route(page.BasePath, "/") }>
+							<span class="brand-mark">
+								<span class="material-symbols-outlined">restaurant_menu</span>
+							</span>
+							<span class="brand-text">
+								<strong>MealPlanner</strong>
+								<small>Shared kitchen rhythms</small>
+							</span>
+						</a>
+						<form method="post" action={ Route(page.BasePath, "/auth/logout") }>
+							<input type="hidden" name="_csrf" value={ page.CSRFToken }/>
+							<button class="ghost-button" type="submit">Logout</button>
+						</form>
+					</header>
+					<main class="welcome-main">
+						<div class="welcome-stack">
+							@Flashes(page)
+							@body
+						</div>
+					</main>
+				</div>
+			} else {
+				<div class="app-shell">
+					<aside class="app-sidebar" id="app-sidebar" data-nav-drawer>
+						<div class="sidebar-panel">
+							<div class="sidebar-brand-row">
+								<a class="brand-lockup" href={ Route(page.BasePath, "/") }>
+									<span class="brand-mark">
+										<span class="material-symbols-outlined">restaurant_menu</span>
+									</span>
+									<span class="brand-text">
+										<strong>MealPlanner</strong>
+										<small>For the whole household</small>
+									</span>
+								</a>
+								<button class="mobile-nav-close" type="button" aria-label="Close navigation" data-nav-close>
+									<span class="material-symbols-outlined">close</span>
+								</button>
+							</div>
+							if page.HouseholdName != "" {
+								<p class="household-pill">{ page.HouseholdName }</p>
+							}
+						</div>
+						<nav class="app-nav">
+							<a class={ navClass(page.ActiveNav, "plan") } href={ Route(page.BasePath, "/agenda") }>
+								<span class="material-symbols-outlined nav-icon">calendar_month</span>
+								<span>Agenda</span>
+							</a>
+							<a class={ navClass(page.ActiveNav, "grocery") } href={ Route(page.BasePath, "/grocery") }>
+								<span class="material-symbols-outlined nav-icon">shopping_cart</span>
+								<span>Grocery</span>
+							</a>
+							<a class={ navClass(page.ActiveNav, "recipes") } href={ Route(page.BasePath, "/recipes") }>
+								<span class="material-symbols-outlined nav-icon">menu_book</span>
+								<span>Recipes</span>
+							</a>
+							<a class={ navClass(page.ActiveNav, "ingredients") } href={ Route(page.BasePath, "/ingredients") }>
+								<span class="material-symbols-outlined nav-icon">nutrition</span>
+								<span>Ingredients</span>
+							</a>
+						</nav>
+						<div class="sidebar-note card">
+							<p class="eyebrow">Today's focus</p>
+							<p>{ pageDescription(page.ActiveNav) }</p>
+						</div>
+						<div class="sidebar-footer">
+							<a class={ navClass(page.ActiveNav, "settings") } href={ Route(page.BasePath, "/settings") }>
+								<span class="material-symbols-outlined nav-icon">settings</span>
+								<span>Settings</span>
+							</a>
+							<div class="user-chip">
+								<span class="avatar-badge">{ currentUserInitials(page.CurrentUser) }</span>
+								<div class="user-meta">
+									<strong>{ currentUserLabel(page.CurrentUser) }</strong>
+									<small>{ page.CurrentUser.Role }</small>
+								</div>
+							</div>
+							<form method="post" action={ Route(page.BasePath, "/auth/logout") }>
+								<input type="hidden" name="_csrf" value={ page.CSRFToken }/>
+								<button class="ghost-button full-width" type="submit">Logout</button>
+							</form>
+						</div>
+					</aside>
+					<button class="app-scrim" type="button" aria-label="Close navigation" tabindex="-1" data-nav-close></button>
+					<div class="app-main">
+						<header class="app-topbar">
+							<div class="topbar-main">
+								<button class="mobile-nav-toggle" type="button" aria-label="Open navigation" aria-controls="app-sidebar" aria-expanded="false" data-nav-toggle>
+									<span class="material-symbols-outlined">menu</span>
+								</button>
+								<div class="topbar-copy">
+									<p class="eyebrow">Shared kitchen</p>
+									<h1>{ page.HouseholdName }</h1>
+									<p class="muted">{ pageDescription(page.ActiveNav) }</p>
+								</div>
+							</div>
+							<div class="topbar-context">
+								<span class="material-symbols-outlined">featured_play_list</span>
+								<span>{ page.Title }</span>
+							</div>
+						</header>
+						<main class="app-canvas">
+							<div class="content-stack">
+								@Flashes(page)
+								@body
+							</div>
+						</main>
+					</div>
+				</div>
+			}
+		</body>
+	</html>
+}
+
+templ Flashes(page models.AppPageData) {
+	if page.Error != "" || page.Notice != "" {
+		<div class="flash-stack">
+			if page.Error != "" {
+				<div class="flash error">{ page.Error }</div>
+			}
+			if page.Notice != "" {
+				<div class="flash notice">{ page.Notice }</div>
+			}
+		</div>
+	}
+}
