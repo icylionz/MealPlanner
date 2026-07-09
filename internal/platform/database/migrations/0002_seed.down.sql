@@ -1,0 +1,11 @@
+DELETE FROM grocery_items;
+DELETE FROM grocery_lists;
+DELETE FROM meal_plan;
+DELETE FROM prep_session_meals;
+DELETE FROM prep_sessions;
+DELETE FROM recipe_steps;
+DELETE FROM recipe_ingredients;
+DELETE FROM recipe_tags;
+DELETE FROM recipes;
+DELETE FROM sessions;
+DELETE FROM household_members;

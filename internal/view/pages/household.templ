@@ -1,0 +1,90 @@
+package pages
+
+import (
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/icons"
+	"mealplanner/internal/view/layout"
+)
+
+// Household renders the household members screen.
+templ Household(d HouseholdData) {
+	@layout.Shell("Household — Backbone Plate", "household", d.Member) {
+		@layout.PageHeader("Household", "Members") {
+			<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/household?invite=1")) }>
+				@icons.Icon("plus", 14)
+				Add member
+			</a>
+		}
+		<div class="page-pad flex-1">
+			<div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-bottom: 24px;">
+				for _, m := range d.Members {
+					<div class="card" style={ memberCardStyle(d, m.ID.String()) }>
+						<div class="flex flex-col items-center text-center" style="gap: 10px; padding: 4px;">
+							<div style="position: relative;">
+								@layout.Avatar(m.Initials, m.Color, 56)
+								if isCurrent(d, m.ID.String()) {
+									<div style="position: absolute; bottom: -2px; right: -2px; width: 16px; height: 16px; border-radius: 50%; background: var(--success); border: 2px solid var(--paper); display: flex; align-items: center; justify-content: center; color: #fff;">
+										@icons.Icon("check", 8)
+									</div>
+								}
+							</div>
+							<div>
+								<div style="font-family: var(--font-display); font-weight: 700; font-size: 17px; color: var(--ink);">{ m.Name }</div>
+								if isCurrent(d, m.ID.String()) {
+									@layout.TagAccent(m.Role)
+								} else {
+									@layout.Tag(m.Role)
+								}
+							</div>
+							if isCurrent(d, m.ID.String()) {
+								<div class="flex items-center" style="font-size: 12px; color: var(--success); font-weight: 600; gap: 4px;">
+									@icons.Icon("check-circle", 13)
+									Active profile
+								</div>
+							} else {
+								<form method="post" action={ templ.URL(view.Href(ctx, "/household/switch?member="+m.ID.String())) }>
+									<button type="submit" class="btn btn-secondary btn-xs">Switch to</button>
+								</form>
+							}
+							if m.Role != "owner" {
+								<form method="post" action={ templ.URL(view.Href(ctx, "/household/remove?member="+m.ID.String())) }>
+									<button type="submit" class="icon-btn icon-btn-danger flex items-center" style="font-size: 12px; gap: 4px;">
+										@icons.Icon("trash-2", 12)
+										Remove
+									</button>
+								</form>
+							}
+						</div>
+					</div>
+				}
+			</div>
+			if d.ShowInvite {
+				<div class="card" style="max-width: 360px; padding: 18px;">
+					<div style="font-family: var(--font-display); font-weight: 700; font-size: 15px; color: var(--ink); margin-bottom: 12px;">Add household member</div>
+					<form method="post" action={ templ.URL(view.Href(ctx, "/household/members")) } class="flex" style="gap: 8px;">
+						<input class="input flex-1" name="name" placeholder="Full name" autofocus/>
+						<button type="submit" class="btn btn-sm">Add</button>
+						<a class="btn btn-ghost btn-sm" href={ templ.URL(view.Href(ctx, "/household")) }>Cancel</a>
+					</form>
+				</div>
+			}
+			<div style="margin-top: 32px; border-top: 1px solid var(--line); padding-top: 16px;">
+				<div style="font-size: 12px; color: var(--fg-4); line-height: 1.5;">
+					Profits fund computer-science education and community projects.
+					<a href="#" style="color: var(--fg-3);">Learn about Backbone Giving →</a>
+				</div>
+			</div>
+		</div>
+	}
+}
+
+func isCurrent(d HouseholdData, id string) bool {
+	return d.Member != nil && d.Member.ID.String() == id
+}
+
+func memberCardStyle(d HouseholdData, id string) string {
+	if isCurrent(d, id) {
+		return "padding: 20px; border: 1.5px solid var(--accent-tint-2);"
+	}
+	return "padding: 20px;"
+}

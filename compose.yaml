@@ -1,0 +1,32 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      PORT: "8080"
+      BASE_PATH: "${BASE_PATH:-}"
+      DATABASE_URL: "postgres://plate:plate@db:5432/plate?sslmode=disable"
+      SESSION_COOKIE_NAME: "${SESSION_COOKIE_NAME:-bbplate_session}"
+      SESSION_SECRET: "${SESSION_SECRET:-change-me-in-production}"
+      APP_ENV: "${APP_ENV:-production}"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: plate
+      POSTGRES_PASSWORD: plate
+      POSTGRES_DB: plate
+    volumes:
+      - plate-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plate -d plate"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  plate-pgdata:

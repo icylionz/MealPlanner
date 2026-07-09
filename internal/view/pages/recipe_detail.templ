@@ -1,0 +1,134 @@
+package pages
+
+import (
+	"net/url"
+	"strings"
+
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/icons"
+	"mealplanner/internal/view/layout"
+)
+
+// withParam returns baseURL (path?query) with one query key replaced.
+func withParam(baseURL, key, value string) string {
+	path := baseURL
+	query := ""
+	if i := strings.IndexByte(baseURL, '?'); i >= 0 {
+		path, query = baseURL[:i], baseURL[i+1:]
+	}
+	q, _ := url.ParseQuery(query)
+	q.Set(key, value)
+	return path + "?" + q.Encode()
+}
+
+// RecipeDetail renders the recipe detail screen.
+templ RecipeDetail(d RecipeDetailData) {
+	@layout.Shell(d.Recipe.Name+" — Backbone Plate", "foods", d.Member) {
+		@layout.PageHeaderBack("/foods", "Foods & recipes", d.Recipe.Name) {
+			<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/recipes/"+d.Recipe.ID.String()+"/edit")) }>
+				@icons.Icon("pencil", 14)
+				Edit
+			</a>
+			<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/meals/new?recipe="+d.Recipe.ID.String()+"&return=/recipes/"+d.Recipe.ID.String())) }>
+				@icons.Icon("calendar", 14)
+				Add to plan
+			</a>
+		}
+		<div class="page-pad flex-1" style="max-width: 760px;">
+			<div class="flex items-center flex-wrap" style="gap: 8px; margin-bottom: 14px;">
+				for _, t := range d.Recipe.Tags {
+					@layout.TagAccent(t)
+				}
+				if d.Recipe.PrepTime > 0 {
+					@layout.Tag(view.Itoa(d.Recipe.PrepTime) + " min prep")
+				}
+				if d.Recipe.CookTime > 0 {
+					@layout.Tag(view.Itoa(d.Recipe.CookTime) + " min cook")
+				}
+				@layout.Tag("serves " + view.Itoa(d.Recipe.Servings))
+			</div>
+			if d.Recipe.Description != "" {
+				<p style="font-size: 14px; color: var(--fg-2); line-height: 1.6; margin: 0 0 20px;">{ d.Recipe.Description }</p>
+			}
+			<div style="margin-bottom: 22px;">
+				<div class="overline" style="letter-spacing: .08em; margin-bottom: 8px;">Scale</div>
+				<div class="flex" style="gap: 6px;">
+					for _, m := range []int{1, 2, 3, 4} {
+						<a
+							href={ templ.URL(view.Href(ctx, withParam(d.BaseURL, "scale", view.Itoa(m)))) }
+							class={ "chip", templ.KV("active", d.Scale == m) }
+							style="border-radius: var(--radius-sm); padding: 6px 14px; font-weight: 700; font-size: 13px;"
+						>×{ view.Itoa(m) }</a>
+					}
+					<span class="flex items-center" style="margin-left: 6px; font-size: 13px; color: var(--fg-3);">
+						= { view.Itoa(d.Recipe.Servings * d.Scale) } { view.Plural(d.Recipe.Servings*d.Scale, "serving", "servings") }
+					</span>
+				</div>
+			</div>
+			<section style="margin-bottom: 28px;">
+				<div class="overline" style="letter-spacing: .08em; margin-bottom: 10px;">Ingredients</div>
+				<div class="ing-tree">
+					@ingredientNodes(d, d.Tree)
+				</div>
+			</section>
+			if len(d.Recipe.Steps) > 0 {
+				<section style="margin-bottom: 28px;">
+					<div class="overline" style="letter-spacing: .08em; margin-bottom: 10px;">Steps</div>
+					<ol class="flex flex-col" style="margin: 0; padding: 0; list-style: none; gap: 8px;">
+						for i, s := range d.Recipe.Steps {
+							<li class="flex items-start" style="gap: 12px;">
+								<span class="step-num" style="padding-top: 2px;">{ stepNum(i) }</span>
+								<span style="font-size: 14px; color: var(--fg-2); line-height: 1.55;">{ s }</span>
+							</li>
+						}
+					</ol>
+				</section>
+			}
+		</div>
+	}
+}
+
+func stepNum(i int) string {
+	n := view.Itoa(i + 1)
+	if len(n) == 1 {
+		return "0" + n
+	}
+	return n
+}
+
+templ ingredientNodes(d RecipeDetailData, nodes []IngNode) {
+	for _, n := range nodes {
+		@ingredientNode(d, n)
+	}
+}
+
+templ ingredientNode(d RecipeDetailData, n IngNode) {
+	if n.SubRecipe != nil {
+		<details>
+			<summary class={ "ing-row", templ.KV("ing-sub", n.Depth > 0) } style={ ingIndent(n.Depth) }>
+				<span class="chev" style="color: var(--accent); display: flex;">
+					@icons.Icon("chevron-right", 13)
+				</span>
+				<span class="flex-1" style="font-weight: 600; font-size: 14px; color: var(--accent-strong);">{ n.SubRecipe.Name }</span>
+				<span style="font-size: 12px; color: var(--fg-3);">{ FormatAmount(n.Amount) } { n.Line.Unit }</span>
+				<a href={ templ.URL(view.Href(ctx, "/recipes/"+n.SubRecipe.ID.String())) } class="icon-btn" title="View recipe">
+					@icons.Icon("link", 12)
+				</a>
+				@layout.TagAccent("recipe")
+			</summary>
+			@ingredientNodes(d, n.Children)
+		</details>
+	} else {
+		<div class={ "ing-row", templ.KV("ing-sub", n.Depth > 0) } style={ ingIndent(n.Depth) }>
+			<span class="ing-dot"></span>
+			<span class="flex-1" style="font-size: 14px; color: var(--ink);">{ n.Line.Name }</span>
+			@UnitTagLinks(n.Amount, n.Unit, false, ConvertOptionsFor(n.Amount, n.Unit), func(u string) string {
+				return withParam(d.BaseURL, n.ConvertKey, u)
+			})
+		</div>
+	}
+}
+
+func ingIndent(depth int) string {
+	return "padding-left: " + view.Itoa(14+depth*20) + "px;"
+}

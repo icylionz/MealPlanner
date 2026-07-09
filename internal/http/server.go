@@ -1,0 +1,180 @@
+// Package httpserver wires the Echo router, middleware, and handlers.
+package httpserver
+
+import (
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/a-h/templ"
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
+
+	"mealplanner/internal/config"
+	"mealplanner/internal/grocery"
+	"mealplanner/internal/households"
+	"mealplanner/internal/planner"
+	"mealplanner/internal/prep"
+	"mealplanner/internal/recipes"
+	"mealplanner/internal/view"
+)
+
+// Server bundles the services the handlers need.
+type Server struct {
+	cfg        *config.Config
+	households *households.Service
+	recipes    *recipes.Service
+	planner    *planner.Service
+	grocery    *grocery.Service
+	prep       *prep.Service
+}
+
+// New constructs the HTTP server wrapper.
+func New(cfg *config.Config, hh *households.Service, rs *recipes.Service, ps *planner.Service, gs *grocery.Service, pr *prep.Service) *Server {
+	return &Server{cfg: cfg, households: hh, recipes: rs, planner: ps, grocery: gs, prep: pr}
+}
+
+// Router builds the Echo instance with all routes mounted under BASE_PATH.
+func (s *Server) Router() *echo.Echo {
+	e := echo.New()
+	e.HideBanner = true
+	e.Use(middleware.Recover())
+	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		LogStatus: true, LogURI: true, LogMethod: true, LogLatency: true,
+		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
+			e.Logger.Infof("%s %s -> %d (%s)", v.Method, v.URI, v.Status, v.Latency)
+			return nil
+		},
+	}))
+
+	g := e.Group(s.cfg.BasePath)
+	g.Use(s.sessionMiddleware)
+
+	if _, err := os.Stat("web/static"); err == nil {
+		g.Static("/static", "web/static")
+	}
+
+	g.GET("/", func(c echo.Context) error { return s.redirect(c, "/today") })
+	g.GET("/today", s.handleToday)
+	g.GET("/plan", s.handlePlan)
+
+	g.GET("/meals/new", s.handleAddMealForm)
+	g.POST("/meals", s.handleAddMeal)
+	g.POST("/meals/:id/delete", s.handleDeleteMeal)
+
+	g.GET("/foods", s.handleFoods)
+	g.GET("/recipes/new", s.handleRecipeNew)
+	g.POST("/recipes/new", s.handleRecipeEditPost)
+	g.GET("/recipes/:id", s.handleRecipeDetail)
+	g.GET("/recipes/:id/edit", s.handleRecipeEdit)
+	g.POST("/recipes/:id/edit", s.handleRecipeEditPost)
+	g.GET("/import", s.handleImportForm)
+	g.POST("/import", s.handleImportPost)
+
+	g.GET("/grocery", s.handleGrocery)
+	g.POST("/grocery/lists", s.handleGroceryNewList)
+	g.POST("/grocery/lists/:id/rename", s.handleGroceryRename)
+	g.POST("/grocery/lists/:id/delete", s.handleGroceryDeleteList)
+	g.POST("/grocery/lists/:id/clear-checked", s.handleGroceryClearChecked)
+	g.POST("/grocery/items/:id/toggle", s.handleGroceryToggle)
+	g.POST("/grocery/items/:id/convert", s.handleGroceryConvert)
+	g.POST("/grocery/items/:id/delete", s.handleGroceryDeleteItem)
+	g.GET("/grocery/generate", s.handleGroceryGenerate)
+	g.POST("/grocery/generate", s.handleGroceryGenerateCommit)
+
+	g.GET("/prep", s.handlePrep)
+	g.POST("/prep/sessions", s.handlePrepNewSession)
+	g.POST("/prep/:id/update", s.handlePrepUpdate)
+	g.POST("/prep/:id/delete", s.handlePrepDelete)
+	g.POST("/prep/:id/meals", s.handlePrepAddMeal)
+	g.POST("/prep/:id/meals/:rid/remove", s.handlePrepRemoveMeal)
+	g.POST("/prep/:id/meals/:rid/servings", s.handlePrepServings)
+	g.GET("/prep/:id/print", s.handlePrepPrint)
+
+	g.GET("/household", s.handleHousehold)
+	g.POST("/household/members", s.handleHouseholdAdd)
+	g.POST("/household/switch", s.handleHouseholdSwitch)
+	g.POST("/household/remove", s.handleHouseholdRemove)
+
+	return e
+}
+
+const memberCtxKey = "member"
+const tokenCtxKey = "sessionToken"
+
+// sessionMiddleware resolves (or creates) the profile session and stores the
+// active member on the request context.
+func (s *Server) sessionMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		ctx := c.Request().Context()
+		var token string
+		if cookie, err := c.Cookie(s.cfg.SessionCookieName); err == nil {
+			token = cookie.Value
+		}
+		member, err := s.households.ResolveSession(ctx, token)
+		if err != nil {
+			return err
+		}
+		if member == nil {
+			newToken, m, err := s.households.StartSession(ctx, nil)
+			if err != nil {
+				return err
+			}
+			token, member = newToken, m
+			c.SetCookie(&http.Cookie{
+				Name:     s.cfg.SessionCookieName,
+				Value:    token,
+				Path:     pathOrRoot(s.cfg.BasePath),
+				HttpOnly: true,
+				SameSite: http.SameSiteLaxMode,
+				Secure:   !s.cfg.IsDevelopment(),
+				Expires:  time.Now().Add(households.SessionTTL),
+			})
+		}
+		c.Set(memberCtxKey, member)
+		c.Set(tokenCtxKey, token)
+		return next(c)
+	}
+}
+
+func pathOrRoot(basePath string) string {
+	if basePath == "" {
+		return "/"
+	}
+	return basePath
+}
+
+func (s *Server) member(c echo.Context) *households.Member {
+	m, _ := c.Get(memberCtxKey).(*households.Member)
+	return m
+}
+
+func (s *Server) token(c echo.Context) string {
+	t, _ := c.Get(tokenCtxKey).(string)
+	return t
+}
+
+// render writes a templ component with the base path installed in context.
+func (s *Server) render(c echo.Context, comp templ.Component) error {
+	ctx := view.WithBasePath(c.Request().Context(), s.cfg.BasePath)
+	c.Response().Header().Set(echo.HeaderContentType, echo.MIMETextHTMLCharsetUTF8)
+	c.Response().WriteHeader(http.StatusOK)
+	return comp.Render(ctx, c.Response().Writer)
+}
+
+// redirect sends a 303 to an app-absolute path, honoring BASE_PATH.
+func (s *Server) redirect(c echo.Context, path string) error {
+	return c.Redirect(http.StatusSeeOther, s.cfg.BasePath+path)
+}
+
+// safeReturn keeps redirect targets app-local.
+func safeReturn(v, fallback string) string {
+	if v == "" || v[0] != '/' || (len(v) > 1 && v[1] == '/') {
+		return fallback
+	}
+	return v
+}
+
+func todayStr() string {
+	return time.Now().Format(view.DateFormat)
+}

@@ -1,0 +1,241 @@
+package pages
+
+import (
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/icons"
+	"mealplanner/internal/view/layout"
+)
+
+func prepHref(sessionID string) string {
+	if sessionID == "" {
+		return "/prep"
+	}
+	return "/prep?session=" + sessionID
+}
+
+// Prep renders the meal prep screen.
+templ Prep(d PrepData) {
+	@layout.Shell("Prep — Backbone Plate", "prep", d.Member) {
+		@layout.PageHeader("Meal prep", "Prep sessions") {
+			<form method="post" action={ templ.URL(view.Href(ctx, "/prep/sessions")) }>
+				<button type="submit" class="btn btn-secondary btn-sm">
+					@icons.Icon("plus", 14)
+					New session
+				</button>
+			</form>
+			if d.Active != nil {
+				<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/print")) }>
+					@icons.Icon("printer", 14)
+					Print / export
+				</a>
+			}
+		}
+		if len(d.Sessions) > 0 {
+			<div class="date-strip" style="gap: 6px; padding: 8px 14px;">
+				for _, s := range d.Sessions {
+					<a href={ templ.URL(view.Href(ctx, prepHref(s.ID))) } class={ "chip flex-none", templ.KV("active", d.Active != nil && s.ID == d.Active.ID) } style="font-size: 13px; padding: 6px 14px;">{ s.Name }</a>
+				}
+			</div>
+		}
+		<div class="flex-1 flex overflow-hidden">
+			if len(d.Sessions) > 0 {
+				<div class="side-panel plan-side">
+					<div class="overline" style="padding: 2px 6px; margin-bottom: 4px;">Sessions</div>
+					for _, s := range d.Sessions {
+						<a href={ templ.URL(view.Href(ctx, prepHref(s.ID))) } class={ "side-row", templ.KV("active", d.Active != nil && s.ID == d.Active.ID) } style="flex-direction: column; align-items: flex-start; gap: 0;">
+							<span>{ s.Name }</span>
+							<span class="overline" style="font-size: 10px; letter-spacing: .05em; color: var(--fg-4); margin-top: 2px;">{ view.Itoa(s.MealCount) } { view.Plural(s.MealCount, "meal", "meals") }</span>
+						</a>
+					}
+				</div>
+			}
+			<div class="flex-1 overflow-y-auto page-pad" style="padding: 20px 28px;">
+				if d.Active == nil {
+					@layout.Empty("flame", "No prep sessions", "Create a session to plan your meal prep.") {
+						<form method="post" action={ templ.URL(view.Href(ctx, "/prep/sessions")) }>
+							<button type="submit" class="btn btn-sm">
+								@icons.Icon("plus", 14)
+								New session
+							</button>
+						</form>
+					}
+				} else {
+					@prepSessionDetail(d)
+				}
+			</div>
+		</div>
+	}
+}
+
+templ prepSessionDetail(d PrepData) {
+	<div class="flex flex-col" style="max-width: 780px; gap: 22px;">
+		<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/update")) } class="flex items-center flex-wrap" style="gap: 10px;">
+			<input
+				name="name"
+				value={ d.Active.Name }
+				style="font-family: var(--font-display); font-weight: 700; font-size: 22px; color: var(--ink); border: none; background: transparent; outline: none; border-bottom: 2px solid var(--line); padding: 2px 0; min-width: 0; flex: 1;"
+			/>
+			<input
+				type="date"
+				name="date"
+				value={ d.Active.Date }
+				class="tnum"
+				style="font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--fg-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 6px 10px; background: var(--surface); outline: none;"
+			/>
+			<button type="submit" class="btn btn-secondary btn-xs">Save</button>
+			<button type="submit" formaction={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/delete")) } class="btn btn-danger btn-xs">
+				@icons.Icon("trash-2", 12)
+				Delete
+			</button>
+		</form>
+		<div>
+			<div class="overline" style="letter-spacing: .08em; margin-bottom: 8px;">Meals in session</div>
+			if len(d.Active.Meals) == 0 {
+				<div style="border: 1px dashed var(--line); border-radius: var(--radius-lg); padding: 24px; text-align: center; color: var(--fg-3); font-size: 14px;">
+					Add meals below to start planning prep.
+				</div>
+			} else {
+				<div class="flex flex-col" style="gap: 6px;">
+					for _, m := range d.Active.Meals {
+						<div class="card card-flush flex items-stretch">
+							<div class="flex-1 flex items-center" style="padding: 12px 14px; gap: 10px;">
+								<div class="flex-1">
+									<div style="font-weight: 600; font-size: 14px; color: var(--ink);">{ m.Recipe.Name }</div>
+									<div style="margin-top: 4px;">
+										@RecipeTags(m.Recipe.Tags, 3)
+									</div>
+								</div>
+								<div class="flex items-center" style="gap: 6px;">
+									<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/meals/"+m.Recipe.ID.String()+"/servings?delta=-1")) } style="display: contents;">
+										<button type="submit" class="stepper-btn stepper-btn-sm">
+											@icons.Icon("minus", 12)
+										</button>
+									</form>
+									<span class="tnum" style="font-family: var(--font-mono); font-weight: 700; font-size: 14px; color: var(--ink); min-width: 28px; text-align: center;">{ view.Itoa(m.Servings) }</span>
+									<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/meals/"+m.Recipe.ID.String()+"/servings?delta=1")) } style="display: contents;">
+										<button type="submit" class="stepper-btn stepper-btn-sm">
+											@icons.Icon("plus", 12)
+										</button>
+									</form>
+									<span style="font-size: 12px; color: var(--fg-3); margin-left: 2px;">srv</span>
+								</div>
+							</div>
+							<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/meals/"+m.Recipe.ID.String()+"/remove")) } style="display: contents;">
+								<button type="submit" class="row-del" style="padding: 12px;" title="Remove from session">
+									@icons.Icon("x", 14)
+								</button>
+							</form>
+						</div>
+					}
+				</div>
+			}
+			<div style="margin-top: 8px;">
+				if d.AddingMeal {
+					<div class="card" style="padding: 12px;">
+						<form method="get" action={ templ.URL(view.Href(ctx, "/prep")) } class="flex items-center" style="gap: 8px; margin-bottom: 8px;">
+							<input type="hidden" name="session" value={ d.Active.ID }/>
+							<input type="hidden" name="add" value="1"/>
+							<div class="search-wrap flex-1">
+								@icons.Icon("search", 13)
+								<input class="input input-sm" type="search" name="q" value={ d.RecipeSearch } placeholder="Search recipes…" autofocus/>
+							</div>
+							<a class="btn btn-ghost btn-xs" href={ templ.URL(view.Href(ctx, prepHref(d.Active.ID))) }>Cancel</a>
+						</form>
+						<div class="flex flex-col overflow-y-auto" style="max-height: 200px; gap: 4px;">
+							for _, r := range d.Recipes {
+								@prepAddRecipeRow(d, r.ID.String(), r.Name, prepAlreadyIn(d, r.ID.String()))
+							}
+						</div>
+					</div>
+				} else {
+					<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, prepHref(d.Active.ID)+"&add=1")) }>
+						@icons.Icon("plus", 14)
+						Add meal to session
+					</a>
+				}
+			</div>
+		</div>
+		if len(d.Aggregate) > 0 {
+			<div>
+				<div class="overline" style="letter-spacing: .08em; margin-bottom: 8px;">
+					Aggregate ingredients — { view.Itoa(len(d.Aggregate)) } items
+				</div>
+				<div class="card card-flush">
+					for _, ing := range d.Aggregate {
+						<div class="flex justify-between items-center g-item" style="padding: 11px 14px;">
+							<span style="font-size: 14px; color: var(--ink);">{ ing.Name }</span>
+							@UnitTagStatic(ing.Amount, ing.Unit, true)
+						</div>
+					}
+				</div>
+			</div>
+		}
+		if len(d.Active.Meals) > 0 {
+			<div>
+				<div class="overline" style="letter-spacing: .08em; margin-bottom: 8px;">Per-meal breakdown</div>
+				<div class="flex flex-col" style="gap: 8px;">
+					for _, m := range d.Active.Meals {
+						<details class="card card-flush">
+							<summary class="flex items-center" style="gap: 10px; padding: 12px 14px; user-select: none;">
+								<span class="chev" style="color: var(--fg-3); display: flex;">
+									@icons.Icon("chevron-right", 14)
+								</span>
+								<span class="flex-1" style="font-weight: 700; font-size: 14px; color: var(--ink);">{ m.Recipe.Name }</span>
+								<span class="tnum" style="font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); font-weight: 600;">×{ view.Itoa(m.Servings) } servings · { view.Itoa(len(m.Breakdown)) } ingredients</span>
+							</summary>
+							<div style="border-top: 1px solid var(--line);">
+								for _, ing := range m.Breakdown {
+									<div class="flex justify-between items-center" style="padding: 8px 14px 8px 38px; border-bottom: 1px solid var(--line); background: var(--surface);">
+										<span style="font-size: 13px; color: var(--fg-2);">{ ing.Name }</span>
+										@UnitTagStatic(ing.Amount, ing.Unit, true)
+									</div>
+								}
+								if len(m.Recipe.Steps) > 0 {
+									<div style="padding: 10px 14px 10px 38px; background: var(--surface);">
+										<div class="overline" style="font-size: 9px; margin-bottom: 6px;">Steps</div>
+										for i, s := range m.Recipe.Steps {
+											<div class="flex" style="gap: 8px; margin-bottom: 5px;">
+												<span class="step-num" style="font-size: 10px; min-width: 18px;">{ view.Itoa(i+1) }.</span>
+												<span style="font-size: 13px; color: var(--fg-2); line-height: 1.5;">{ s }</span>
+											</div>
+										}
+									</div>
+								}
+							</div>
+						</details>
+					}
+				</div>
+			</div>
+		}
+	</div>
+}
+
+templ prepAddRecipeRow(d PrepData, recipeID string, name string, alreadyIn bool) {
+	if alreadyIn {
+		<div class="flex items-center" style="gap: 8px; padding: 8px 10px; border-radius: var(--radius-sm); opacity: .45; background: var(--surface);">
+			<span class="flex-1" style="font-weight: 600; font-size: 13px; color: var(--ink);">{ name }</span>
+			@layout.TagAccent("Added")
+		</div>
+	} else {
+		<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/meals?recipe="+recipeID)) } style="display: contents;">
+			<button type="submit" class="flex items-center" style="gap: 8px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface); border: none; cursor: pointer; width: 100%; text-align: left;">
+				<span class="flex-1" style="font-weight: 600; font-size: 13px; color: var(--ink);">{ name }</span>
+				<span style="color: var(--fg-3); display: flex;">
+					@icons.Icon("plus", 14)
+				</span>
+			</button>
+		</form>
+	}
+}
+
+func prepAlreadyIn(d PrepData, recipeID string) bool {
+	if d.Active == nil {
+		return false
+	}
+	for _, m := range d.Active.Meals {
+		if m.Recipe.ID.String() == recipeID {
+			return true
+		}
+	}
+	return false
+}

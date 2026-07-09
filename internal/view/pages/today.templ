@@ -1,0 +1,67 @@
+package pages
+
+import (
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/icons"
+	"mealplanner/internal/view/layout"
+)
+
+// Today renders the Today screen.
+templ Today(d TodayData) {
+	@layout.Shell("Today — Backbone Plate", "today", d.Member) {
+		@layout.PageHeader("Today", d.DateLabel) {
+			<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/meals/new?date="+d.Date+"&return=/today")) }>
+				@icons.Icon("plus", 14)
+				Add meal
+			</a>
+		}
+		<div class="page-pad flex-1 flex flex-col" style="gap: 10px;">
+			if len(d.Meals) == 0 {
+				@layout.Empty("sun", "Nothing planned today", "Add a meal to see it here.") {
+					<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/meals/new?date="+d.Date+"&return=/today")) }>
+						@icons.Icon("plus", 14)
+						Add a meal
+					</a>
+				}
+			}
+			for _, m := range d.Meals {
+				@todayMealRow(m)
+			}
+		</div>
+	}
+}
+
+templ todayMealRow(m MealVM) {
+	<div class={ "card card-flush meal-row", templ.KV("past", m.IsPast), templ.KV("next", m.IsNext) }>
+		<div class="meal-time">{ m.Meal.Time }</div>
+		<a class="meal-link" href={ templ.URL(view.Href(ctx, "/recipes/"+m.Meal.RecipeID.String())) }>
+			<div class="flex-1 min-w-0">
+				<div class="meal-name">{ m.Recipe.Name }</div>
+				<div style="margin-top: 5px;">
+					@RecipeTags(m.Recipe.Tags, 3)
+				</div>
+			</div>
+			<div class="text-right flex-none">
+				<div class="tnum" style="font-size: 13px; color: var(--fg-3);">
+					{ view.Itoa(m.Meal.Servings) } { view.Plural(m.Meal.Servings, "serving", "servings") }
+				</div>
+				if m.Recipe.PrepTime+m.Recipe.CookTime > 0 {
+					<div class="overline" style="font-size: 10px; color: var(--fg-4); letter-spacing: .04em; margin-top: 2px;">
+						{ view.Itoa(m.Recipe.PrepTime + m.Recipe.CookTime) } min
+					</div>
+				}
+			</div>
+			<span class="flex-none" style="color: var(--fg-4);">
+				@icons.Icon("chevron-right", 15)
+			</span>
+		</a>
+		if m.IsNext {
+			<div class="next-badge">Next</div>
+		}
+		<form method="post" action={ templ.URL(view.Href(ctx, "/meals/"+m.Meal.ID.String()+"/delete?return=/today")) } style="display: contents;">
+			<button type="submit" class="row-del" title="Remove from plan">
+				@icons.Icon("trash-2", 14)
+			</button>
+		</form>
+	</div>
+}

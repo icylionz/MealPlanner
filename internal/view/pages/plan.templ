@@ -1,0 +1,213 @@
+package pages
+
+import (
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/icons"
+	"mealplanner/internal/view/layout"
+)
+
+func planHref(date string, layout string) string {
+	u := "/plan?date=" + date
+	if layout == "calendar" {
+		u += "&layout=calendar"
+	}
+	return u
+}
+
+// Plan renders the Plan screen: mini calendar + week list on the left,
+// selected-day list (or week grid) on the right.
+templ Plan(d PlanData) {
+	@layout.Shell("Plan — Backbone Plate", "plan", d.Member) {
+		@layout.PageHeader("Plan", "Meal plan") {
+			<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/meals/new?date="+d.SelectedDate+"&return="+planHref(d.SelectedDate, d.Layout))) }>
+				@icons.Icon("plus", 14)
+				Add meal
+			</a>
+		}
+		@dateStrip(d)
+		<div class="flex-1 flex overflow-hidden">
+			<div class="plan-side side-panel" style="width: 240px; padding: 16px 14px;">
+				@miniCalendar(d)
+				<div style="margin-top: 16px;">
+					<div class="overline" style="margin-bottom: 8px;">This week</div>
+					for _, day := range d.WeekDays {
+						<a
+							href={ templ.URL(view.Href(ctx, planHref(day.Date, d.Layout))) }
+							class={ "side-row", templ.KV("active", day.IsSel) }
+							style="padding: 7px 8px; gap: 8px;"
+						>
+							<span style={ "min-width: 28px; font-weight: " + weekDayWeight(day) + ";" }>{ day.DayAbbr }</span>
+							<span class="tnum flex-1" style="font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--fg-4);">{ day.DayNum }</span>
+							if day.MealCount > 0 {
+								<span style="font-family: var(--font-mono); font-size: 10px; font-weight: 600;">{ view.Itoa(day.MealCount) }</span>
+							}
+						</a>
+					}
+				</div>
+			</div>
+			<div class="flex-1 overflow-y-auto">
+				if d.Layout == "calendar" {
+					@weekGrid(d)
+				} else {
+					@planDayList(d)
+				}
+			</div>
+		</div>
+	}
+}
+
+func weekDayWeight(day PlanDay) string {
+	if day.IsToday {
+		return "700"
+	}
+	return "500"
+}
+
+templ dateStrip(d PlanData) {
+	<div class="date-strip">
+		for _, day := range d.WeekDays {
+			<a
+				href={ templ.URL(view.Href(ctx, planHref(day.Date, d.Layout))) }
+				class={ "date-strip-day", templ.KV("today", day.IsToday && !day.IsSel), templ.KV("selected", day.IsSel) }
+			>
+				<span style="font-family: var(--font-mono); font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; opacity: .8;">{ day.DayAbbr[:1] }</span>
+				<span style="font-family: var(--font-display); font-weight: 700; font-size: 18px; line-height: 1.15;">{ day.DayNum }</span>
+				if day.MealCount > 0 {
+					<span class="mini-cal-dot" style="margin-top: 1px; opacity: 1;"></span>
+				} else {
+					<span style="width: 4px; height: 4px; margin-top: 1px;"></span>
+				}
+			</a>
+		}
+	</div>
+}
+
+templ miniCalendar(d PlanData) {
+	<div>
+		<div class="flex items-center justify-between" style="margin-bottom: 10px;">
+			<a href={ templ.URL(view.Href(ctx, "/plan?date="+d.SelectedDate+"&month="+d.PrevMonth+layoutParam(d.Layout))) } class="icon-btn" style="padding: 4px;">
+				@icons.Icon("chevron-left", 15)
+			</a>
+			<span style="font-weight: 600; font-size: 13px; color: var(--ink);">{ d.MonthLabel }</span>
+			<a href={ templ.URL(view.Href(ctx, "/plan?date="+d.SelectedDate+"&month="+d.NextMonth+layoutParam(d.Layout))) } class="icon-btn" style="padding: 4px;">
+				@icons.Icon("chevron-right", 15)
+			</a>
+		</div>
+		<div class="mini-cal-grid">
+			for _, dow := range []string{"M", "T", "W", "T", "F", "S", "S"} {
+				<div class="mini-cal-dow">{ dow }</div>
+			}
+			for _, c := range d.CalCells {
+				if c.Date == "" {
+					<div></div>
+				} else {
+					<a
+						href={ templ.URL(view.Href(ctx, planHref(c.Date, d.Layout))) }
+						class={ "mini-cal-day tnum", templ.KV("today", c.IsToday && !c.IsSel), templ.KV("selected", c.IsSel) }
+					>
+						{ c.DayNum }
+						if c.HasMeals && !c.IsSel {
+							<span class="mini-cal-dot"></span>
+						}
+					</a>
+				}
+			}
+		</div>
+	</div>
+}
+
+func layoutParam(layout string) string {
+	if layout == "calendar" {
+		return "&layout=calendar"
+	}
+	return ""
+}
+
+templ planDayList(d PlanData) {
+	<div style="padding: 20px 28px;" class="page-pad">
+		<div class="flex items-center justify-between" style="margin-bottom: 16px;">
+			<div class="flex items-center" style="gap: 8px;">
+				<span style="font-family: var(--font-display); font-weight: 700; font-size: 22px; color: var(--ink);">{ d.SelectedLabel }</span>
+				if d.IsSelToday {
+					@layout.TagAccent("Today")
+				}
+			</div>
+			<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/meals/new?date="+d.SelectedDate+"&return="+planHref(d.SelectedDate, d.Layout))) }>
+				@icons.Icon("plus", 14)
+				Add meal
+			</a>
+		</div>
+		if len(d.DayMeals) == 0 {
+			@layout.Empty("calendar", "No meals planned", "Nothing scheduled for this day.") {
+				<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/meals/new?date="+d.SelectedDate+"&return="+planHref(d.SelectedDate, d.Layout))) }>
+					@icons.Icon("plus", 14)
+					Add a meal
+				</a>
+			}
+		} else {
+			<div class="flex flex-col" style="gap: 8px;">
+				for _, m := range d.DayMeals {
+					<div class="card card-flush meal-row">
+						<div class="meal-time" style="padding: 12px 14px; min-width: 64px; font-size: 14px;">{ m.Meal.Time }</div>
+						<a class="meal-link" style="padding: 12px 14px; gap: 10px;" href={ templ.URL(view.Href(ctx, "/recipes/"+m.Meal.RecipeID.String())) }>
+							<div class="flex-1 min-w-0">
+								<div class="meal-name" style="font-size: 14px;">{ m.Recipe.Name }</div>
+								<div style="margin-top: 4px;">
+									@RecipeTags(m.Recipe.Tags, 3)
+								</div>
+							</div>
+							<div style="font-size: 13px; color: var(--fg-3); white-space: nowrap;">{ view.Itoa(m.Meal.Servings) } srv</div>
+							<span class="flex-none" style="color: var(--fg-4);">
+								@icons.Icon("chevron-right", 14)
+							</span>
+						</a>
+						<form method="post" action={ templ.URL(view.Href(ctx, "/meals/"+m.Meal.ID.String()+"/delete?return="+planHref(d.SelectedDate, d.Layout))) } style="display: contents;">
+							<button type="submit" class="row-del" style="padding: 12px;" title="Remove from plan">
+								@icons.Icon("trash-2", 13)
+							</button>
+						</form>
+					</div>
+				}
+			</div>
+		}
+	</div>
+}
+
+templ weekGrid(d PlanData) {
+	<div class="week-grid">
+		for _, day := range d.WeekDays {
+			<div class={ "week-col", templ.KV("selected", day.IsSel) }>
+				<div class={ "week-col-head", templ.KV("today", day.IsToday) }>
+					<div class="overline" style={ "font-size: 10px; letter-spacing: .06em; color: " + weekHeadSubColor(day) + ";" }>{ day.DayAbbr }</div>
+					<div class="tnum" style={ "font-family: var(--font-display); font-weight: 700; font-size: 16px; color: " + weekHeadColor(day) + ";" }>{ day.DayNum }</div>
+				</div>
+				<div class="flex-1 flex flex-col overflow-y-auto" style="padding: 8px 6px; gap: 5px;">
+					for _, m := range d.WeekMeals[day.Date] {
+						<a class="week-meal" href={ templ.URL(view.Href(ctx, "/recipes/"+m.Meal.RecipeID.String())) }>
+							<div class="tnum" style="font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: var(--accent); letter-spacing: .04em;">{ m.Meal.Time }</div>
+							<div style="font-weight: 600; font-size: 12px; color: var(--ink); margin-top: 2px; line-height: 1.3;">{ m.Recipe.Name }</div>
+							<div style="font-family: var(--font-mono); font-size: 9px; color: var(--fg-3); margin-top: 3px; text-transform: uppercase; letter-spacing: .04em;">{ view.Itoa(m.Meal.Servings) } srv</div>
+						</a>
+					}
+					<a class="week-add" href={ templ.URL(view.Href(ctx, "/meals/new?date="+day.Date+"&return="+planHref(day.Date, d.Layout))) }>
+						@icons.Icon("plus", 13)
+					</a>
+				</div>
+			</div>
+		}
+	</div>
+}
+
+func weekHeadColor(day PlanDay) string {
+	if day.IsToday {
+		return "var(--accent)"
+	}
+	return "var(--ink)"
+}
+
+func weekHeadSubColor(day PlanDay) string {
+	if day.IsToday {
+		return "var(--accent)"
+	}
+	return "var(--fg-3)"
+}

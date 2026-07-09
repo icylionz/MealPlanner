@@ -1,0 +1,223 @@
+package pages
+
+import (
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/icons"
+	"mealplanner/internal/view/layout"
+)
+
+func editTitle(d RecipeEditData) string {
+	if d.IsNew {
+		return "New recipe"
+	}
+	if d.Name == "" {
+		return "Edit: Untitled"
+	}
+	return "Edit: " + d.Name
+}
+
+func cancelHref(d RecipeEditData) string {
+	if d.IsNew {
+		return "/foods"
+	}
+	return "/recipes/" + d.RecipeID
+}
+
+// RecipeEdit renders the recipe editor. Every structural change (add/remove
+// row, pick sub-recipe) posts the whole form back with an `action` value and
+// re-renders, so the editor works without JavaScript.
+templ RecipeEdit(d RecipeEditData) {
+	@layout.Shell(editTitle(d)+" — Backbone Plate", "foods", d.Member) {
+		<form method="post" action={ templ.URL(view.Href(ctx, d.Action)) } class="flex flex-col flex-1 min-h-0">
+			@layout.PageHeaderBack("/foods", "Foods & recipes", editTitle(d)) {
+				<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, cancelHref(d))) }>Cancel</a>
+				<button type="submit" name="action" value="save" class="btn btn-sm">
+					@icons.Icon("check", 14)
+					Save recipe
+				</button>
+			}
+			<div class="page-pad flex-1" style="max-width: 680px;">
+				if d.Error != "" {
+					<div class="flex items-center" style="gap: 6px; color: var(--danger); background: var(--danger-tint); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 13px; margin-bottom: 16px;">
+						@icons.Icon("alert-circle", 14)
+						{ d.Error }
+					</div>
+				}
+				<div style="margin-bottom: 20px;">
+					@FieldLabel("Name")
+					<input class="input" name="name" value={ d.Name } placeholder="Recipe name"/>
+				</div>
+				<div style="margin-bottom: 20px;">
+					@FieldLabel("Description")
+					<textarea class="textarea" name="description" placeholder="Optional short description">{ d.Description }</textarea>
+				</div>
+				<div class="flex" style="gap: 12px; margin-bottom: 20px;">
+					<div class="flex-1">
+						@FieldLabel("Prep time (min)")
+						<input class="input input-sm" type="number" min="0" name="prep" value={ d.PrepTime }/>
+					</div>
+					<div class="flex-1">
+						@FieldLabel("Cook time (min)")
+						<input class="input input-sm" type="number" min="0" name="cook" value={ d.CookTime }/>
+					</div>
+					<div class="flex-1">
+						@FieldLabel("Servings")
+						<input class="input input-sm" type="number" min="1" name="servings" value={ d.Servings }/>
+					</div>
+				</div>
+				<div style="margin-bottom: 20px;">
+					@FieldLabel("Tags")
+					<div class="flex flex-wrap" style="gap: 6px; margin-bottom: 8px;">
+						for _, t := range d.Tags {
+							<span class="tag tag-accent" style="gap: 5px; padding: 4px 8px;">
+								<input type="hidden" name="tags" value={ t }/>
+								{ t }
+								<button type="submit" name="action" value={ "remove-tag:" + t } class="icon-btn" style="color: var(--accent); padding: 0;" title="Remove tag">
+									@icons.Icon("x", 10)
+								</button>
+							</span>
+						}
+					</div>
+					<div class="flex" style="gap: 6px;">
+						<input class="input input-sm" name="tag_input" placeholder="Add tag…" style="max-width: 180px;"/>
+						<button type="submit" name="action" value="add-tag" class="btn btn-secondary btn-xs">Add</button>
+					</div>
+				</div>
+				<div style="margin-bottom: 20px;">
+					@FieldLabel("Ingredients")
+					<div class="flex flex-col" style="gap: 6px;">
+						for i, ing := range d.Ingredients {
+							@ingredientEditRow(d, i, ing)
+						}
+						<div>
+							<button type="submit" name="action" value="add-ingredient" class="btn btn-secondary btn-sm">
+								@icons.Icon("plus", 14)
+								Add ingredient
+							</button>
+						</div>
+					</div>
+				</div>
+				<div style="margin-bottom: 24px;">
+					@FieldLabel("Steps")
+					<div class="flex flex-col" style="gap: 6px;">
+						for i, s := range d.Steps {
+							<div class="flex items-start" style="gap: 8px;">
+								<span class="step-num" style="padding-top: 10px;">{ stepNum(i) }</span>
+								<textarea class="textarea flex-1" name="steps" placeholder={ "Step " + view.Itoa(i+1) + "…" } style="min-height: 56px; font-size: 13px;">{ s }</textarea>
+								<button type="submit" name="action" value={ "remove-step:" + view.Itoa(i) } class="icon-btn icon-btn-danger" style="padding: 8px 4px;" title="Remove step">
+									@icons.Icon("trash-2", 14)
+								</button>
+							</div>
+						}
+						<div>
+							<button type="submit" name="action" value="add-step" class="btn btn-secondary btn-sm">
+								@icons.Icon("plus", 14)
+								Add step
+							</button>
+						</div>
+					</div>
+				</div>
+			</div>
+			if d.PickerFor >= 0 {
+				@subRecipePicker(d)
+			}
+		</form>
+	}
+}
+
+templ ingredientEditRow(d RecipeEditData, i int, ing LineForm) {
+	<div class="ing-edit-row">
+		<input type="hidden" name="ing_isrecipe" value={ boolStr(ing.IsRecipe) }/>
+		<input type="hidden" name="ing_subid" value={ ing.SubRecipeID }/>
+		<div style="flex: 2; min-width: 0;">
+			if ing.IsRecipe {
+				<input type="hidden" name="ing_name" value={ ing.Name }/>
+				<button type="submit" name="action" value={ "pick-sub:" + view.Itoa(i) } class="subrecipe-pick">
+					@icons.Icon("layers", 13)
+					if ing.SubName != "" {
+						{ ing.SubName }
+					} else {
+						Pick recipe…
+					}
+				</button>
+			} else {
+				<input class="input input-sm" name="ing_name" value={ ing.Name } placeholder="Ingredient name"/>
+			}
+		</div>
+		<input class="input input-sm" type="number" step="any" min="0" name="ing_amount" value={ ing.Amount } style="width: 72px;"/>
+		<select class="select input-sm" name="ing_unit" style="width: 80px;">
+			for _, u := range d.Units {
+				<option value={ u } selected?={ ing.Unit == u }>{ u }</option>
+			}
+		</select>
+		<button
+			type="submit"
+			name="action"
+			value={ "toggle-recipe:" + view.Itoa(i) }
+			class="icon-btn"
+			style={ toggleColor(ing.IsRecipe) }
+			title={ toggleTitle(ing.IsRecipe) }
+		>
+			@icons.Icon("layers", 14)
+		</button>
+		<button type="submit" name="action" value={ "remove-ingredient:" + view.Itoa(i) } class="icon-btn icon-btn-danger" style="padding: 4px;" title="Remove ingredient">
+			@icons.Icon("trash-2", 14)
+		</button>
+	</div>
+}
+
+func boolStr(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
+}
+
+func toggleColor(isRecipe bool) string {
+	if isRecipe {
+		return "padding: 4px; color: var(--accent);"
+	}
+	return "padding: 4px; color: var(--fg-3);"
+}
+
+func toggleTitle(isRecipe bool) string {
+	if isRecipe {
+		return "Switch to raw ingredient"
+	}
+	return "Use sub-recipe"
+}
+
+templ subRecipePicker(d RecipeEditData) {
+	<div style="position: fixed; inset: 0; z-index: 500; display: flex; align-items: center; justify-content: center; background: rgba(20,22,26,.45); padding: 16px;">
+		<div class="modal-card" style="width: 380px;">
+			<div class="modal-head">
+				<span class="modal-title">Pick a sub-recipe</span>
+				<button type="submit" name="action" value="cancel-pick" class="modal-close icon-btn">
+					@icons.Icon("x", 15)
+				</button>
+			</div>
+			<div class="modal-body">
+				<div class="flex flex-col" style="gap: 4px;">
+					for _, r := range d.AllRecipes {
+						if r.ID.String() != d.RecipeID {
+							<button
+								type="submit"
+								name="action"
+								value={ "pick-sub-set:" + view.Itoa(d.PickerFor) + ":" + r.ID.String() }
+								class="pick-row"
+								style="border: 1px solid var(--line); border-radius: var(--radius-sm); background: transparent; width: 100%; text-align: left; padding: 10px 12px;"
+							>
+								<div class="flex-1 min-w-0">
+									<div class="pick-name" style="font-size: 14px;">{ r.Name }</div>
+									<div style="margin-top: 3px;">
+										@RecipeTags(r.Tags, 3)
+									</div>
+								</div>
+							</button>
+						}
+					}
+				</div>
+			</div>
+		</div>
+	</div>
+}

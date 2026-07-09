@@ -1,0 +1,76 @@
+package pages
+
+import (
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/icons"
+	"mealplanner/internal/view/layout"
+)
+
+// AddMeal renders the add-meal modal page (prototype: AddMealModal).
+templ AddMeal(d AddMealData) {
+	@layout.ModalPage("Add meal", "Add meal — Backbone Plate", d.Active, d.Member, d.ReturnTo) {
+		<form method="post" action={ templ.URL(view.Href(ctx, "/meals")) }>
+			<input type="hidden" name="return" value={ d.ReturnTo }/>
+			<div class="modal-body">
+				<div class="flex flex-col" style="gap: 14px;">
+					<div class="flex" style="gap: 10px;">
+						<div class="flex-1">
+							@FieldLabel("Date")
+							<input class="input" type="date" name="date" value={ d.Date }/>
+						</div>
+						<div class="flex-1">
+							@FieldLabel("Time (24h)")
+							<input class="input" type="time" name="time" value={ d.Time }/>
+						</div>
+					</div>
+					<div>
+						@FieldLabel("Servings")
+						<input class="input" type="number" name="servings" min="1" value={ view.Itoa(d.Servings) } style="max-width: 110px;"/>
+					</div>
+					<div>
+						@FieldLabel("Recipe")
+						<div class="flex" style="gap: 6px;">
+							<input class="input input-sm" type="search" name="q" value={ d.Search } placeholder="Search recipes…"/>
+							<button type="submit" formmethod="get" formaction={ templ.URL(view.Href(ctx, "/meals/new")) } class="btn btn-secondary btn-sm">
+								@icons.Icon("search", 13)
+							</button>
+						</div>
+						<div class="pick-list" style="margin-top: 6px; max-height: 200px;">
+							for _, r := range d.Recipes {
+								<label class="pick-row" style="padding: 10px 12px;">
+									<input type="radio" name="recipe" value={ r.ID.String() } checked?={ d.Selected == r.ID.String() } required/>
+									<span class="pick-check">
+										@icons.Icon("check", 14)
+									</span>
+									<div class="flex-1 min-w-0">
+										<div class="pick-name" style="font-size: 14px;">{ r.Name }</div>
+										<div style="margin-top: 3px;">
+											@RecipeTags(r.Tags, 3)
+										</div>
+									</div>
+								</label>
+							}
+							if len(d.Recipes) == 0 {
+								<div style="padding: 14px 12px; font-size: 13px; color: var(--fg-3); text-align: center;">No recipes match.</div>
+							}
+						</div>
+					</div>
+					if d.SelectedRecipe != nil {
+						<div class="flex" style="background: var(--surface); border-radius: var(--radius); padding: 10px 12px; gap: 12px;">
+							<div class="flex-1">
+								<div style="font-weight: 600; font-size: 13px; color: var(--ink);">{ d.SelectedRecipe.Name }</div>
+								<div class="overline" style="letter-spacing: .05em; margin-top: 2px;">
+									{ view.Itoa(d.SelectedRecipe.PrepTime + d.SelectedRecipe.CookTime) } min · serves { view.Itoa(d.SelectedRecipe.Servings) }
+								</div>
+							</div>
+						</div>
+					}
+				</div>
+			</div>
+			<div class="modal-foot">
+				<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, d.ReturnTo)) }>Cancel</a>
+				<button type="submit" class="btn btn-sm">Add to plan</button>
+			</div>
+		</form>
+	}
+}

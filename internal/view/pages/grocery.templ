@@ -1,0 +1,135 @@
+package pages
+
+import (
+	"mealplanner/internal/grocery"
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/icons"
+	"mealplanner/internal/view/layout"
+)
+
+func groceryHref(listID string) string {
+	if listID == "" {
+		return "/grocery"
+	}
+	return "/grocery?list=" + listID
+}
+
+// Grocery renders the grocery lists screen.
+templ Grocery(d GroceryData) {
+	@layout.Shell("Grocery — Backbone Plate", "grocery", d.Member) {
+		@layout.PageHeader("Grocery", "Grocery lists") {
+			<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/lists")) }>
+				<button type="submit" class="btn btn-secondary btn-sm">
+					@icons.Icon("plus", 14)
+					New list
+				</button>
+			</form>
+		}
+		if len(d.Lists) > 1 {
+			<div class="date-strip" style="gap: 6px; padding: 8px 14px;">
+				for _, l := range d.Lists {
+					<a href={ templ.URL(view.Href(ctx, groceryHref(l.ID.String()))) } class={ "chip flex-none", templ.KV("active", d.Active != nil && l.ID == d.Active.ID) } style="font-size: 13px; padding: 6px 14px;">{ l.Name }</a>
+				}
+			</div>
+		}
+		<div class="flex-1 flex overflow-hidden">
+			if len(d.Lists) > 1 {
+				<div class="side-panel plan-side">
+					<div class="overline" style="padding: 2px 6px; margin-bottom: 6px;">Lists</div>
+					for _, l := range d.Lists {
+						<a href={ templ.URL(view.Href(ctx, groceryHref(l.ID.String()))) } class={ "side-row", templ.KV("active", d.Active != nil && l.ID == d.Active.ID) }>
+							@icons.Icon("list", 14)
+							<span class="flex-1" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{ l.Name }</span>
+							<span class="tnum" style="font-family: var(--font-mono); font-size: 10px; color: var(--fg-4);">{ view.Itoa(l.UncheckedCount()) }</span>
+						</a>
+					}
+				</div>
+			}
+			<div class="flex-1 overflow-y-auto page-pad" style="padding: 20px 28px;">
+				if d.Active == nil {
+					@layout.Empty("cart", "No grocery lists", "Create a list or generate one from your meal plan.") {
+						<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/lists")) }>
+							<button type="submit" class="btn btn-sm">
+								@icons.Icon("plus", 14)
+								New list
+							</button>
+						</form>
+					}
+				} else {
+					@groceryListDetail(d, *d.Active, len(d.Lists))
+				}
+			</div>
+		</div>
+	}
+}
+
+templ groceryListDetail(d GroceryData, l grocery.List, listCount int) {
+	<div class="flex items-center flex-wrap" style="gap: 10px; margin-bottom: 16px;">
+		if d.Renaming {
+			<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/lists/"+l.ID.String()+"/rename")) } class="flex items-center flex-1" style="gap: 6px;">
+				<input class="input input-sm" name="name" value={ l.Name } autofocus style="max-width: 240px;"/>
+				<button type="submit" class="btn btn-xs">Save</button>
+				<a class="btn btn-ghost btn-xs" href={ templ.URL(view.Href(ctx, groceryHref(l.ID.String()))) }>Cancel</a>
+			</form>
+		} else {
+			<h2 style="font-family: var(--font-display); font-weight: 700; font-size: 22px; color: var(--ink); margin: 0;">{ l.Name }</h2>
+			<a href={ templ.URL(view.Href(ctx, groceryHref(l.ID.String())+"&rename=1")) } class="icon-btn" title="Rename list">
+				@icons.Icon("pencil", 13)
+			</a>
+		}
+		<span class="tnum" style="font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); font-weight: 600; margin-left: 4px;">
+			{ view.Itoa(l.CheckedCount()) }/{ view.Itoa(len(l.Items)) } checked
+		</span>
+		<div class="flex" style="margin-left: auto; gap: 6px;">
+			if l.CheckedCount() > 0 {
+				<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/lists/"+l.ID.String()+"/clear-checked")) }>
+					<button type="submit" class="btn btn-ghost btn-xs">Clear checked</button>
+				</form>
+			}
+			if listCount > 1 {
+				<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/lists/"+l.ID.String()+"/delete")) }>
+					<button type="submit" class="btn btn-danger btn-xs">
+						@icons.Icon("trash-2", 12)
+						Delete list
+					</button>
+				</form>
+			}
+		</div>
+	</div>
+	if len(l.Items) > 0 {
+		<div class="progress-track" style="margin-bottom: 16px;">
+			<div class="progress-bar" style={ "width: " + view.Itoa(l.CheckedCount()*100/len(l.Items)) + "%;" }></div>
+		</div>
+	}
+	<div class="card card-flush" style="margin-bottom: 16px; border-radius: var(--radius-lg); overflow: hidden;">
+		if len(l.Items) == 0 {
+			<div style="padding: 14px 16px; font-size: 13px; color: var(--fg-4); text-align: center;">No items yet.</div>
+		}
+		for _, item := range l.Items {
+			@groceryItemRow(l.ID.String(), item)
+		}
+	</div>
+	<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/grocery/generate?list="+l.ID.String())) }>
+		@icons.Icon("layers", 14)
+		Add ingredients
+	</a>
+}
+
+templ groceryItemRow(listID string, item grocery.Item) {
+	<div class={ "g-item", templ.KV("checked", item.Checked) }>
+		<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/items/"+item.ID.String()+"/toggle?list="+listID)) } style="display: contents;">
+			<button type="submit" class={ "g-check", templ.KV("checked", item.Checked) } title="Toggle">
+				if item.Checked {
+					@icons.Icon("check", 11)
+				}
+			</button>
+		</form>
+		<span class="g-name">{ item.Name }</span>
+		@UnitTagForm(item.Amount, item.Unit, true, ConvertOptionsFor(item.Amount, item.Unit), "/grocery/items/"+item.ID.String()+"/convert?list="+listID)
+		<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/items/"+item.ID.String()+"/delete?list="+listID)) } style="display: contents;">
+			<button type="submit" class="icon-btn icon-btn-danger" title="Delete item">
+				@icons.Icon("trash-2", 13)
+			</button>
+		</form>
+	</div>
+}

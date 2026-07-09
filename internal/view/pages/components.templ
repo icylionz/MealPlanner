@@ -1,0 +1,84 @@
+package pages
+
+import (
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/icons"
+)
+
+// UnitTagStatic renders amount + unit without conversion affordance.
+templ UnitTagStatic(amount float64, unit string, small bool) {
+	<span class="unit-tag">
+		<span class={ "unit-amount", templ.KV("unit-amount-sm", small) }>{ FormatAmount(amount) }</span>
+		<span class={ "unit-name", templ.KV("unit-name-sm", small) }>{ unit }</span>
+	</span>
+}
+
+// UnitTagLinks renders a unit popover whose options are plain links (used for
+// display-only conversion on the recipe detail screen).
+templ UnitTagLinks(amount float64, unit string, small bool, options []ConvertOption, hrefFor func(string) string) {
+	if len(options) == 0 {
+		@UnitTagStatic(amount, unit, small)
+	} else {
+		<details class="unit-tag">
+			<span class={ "unit-amount", templ.KV("unit-amount-sm", small) }>{ FormatAmount(amount) }</span>
+			<summary class={ "unit-name", templ.KV("unit-name-sm", small) } title="Convert unit">{ unit }</summary>
+			<div class="unit-menu">
+				<div class="unit-menu-label">Convert to</div>
+				for _, o := range options {
+					<a href={ templ.URL(view.Href(ctx, hrefFor(o.Unit))) } class="unit-menu-item">
+						<span class="u">{ o.Unit }</span>
+						<span class="v">{ FormatAmount(o.Amount) }</span>
+					</a>
+				}
+			</div>
+		</details>
+	}
+}
+
+// UnitTagForm renders a unit popover whose options POST a persistent
+// conversion (used for grocery items).
+templ UnitTagForm(amount float64, unit string, small bool, options []ConvertOption, action string) {
+	if len(options) == 0 {
+		@UnitTagStatic(amount, unit, small)
+	} else {
+		<details class="unit-tag">
+			<span class={ "unit-amount", templ.KV("unit-amount-sm", small) }>{ FormatAmount(amount) }</span>
+			<summary class={ "unit-name", templ.KV("unit-name-sm", small) } title="Convert unit">{ unit }</summary>
+			<div class="unit-menu">
+				<div class="unit-menu-label">Convert to</div>
+				<form method="post" action={ templ.URL(view.Href(ctx, action)) }>
+					for _, o := range options {
+						<button type="submit" name="unit" value={ o.Unit } class="unit-menu-item">
+							<span class="u">{ o.Unit }</span>
+							<span class="v">{ FormatAmount(o.Amount) }</span>
+						</button>
+					}
+				</form>
+			</div>
+		</details>
+	}
+}
+
+// RecipeTags renders up to max recipe tags.
+templ RecipeTags(tags []string, max int) {
+	<div class="flex flex-wrap" style="gap: 5px;">
+		for i, t := range tags {
+			if i < max {
+				<span class="tag">{ t }</span>
+			}
+		}
+	</div>
+}
+
+// FieldLabel renders the mono uppercase field label.
+templ FieldLabel(label string) {
+	<span class="field-label">{ label }</span>
+}
+
+// SearchInput renders a search field with the leading icon.
+templ SearchInput(name string, value string, placeholder string) {
+	<div class="search-wrap flex-1" style="max-width: 320px;">
+		@icons.Icon("search", 14)
+		<input class="input input-sm" type="search" name={ name } value={ value } placeholder={ placeholder }/>
+	</div>
+}

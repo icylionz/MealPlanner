@@ -1,0 +1,171 @@
+package pages
+
+import (
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/icons"
+	"mealplanner/internal/view/layout"
+)
+
+func genModeHref(d GroceryGenData, mode string) string {
+	return "/grocery/generate?list=" + d.ListID + "&mode=" + mode
+}
+
+// GroceryGenerate renders the add-ingredients modal page (prototype:
+// GenerateGroceryModal). All state lives in the query string; Preview posts
+// GET with fields, Add ingredients POSTs the commit.
+templ GroceryGenerate(d GroceryGenData) {
+	@layout.ModalPage("Add ingredients to list", "Add ingredients — Backbone Plate", "grocery", d.Member, "/grocery?list="+d.ListID) {
+		<form method="get" action={ templ.URL(view.Href(ctx, "/grocery/generate")) }>
+			<input type="hidden" name="list" value={ d.ListID }/>
+			<input type="hidden" name="mode" value={ d.Mode }/>
+			<div class="modal-body">
+				<div class="flex flex-col" style="gap: 16px;">
+					<div>
+						<div class="overline" style="margin-bottom: 6px;">Source</div>
+						<div class="flex" style="border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden;">
+							@genModeTab(d, "planned-meal", "calendar", "Planned meal")
+							@genModeTab(d, "recipe", "utensils", "Food / recipe")
+							@genModeTab(d, "date-range", "list", "Date range")
+						</div>
+					</div>
+					if d.Mode == "planned-meal" {
+						<div>
+							<div class="overline" style="margin-bottom: 6px;">Pick a planned meal</div>
+							<div class="flex" style="gap: 6px; margin-bottom: 6px;">
+								<div class="search-wrap flex-1">
+									@icons.Icon("search", 13)
+									<input class="input input-sm" type="search" name="meal_q" value={ d.MealSearch } placeholder="Filter by recipe or date…"/>
+								</div>
+								<button type="submit" class="btn btn-secondary btn-sm" title="Filter">
+									@icons.Icon("search", 13)
+								</button>
+							</div>
+							<div class="pick-list">
+								if len(d.Meals) == 0 {
+									<div style="padding: 14px 12px; font-size: 13px; color: var(--fg-3); text-align: center;">No planned meals found.</div>
+								}
+								for _, m := range d.Meals {
+									<label class="pick-row">
+										<input type="radio" name="meal" value={ m.ID } checked?={ d.SelectedMeal == m.ID }/>
+										<span class="pick-check">
+											@icons.Icon("check-circle", 15)
+										</span>
+										<div class="flex-1 min-w-0">
+											<div class="pick-name">{ m.Recipe.Name }</div>
+											<div class="overline" style="font-size: 10px; letter-spacing: .05em; margin-top: 1px;">{ m.DayLabel } · { m.Time }</div>
+										</div>
+										<span class="tnum" style="font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); white-space: nowrap;">{ view.Itoa(m.Servings) } srv</span>
+									</label>
+								}
+							</div>
+						</div>
+					}
+					if d.Mode == "recipe" {
+						<div>
+							<div class="overline" style="margin-bottom: 6px;">Pick a food or recipe</div>
+							<div class="flex" style="gap: 6px; margin-bottom: 6px;">
+								<div class="search-wrap flex-1">
+									@icons.Icon("search", 13)
+									<input class="input input-sm" type="search" name="recipe_q" value={ d.RecipeSearch } placeholder="Search recipes…"/>
+								</div>
+								<button type="submit" class="btn btn-secondary btn-sm" title="Filter">
+									@icons.Icon("search", 13)
+								</button>
+							</div>
+							<div class="pick-list" style="max-height: 200px; margin-bottom: 10px;">
+								for _, r := range d.Recipes {
+									<label class="pick-row">
+										<input type="radio" name="recipe" value={ r.ID.String() } checked?={ d.SelectedRecipe == r.ID.String() }/>
+										<span class="pick-check">
+											@icons.Icon("check-circle", 15)
+										</span>
+										<div class="flex-1 min-w-0">
+											<div class="pick-name">{ r.Name }</div>
+											<div style="margin-top: 3px;">
+												@RecipeTags(r.Tags, 3)
+											</div>
+										</div>
+										<span class="overline" style="font-size: 10px; letter-spacing: .05em; white-space: nowrap;">serves { view.Itoa(r.Servings) }</span>
+									</label>
+								}
+							</div>
+							<div>
+								<div class="overline" style="margin-bottom: 6px;">Servings</div>
+								<input class="input input-sm" type="number" min="1" name="servings" value={ view.Itoa(d.RecipeServings) } style="max-width: 100px;"/>
+							</div>
+						</div>
+					}
+					if d.Mode == "date-range" {
+						<div class="flex" style="gap: 10px;">
+							<div class="flex-1">
+								<div class="overline" style="margin-bottom: 6px;">From</div>
+								<input class="input" type="date" name="from" value={ d.FromDate }/>
+							</div>
+							<div class="flex-1">
+								<div class="overline" style="margin-bottom: 6px;">To</div>
+								<input class="input" type="date" name="to" value={ d.ToDate }/>
+							</div>
+						</div>
+						if d.DateError {
+							<div class="flex items-center" style="font-size: 12px; color: var(--danger); gap: 5px;">
+								@icons.Icon("alert-circle", 13)
+								End date must be on or after start date.
+							</div>
+						}
+					}
+					if d.HasPreview {
+						<div>
+							<div class="overline" style="margin-bottom: 6px;">
+								Preview — { view.Itoa(len(d.Preview)) } { view.Plural(len(d.Preview), "item", "items") }
+							</div>
+							<div class="pick-list" style="max-height: 200px;">
+								if len(d.Preview) == 0 {
+									<div style="padding: 14px 12px; font-size: 13px; color: var(--fg-3); text-align: center;">No ingredients found for this selection.</div>
+								}
+								for _, item := range d.Preview {
+									<div class="flex justify-between items-center" style="padding: 8px 12px; border-bottom: 1px solid var(--line);">
+										<span style="font-size: 13px; color: var(--ink);">{ item.Name }</span>
+										<span class="tnum" style="font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--fg-2);">{ FormatAmount(item.Amount) } { item.Unit }</span>
+									</div>
+								}
+							</div>
+						</div>
+					}
+				</div>
+			</div>
+			<div class="modal-foot">
+				<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/grocery?list="+d.ListID)) }>Cancel</a>
+				if d.HasPreview {
+					<button type="submit" formmethod="post" formaction={ templ.URL(view.Href(ctx, "/grocery/generate")) } class="btn btn-sm">
+						@icons.Icon("plus", 14)
+						Add ingredients
+					</button>
+				} else {
+					<button type="submit" name="preview" value="1" class="btn btn-sm">
+						@icons.Icon("refresh", 14)
+						Preview
+					</button>
+				}
+			</div>
+		</form>
+	}
+}
+
+templ genModeTab(d GroceryGenData, mode string, icon string, label string) {
+	<a
+		href={ templ.URL(view.Href(ctx, genModeHref(d, mode))) }
+		class="flex-1 flex items-center justify-center"
+		style={ genTabStyle(d.Mode == mode) }
+	>
+		@icons.Icon(icon, 13)
+		{ label }
+	</a>
+}
+
+func genTabStyle(active bool) string {
+	base := "padding: 8px 6px; gap: 5px; font-weight: 600; font-size: 12px; border-right: 1px solid var(--line);"
+	if active {
+		return base + " background: var(--accent); color: #fff;"
+	}
+	return base + " background: var(--paper); color: var(--fg-2);"
+}

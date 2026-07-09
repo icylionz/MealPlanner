@@ -1,0 +1,207 @@
+package layout
+
+import (
+	"mealplanner/internal/households"
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/icons"
+)
+
+// Base is the HTML document wrapper.
+templ Base(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>{ title }</title>
+			<link rel="stylesheet" href={ templ.URL(view.Href(ctx, "/static/css/app.css")) }/>
+			<script src={ templ.URL(view.Href(ctx, "/static/js/htmx.min.js")) } defer></script>
+		</head>
+		<body hx-boost="true">
+			{ children... }
+		</body>
+	</html>
+}
+
+type navEntry struct {
+	id    string
+	icon  string
+	label string
+	path  string
+}
+
+var tabItems = []navEntry{
+	{"today", "sun", "Today", "/today"},
+	{"plan", "calendar", "Plan", "/plan"},
+	{"foods", "utensils", "Foods", "/foods"},
+	{"grocery", "cart", "Grocery", "/grocery"},
+	{"prep", "flame", "Prep", "/prep"},
+}
+
+var allNavItems = append(tabItems, navEntry{"household", "users", "Household", "/household"})
+
+// Shell renders the app chrome: sidebar on desktop, top bar + bottom tabs on
+// mobile (CSS media queries switch between them).
+templ Shell(title string, active string, member *households.Member) {
+	@Base(title) {
+		<div class="app-shell">
+			<aside class="sidebar">
+				<div class="sidebar-logo">
+					<div class="flex items-center" style="gap: 9px;">
+						@logoMark()
+						<div>
+							<div class="logo-name">Backbone</div>
+							<div class="logo-sub">Plate</div>
+						</div>
+					</div>
+				</div>
+				<nav class="sidebar-nav">
+					for _, n := range allNavItems {
+						<a
+							href={ templ.URL(view.Href(ctx, n.path)) }
+							class={ "nav-item", templ.KV("active", n.id == active) }
+						>
+							if n.id == active {
+								@icons.IconStroke(n.icon, 17, "2.1")
+							} else {
+								@icons.Icon(n.icon, 17)
+							}
+							{ n.label }
+						</a>
+					}
+				</nav>
+				if member != nil {
+					<a href={ templ.URL(view.Href(ctx, "/household")) } class="sidebar-user">
+						@Avatar(member.Initials, member.Color, 30)
+						<div class="flex-1 min-w-0">
+							<div class="sidebar-user-name">{ member.Name }</div>
+							<div class="sidebar-user-role">{ member.Role }</div>
+						</div>
+					</a>
+				}
+			</aside>
+			<header class="mobile-topbar">
+				<div class="flex items-center gap-2">
+					@logoMark()
+					<div>
+						<div class="logo-name" style="font-size: 13px;">Backbone</div>
+						<div class="logo-sub" style="font-size: 8px;">Plate</div>
+					</div>
+				</div>
+				if member != nil {
+					<a href={ templ.URL(view.Href(ctx, "/household")) }>
+						@Avatar(member.Initials, member.Color, 32)
+					</a>
+				}
+			</header>
+			<main class="app-main">
+				<div class="screen">
+					{ children... }
+				</div>
+			</main>
+			<nav class="mobile-tabs">
+				for _, n := range tabItems {
+					<a
+						href={ templ.URL(view.Href(ctx, n.path)) }
+						class={ "tab-item", templ.KV("active", n.id == active) }
+					>
+						if n.id == active {
+							@icons.IconStroke(n.icon, 20, "2.1")
+						} else {
+							@icons.Icon(n.icon, 20)
+						}
+						<span>{ n.label }</span>
+					</a>
+				}
+			</nav>
+		</div>
+	}
+}
+
+templ logoMark() {
+	<div class="logo-mark">
+		<span></span>
+		<span></span>
+		<span></span>
+	</div>
+}
+
+// Avatar renders a round initials badge.
+templ Avatar(initials string, color string, size int) {
+	<div
+		class="avatar"
+		style={ "width:" + view.Itoa(size) + "px;height:" + view.Itoa(size) + "px;background:" + color + ";font-size:" + view.Itoa(size*36/100) + "px" }
+	>
+		{ initials }
+	</div>
+}
+
+// PageHeader renders the standard screen header.
+templ PageHeader(sub string, title string) {
+	<div class="page-header">
+		<div class="flex-1 min-w-0">
+			<div class="page-header-sub">{ sub }</div>
+			<h1>{ title }</h1>
+		</div>
+		<div class="page-header-actions">
+			{ children... }
+		</div>
+	</div>
+}
+
+// PageHeaderBack renders a screen header whose overline is a back link.
+templ PageHeaderBack(backHref string, backLabel string, title string) {
+	<div class="page-header">
+		<div class="flex-1 min-w-0">
+			<a href={ templ.URL(view.Href(ctx, backHref)) } class="page-header-sub">
+				@icons.Icon("chevron-left", 12)
+				{ backLabel }
+			</a>
+			<h1>{ title }</h1>
+		</div>
+		<div class="page-header-actions">
+			{ children... }
+		</div>
+	</div>
+}
+
+// ModalPage renders a standalone page styled as the prototype's modal card.
+templ ModalPage(title string, pageTitle string, active string, member *households.Member, closeHref string) {
+	@Shell(pageTitle, active, member) {
+		<div class="modal-screen">
+			<div class="modal-card">
+				<div class="modal-head">
+					<span class="modal-title">{ title }</span>
+					<a href={ templ.URL(view.Href(ctx, closeHref)) } class="modal-close">
+						@icons.Icon("x", 15)
+					</a>
+				</div>
+				{ children... }
+			</div>
+		</div>
+	}
+}
+
+// Empty renders the shared empty state.
+templ Empty(icon string, title string, body string) {
+	<div class="empty">
+		@icons.Icon(icon, 32)
+		<div class="empty-title">{ title }</div>
+		if body != "" {
+			<div class="empty-body">{ body }</div>
+		}
+		<div style="margin-top: 4px;">
+			{ children... }
+		</div>
+	</div>
+}
+
+// Tag renders a small mono uppercase tag.
+templ Tag(text string) {
+	<span class="tag">{ text }</span>
+}
+
+// TagAccent renders the accent variant tag.
+templ TagAccent(text string) {
+	<span class="tag tag-accent">{ text }</span>
+}

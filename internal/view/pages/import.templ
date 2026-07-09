@@ -1,0 +1,71 @@
+package pages
+
+import (
+	"mealplanner/internal/households"
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/layout"
+)
+
+// ImportData feeds the import modal page.
+type ImportData struct {
+	Member *households.Member
+	Format string
+	Input  string
+	Status string
+}
+
+var importFormats = []struct{ Value, Label string }{
+	{"url", "URL (scrape)"},
+	{"json", "JSON / Paprika"},
+	{"xml", "RecipeML / XML"},
+	{"mmf", "MealMaster (.mmf)"},
+}
+
+// Import renders the import recipe modal page. Parsing is not connected to a
+// backend yet, matching the prototype.
+templ Import(d ImportData) {
+	@layout.ModalPage("Import recipe", "Import recipe — Backbone Plate", "foods", d.Member, "/foods") {
+		<form method="post" action={ templ.URL(view.Href(ctx, "/import")) }>
+			<div class="modal-body">
+				<div class="flex flex-col" style="gap: 14px;">
+					<div>
+						<div class="overline" style="margin-bottom: 6px;">Format</div>
+						<div class="flex flex-wrap" style="gap: 6px;">
+							for _, f := range importFormats {
+								<a href={ templ.URL(view.Href(ctx, "/import?format="+f.Value)) } class={ "chip", templ.KV("active", d.Format == f.Value) }>{ f.Label }</a>
+							}
+						</div>
+					</div>
+					<input type="hidden" name="format" value={ d.Format }/>
+					<div>
+						if d.Format == "url" {
+							<div class="overline" style="margin-bottom: 6px;">Recipe URL</div>
+							<input class="input" name="input" value={ d.Input } placeholder="https://…"/>
+						} else {
+							<div class="overline" style="margin-bottom: 6px;">Paste content</div>
+							<textarea class="textarea" name="input" style="font-family: var(--font-mono); font-size: 12px; background: var(--surface); min-height: 140px;" placeholder={ importPlaceholder(d.Format) }>{ d.Input }</textarea>
+						}
+					</div>
+					if d.Status != "" {
+						<div style="font-size: 13px; color: var(--fg-3); background: var(--surface); border-radius: var(--radius-sm); padding: 10px 12px; line-height: 1.5;">{ d.Status }</div>
+					}
+				</div>
+			</div>
+			<div class="modal-foot">
+				<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/foods")) }>Cancel</a>
+				<button type="submit" class="btn btn-sm">Import</button>
+			</div>
+		</form>
+	}
+}
+
+func importPlaceholder(format string) string {
+	switch format {
+	case "json":
+		return `{ "name": "…", … }`
+	case "xml":
+		return "<recipe>…</recipe>"
+	default:
+		return "MMMMM---… (MealMaster)"
+	}
+}

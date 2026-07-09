@@ -1,0 +1,11 @@
+DROP TABLE IF EXISTS prep_session_meals;
+DROP TABLE IF EXISTS prep_sessions;
+DROP TABLE IF EXISTS grocery_items;
+DROP TABLE IF EXISTS grocery_lists;
+DROP TABLE IF EXISTS meal_plan;
+DROP TABLE IF EXISTS recipe_steps;
+DROP TABLE IF EXISTS recipe_ingredients;
+DROP TABLE IF EXISTS recipe_tags;
+DROP TABLE IF EXISTS recipes;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS household_members;

@@ -1,0 +1,59 @@
+package pages
+
+import (
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/icons"
+	"mealplanner/internal/view/layout"
+)
+
+// PrepPrint renders the printable prep session view.
+templ PrepPrint(d PrepPrintData) {
+	@layout.Base(d.Session.Name + " — Backbone Plate") {
+		<div style="min-height: 100%; background: var(--paper); padding: 32px 40px;">
+			<div class="flex items-center justify-between" style="margin-bottom: 24px; border-bottom: 2px solid var(--ink); padding-bottom: 14px;">
+				<div>
+					<div class="overline" style="letter-spacing: .08em;">Backbone Plate — Meal prep</div>
+					<h1 style="font-family: var(--font-display); font-weight: 700; font-size: 26px; color: var(--ink); margin: 4px 0 0; letter-spacing: -0.02em;">{ d.Session.Name }</h1>
+					<div style="font-size: 13px; color: var(--fg-3); margin-top: 2px;">{ d.Session.Date }</div>
+				</div>
+				<a href={ templ.URL(view.Href(ctx, "/prep?session="+d.Session.ID)) } class="btn btn-secondary btn-sm no-print">
+					@icons.Icon("x", 14)
+					Close
+				</a>
+			</div>
+			<div class="grid" style="grid-template-columns: 1fr 1fr; gap: 32px; align-items: start;">
+				<div>
+					<h2 style="font-family: var(--font-display); font-weight: 700; font-size: 16px; color: var(--ink); letter-spacing: -0.01em; margin: 0 0 10px;">All ingredients</h2>
+					<table style="width: 100%; border-collapse: collapse;">
+						<tbody>
+							for _, ing := range d.Aggregate {
+								<tr style="border-bottom: 1px solid var(--line);">
+									<td style="font-size: 13px; color: var(--ink); padding: 7px 0;">{ ing.Name }</td>
+									<td class="tnum" style="font-family: var(--font-mono); font-weight: 600; font-size: 12px; color: var(--fg-2); text-align: right; padding: 7px 0;">{ FormatAmount(ing.Amount) } { ing.Unit }</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+				<div>
+					<h2 style="font-family: var(--font-display); font-weight: 700; font-size: 16px; color: var(--ink); letter-spacing: -0.01em; margin: 0 0 10px;">Per meal</h2>
+					for _, m := range d.Session.Meals {
+						<div style="margin-bottom: 16px;">
+							<div style="font-family: var(--font-display); font-weight: 700; font-size: 14px; color: var(--ink); margin-bottom: 6px;">
+								{ m.Recipe.Name }
+								<span class="tnum" style="font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); font-weight: 600;">×{ view.Itoa(m.Servings) }</span>
+							</div>
+							for _, ing := range m.Breakdown {
+								<div class="flex justify-between" style="border-bottom: 1px solid var(--line); padding: 5px 0 5px 10px;">
+									<span style="font-size: 12px; color: var(--ink);">{ ing.Name }</span>
+									<span class="tnum" style="font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--fg-2);">{ FormatAmount(ing.Amount) } { ing.Unit }</span>
+								</div>
+							}
+						</div>
+					}
+				</div>
+			</div>
+			<div style="margin-top: 32px; text-align: center; font-size: 11px; color: var(--fg-4);">Profits fund computer-science education. — Backbone Giving</div>
+		</div>
+	}
+}

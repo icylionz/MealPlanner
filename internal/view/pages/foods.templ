@@ -1,0 +1,115 @@
+package pages
+
+import (
+	"net/url"
+
+	"mealplanner/internal/recipes"
+
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/icons"
+	"mealplanner/internal/view/layout"
+)
+
+func foodsHref(search, tag string) string {
+	q := url.Values{}
+	if search != "" {
+		q.Set("q", search)
+	}
+	if tag != "" && tag != "all" {
+		q.Set("tag", tag)
+	}
+	if enc := q.Encode(); enc != "" {
+		return "/foods?" + enc
+	}
+	return "/foods"
+}
+
+// Foods renders the recipe library screen.
+templ Foods(d FoodsData) {
+	@layout.Shell("Recipes — Backbone Plate", "foods", d.Member) {
+		@layout.PageHeader("Foods & Recipes", "Recipes") {
+			<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/import")) }>
+				@icons.Icon("upload", 14)
+				Import
+			</a>
+			<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/recipes/new")) }>
+				@icons.Icon("plus", 14)
+				New recipe
+			</a>
+		}
+		<div class="page-pad flex items-center flex-wrap" style="padding: 12px 28px; border-bottom: 1px solid var(--line); background: var(--paper); gap: 10px;">
+			<form method="get" action={ templ.URL(view.Href(ctx, "/foods")) } class="flex-1" style="max-width: 320px;">
+				if d.Tag != "" && d.Tag != "all" {
+					<input type="hidden" name="tag" value={ d.Tag }/>
+				}
+				<div class="search-wrap">
+					@icons.Icon("search", 14)
+					<input class="input input-sm" type="search" name="q" value={ d.Search } placeholder="Search recipes…"/>
+				</div>
+			</form>
+			<div class="flex flex-wrap" style="gap: 6px;">
+				<a href={ templ.URL(view.Href(ctx, foodsHref(d.Search, "all"))) } class={ "chip", templ.KV("active", d.Tag == "" || d.Tag == "all") }>All</a>
+				for _, t := range d.AllTags {
+					<a href={ templ.URL(view.Href(ctx, foodsHref(d.Search, t))) } class={ "chip", templ.KV("active", d.Tag == t) }>{ t }</a>
+				}
+			</div>
+		</div>
+		<div class="page-pad flex-1" style="padding: 20px 28px;">
+			if len(d.Recipes) == 0 {
+				@layout.Empty("utensils", "No recipes found", emptyFoodsBody(d.Search)) {
+					<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/recipes/new")) }>
+						@icons.Icon("plus", 14)
+						New recipe
+					</a>
+				}
+			} else {
+				<div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px;">
+					for _, r := range d.Recipes {
+						@recipeCard(r)
+					}
+				</div>
+			}
+		</div>
+	}
+}
+
+func emptyFoodsBody(search string) string {
+	if search != "" {
+		return "No results for \"" + search + "\"."
+	}
+	return "Add your first recipe to get started."
+}
+
+templ recipeCard(r recipes.Recipe) {
+	<div class="card card-hover flex flex-col" style="gap: 8px;">
+		<div class="flex items-start justify-between" style="gap: 8px;">
+			<a href={ templ.URL(view.Href(ctx, "/recipes/"+r.ID.String())) } style="font-family: var(--font-display); font-weight: 700; font-size: 15px; color: var(--ink); line-height: 1.3;">{ r.Name }</a>
+			<a href={ templ.URL(view.Href(ctx, "/recipes/"+r.ID.String()+"/edit")) } class="icon-btn flex-none" title="Edit recipe">
+				@icons.Icon("pencil", 13)
+			</a>
+		</div>
+		if r.Description != "" {
+			<div style="font-size: 12px; color: var(--fg-3); line-height: 1.45; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">{ r.Description }</div>
+		}
+		@RecipeTags(r.Tags, 4)
+		<div class="flex items-center" style="border-top: 1px solid var(--line); padding-top: 8px; gap: 14px;">
+			if r.PrepTime+r.CookTime > 0 {
+				<span class="flex items-center overline" style="gap: 4px; letter-spacing: .05em;">
+					@icons.Icon("clock", 12)
+					{ view.Itoa(r.PrepTime + r.CookTime) } min
+				</span>
+			}
+			<span class="flex items-center overline" style="gap: 4px; letter-spacing: .05em;">
+				@icons.Icon("list", 12)
+				{ view.Itoa(len(r.Ingredients)) } ing.
+			</span>
+			if SubCount(r) > 0 {
+				<span class="flex items-center overline" style="gap: 4px; letter-spacing: .05em; color: var(--accent);">
+					@icons.Icon("layers", 12)
+					{ view.Itoa(SubCount(r)) } sub
+				</span>
+			}
+			<span class="overline" style="margin-left: auto; letter-spacing: .05em;">× { view.Itoa(r.Servings) }</span>
+		</div>
+	</div>
+}
