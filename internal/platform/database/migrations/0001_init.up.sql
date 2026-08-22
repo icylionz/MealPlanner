@@ -16,43 +16,46 @@ CREATE TABLE sessions (
     expires_at timestamptz NOT NULL
 );
 
-CREATE TABLE recipes (
+-- A food is either atomic (no components) or a recipe (one or more components).
+-- Recipe metadata (prep/cook/servings/steps) is only meaningful for foods that
+-- have components, but every food may carry it.
+CREATE TABLE foods (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     name          text NOT NULL,
     description   text NOT NULL DEFAULT '',
     prep_time_min int  NOT NULL DEFAULT 0,
     cook_time_min int  NOT NULL DEFAULT 0,
     servings      int  NOT NULL DEFAULT 1,
+    default_unit  text NOT NULL DEFAULT 'g',
     created_at    timestamptz NOT NULL DEFAULT now(),
     updated_at    timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE recipe_tags (
-    recipe_id uuid NOT NULL REFERENCES recipes (id) ON DELETE CASCADE,
-    tag       text NOT NULL,
-    PRIMARY KEY (recipe_id, tag)
+CREATE TABLE food_tags (
+    food_id uuid NOT NULL REFERENCES foods (id) ON DELETE CASCADE,
+    tag     text NOT NULL,
+    PRIMARY KEY (food_id, tag)
 );
 
--- An ingredient line is either a raw ingredient (name set, sub_recipe_id null)
--- or a sub-recipe reference (sub_recipe_id set).
-CREATE TABLE recipe_ingredients (
+-- A component line always references another food (never free text). Atomic
+-- foods used as components cannot be deleted while referenced (RESTRICT).
+CREATE TABLE food_components (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    recipe_id     uuid NOT NULL REFERENCES recipes (id) ON DELETE CASCADE,
-    name          text NOT NULL DEFAULT '',
+    parent_food_id uuid NOT NULL REFERENCES foods (id) ON DELETE CASCADE,
+    child_food_id  uuid NOT NULL REFERENCES foods (id) ON DELETE RESTRICT,
     amount        numeric NOT NULL DEFAULT 0,
     unit          text NOT NULL DEFAULT 'g',
-    sub_recipe_id uuid REFERENCES recipes (id) ON DELETE RESTRICT,
     sort_order    int NOT NULL DEFAULT 0,
-    CHECK (sub_recipe_id IS NOT NULL OR name <> '')
+    CHECK (parent_food_id <> child_food_id)
 );
 
-CREATE INDEX recipe_ingredients_recipe_idx ON recipe_ingredients (recipe_id, sort_order);
+CREATE INDEX food_components_parent_idx ON food_components (parent_food_id, sort_order);
 
-CREATE TABLE recipe_steps (
-    recipe_id   uuid NOT NULL REFERENCES recipes (id) ON DELETE CASCADE,
+CREATE TABLE food_steps (
+    food_id     uuid NOT NULL REFERENCES foods (id) ON DELETE CASCADE,
     step_number int  NOT NULL,
     instruction text NOT NULL,
-    PRIMARY KEY (recipe_id, step_number)
+    PRIMARY KEY (food_id, step_number)
 );
 
 -- Times are stored as 'HH:MM' text: the prototype sorts and compares them
@@ -61,7 +64,7 @@ CREATE TABLE meal_plan (
     id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     plan_date date NOT NULL,
     plan_time text NOT NULL DEFAULT '12:00' CHECK (plan_time ~ '^[0-2][0-9]:[0-5][0-9]$'),
-    recipe_id uuid NOT NULL REFERENCES recipes (id) ON DELETE CASCADE,
+    food_id   uuid NOT NULL REFERENCES foods (id) ON DELETE CASCADE,
     servings  int  NOT NULL DEFAULT 2
 );
 
@@ -95,8 +98,8 @@ CREATE TABLE prep_sessions (
 
 CREATE TABLE prep_session_meals (
     session_id uuid NOT NULL REFERENCES prep_sessions (id) ON DELETE CASCADE,
-    recipe_id  uuid NOT NULL REFERENCES recipes (id) ON DELETE CASCADE,
+    food_id    uuid NOT NULL REFERENCES foods (id) ON DELETE CASCADE,
     servings   int  NOT NULL DEFAULT 2,
     sort_order int  NOT NULL DEFAULT 0,
-    PRIMARY KEY (session_id, recipe_id)
+    PRIMARY KEY (session_id, food_id)
 );

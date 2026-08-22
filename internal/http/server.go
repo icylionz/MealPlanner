@@ -3,6 +3,7 @@ package httpserver
 
 import (
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -11,11 +12,11 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 
 	"mealplanner/internal/config"
+	"mealplanner/internal/foods"
 	"mealplanner/internal/grocery"
 	"mealplanner/internal/households"
 	"mealplanner/internal/planner"
 	"mealplanner/internal/prep"
-	"mealplanner/internal/recipes"
 	"mealplanner/internal/view"
 )
 
@@ -23,15 +24,15 @@ import (
 type Server struct {
 	cfg        *config.Config
 	households *households.Service
-	recipes    *recipes.Service
+	foods      *foods.Service
 	planner    *planner.Service
 	grocery    *grocery.Service
 	prep       *prep.Service
 }
 
 // New constructs the HTTP server wrapper.
-func New(cfg *config.Config, hh *households.Service, rs *recipes.Service, ps *planner.Service, gs *grocery.Service, pr *prep.Service) *Server {
-	return &Server{cfg: cfg, households: hh, recipes: rs, planner: ps, grocery: gs, prep: pr}
+func New(cfg *config.Config, hh *households.Service, fs *foods.Service, ps *planner.Service, gs *grocery.Service, pr *prep.Service) *Server {
+	return &Server{cfg: cfg, households: hh, foods: fs, planner: ps, grocery: gs, prep: pr}
 }
 
 // Router builds the Echo instance with all routes mounted under BASE_PATH.
@@ -48,6 +49,7 @@ func (s *Server) Router() *echo.Echo {
 	}))
 
 	g := e.Group(s.cfg.BasePath)
+	g.Use(s.csrfMiddleware)
 	g.Use(s.sessionMiddleware)
 
 	if _, err := os.Stat("web/static"); err == nil {
@@ -63,13 +65,16 @@ func (s *Server) Router() *echo.Echo {
 	g.POST("/meals/:id/delete", s.handleDeleteMeal)
 
 	g.GET("/foods", s.handleFoods)
-	g.GET("/recipes/new", s.handleRecipeNew)
-	g.POST("/recipes/new", s.handleRecipeEditPost)
-	g.GET("/recipes/:id", s.handleRecipeDetail)
-	g.GET("/recipes/:id/edit", s.handleRecipeEdit)
-	g.POST("/recipes/:id/edit", s.handleRecipeEditPost)
+	g.GET("/foods/search", s.handleFoodSearch)
+	g.GET("/foods/new", s.handleFoodNew)
+	g.POST("/foods/new", s.handleFoodEditPost)
+	g.GET("/foods/:id", s.handleFoodDetail)
+	g.GET("/foods/:id/edit", s.handleFoodEdit)
+	g.POST("/foods/:id/edit", s.handleFoodEditPost)
+	g.POST("/foods/:id/delete", s.handleFoodDelete)
 	g.GET("/import", s.handleImportForm)
 	g.POST("/import", s.handleImportPost)
+	g.POST("/import/reconcile", s.handleImportReconcile)
 
 	g.GET("/grocery", s.handleGrocery)
 	g.POST("/grocery/lists", s.handleGroceryNewList)
@@ -101,6 +106,41 @@ func (s *Server) Router() *echo.Echo {
 
 const memberCtxKey = "member"
 const tokenCtxKey = "sessionToken"
+
+// csrfMiddleware blocks cross-site state-changing requests by verifying that the
+// Origin (or, failing that, Referer) of every unsafe request matches the host
+// being served. For a same-origin, cookie-authenticated SSR app this is the
+// OWASP-recommended header defense and needs no per-form token; the SameSite=Lax
+// session cookie is a second layer. Requests with neither header are allowed
+// only in development so that curl/tests still work.
+func (s *Server) csrfMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		switch c.Request().Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+			return next(c)
+		}
+		if !s.sameOrigin(c.Request()) {
+			return echo.NewHTTPError(http.StatusForbidden, "cross-origin request rejected")
+		}
+		return next(c)
+	}
+}
+
+// sameOrigin reports whether the request's Origin/Referer host matches the host
+// being served.
+func (s *Server) sameOrigin(r *http.Request) bool {
+	for _, header := range []string{"Origin", "Referer"} {
+		if v := r.Header.Get(header); v != "" {
+			u, err := url.Parse(v)
+			if err != nil || u.Host == "" {
+				return false
+			}
+			return u.Host == r.Host
+		}
+	}
+	// No Origin or Referer present at all.
+	return s.cfg.IsDevelopment()
+}
 
 // sessionMiddleware resolves (or creates) the profile session and stores the
 // active member on the request context.

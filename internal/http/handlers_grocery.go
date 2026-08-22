@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
+	"mealplanner/internal/foods"
 	"mealplanner/internal/grocery"
-	"mealplanner/internal/recipes"
 	"mealplanner/internal/view"
 	"mealplanner/internal/view/pages"
 )
@@ -115,7 +115,7 @@ func (s *Server) handleGroceryDeleteItem(c echo.Context) error {
 }
 
 // genState parses the generate form/query state shared by GET and POST.
-func (s *Server) genState(c echo.Context) (pages.GroceryGenData, map[uuid.UUID]recipes.Recipe, error) {
+func (s *Server) genState(c echo.Context) (pages.GroceryGenData, map[uuid.UUID]foods.Food, error) {
 	ctx := c.Request().Context()
 	get := func(k string) string {
 		if v := c.FormValue(k); v != "" {
@@ -130,16 +130,16 @@ func (s *Server) genState(c echo.Context) (pages.GroceryGenData, map[uuid.UUID]r
 		Mode:         get("mode"),
 		MealSearch:   get("meal_q"),
 		SelectedMeal: get("meal"),
-		RecipeSearch: get("recipe_q"),
-		SelectedRecipe: get("recipe"),
+		FoodSearch:   get("food_q"),
+		SelectedFood: get("food"),
 		FromDate:     get("from"),
 		ToDate:       get("to"),
 	}
 	if d.Mode == "" {
 		d.Mode = "planned-meal"
 	}
-	if d.RecipeServings, _ = strconv.Atoi(get("servings")); d.RecipeServings < 1 {
-		d.RecipeServings = 2
+	if d.FoodServings, _ = strconv.Atoi(get("servings")); d.FoodServings < 1 {
+		d.FoodServings = 2
 	}
 	if _, err := time.Parse(view.DateFormat, d.FromDate); err != nil {
 		d.FromDate = todayStr()
@@ -149,11 +149,11 @@ func (s *Server) genState(c echo.Context) (pages.GroceryGenData, map[uuid.UUID]r
 	}
 	d.DateError = d.FromDate > d.ToDate
 
-	all, err := s.recipes.List(ctx)
+	all, err := s.foods.List(ctx)
 	if err != nil {
 		return d, nil, err
 	}
-	idx := recipes.Index(all)
+	idx := foods.Index(all)
 
 	// Planned meals picker (sorted by date+time, filtered).
 	meals, err := s.planner.ListBetween(ctx, "0001-01-01", "9999-12-31")
@@ -161,7 +161,7 @@ func (s *Server) genState(c echo.Context) (pages.GroceryGenData, map[uuid.UUID]r
 		return d, nil, err
 	}
 	for _, m := range meals {
-		r, ok := idx[m.RecipeID]
+		r, ok := idx[m.FoodID]
 		if !ok {
 			continue
 		}
@@ -171,21 +171,21 @@ func (s *Server) genState(c echo.Context) (pages.GroceryGenData, map[uuid.UUID]r
 			continue
 		}
 		d.Meals = append(d.Meals, pages.GenMealOption{
-			ID: m.ID.String(), Recipe: r,
+			ID: m.ID.String(), Food: r,
 			DayLabel: view.DayLabelShort(m.Date), Time: m.Time, Servings: m.Servings,
 		})
 	}
 
 	for _, r := range all {
-		if d.RecipeSearch == "" || strings.Contains(strings.ToLower(r.Name), strings.ToLower(d.RecipeSearch)) {
-			d.Recipes = append(d.Recipes, r)
+		if d.FoodSearch == "" || strings.Contains(strings.ToLower(r.Name), strings.ToLower(d.FoodSearch)) {
+			d.Foods = append(d.Foods, r)
 		}
 	}
 	return d, idx, nil
 }
 
 // genLeaves computes the leaf ingredients for the selected generation source.
-func (s *Server) genLeaves(c echo.Context, d pages.GroceryGenData, idx map[uuid.UUID]recipes.Recipe) ([]recipes.LeafIngredient, bool, error) {
+func (s *Server) genLeaves(c echo.Context, d pages.GroceryGenData, idx map[uuid.UUID]foods.Food) ([]foods.LeafIngredient, bool, error) {
 	ctx := c.Request().Context()
 	switch d.Mode {
 	case "planned-meal":
@@ -197,13 +197,13 @@ func (s *Server) genLeaves(c echo.Context, d pages.GroceryGenData, idx map[uuid.
 		if err != nil {
 			return nil, false, nil
 		}
-		return recipes.LeafIngredients(idx, m.RecipeID, float64(m.Servings)), true, nil
-	case "recipe":
-		id, err := uuid.Parse(d.SelectedRecipe)
+		return foods.LeafIngredients(idx, m.FoodID, float64(m.Servings)), true, nil
+	case "food":
+		id, err := uuid.Parse(d.SelectedFood)
 		if err != nil {
 			return nil, false, nil
 		}
-		return recipes.LeafIngredients(idx, id, float64(d.RecipeServings)), true, nil
+		return foods.LeafIngredients(idx, id, float64(d.FoodServings)), true, nil
 	case "date-range":
 		if d.DateError {
 			return nil, false, nil
@@ -212,9 +212,9 @@ func (s *Server) genLeaves(c echo.Context, d pages.GroceryGenData, idx map[uuid.
 		if err != nil {
 			return nil, false, err
 		}
-		var leaves []recipes.LeafIngredient
+		var leaves []foods.LeafIngredient
 		for _, m := range meals {
-			leaves = append(leaves, recipes.LeafIngredients(idx, m.RecipeID, float64(m.Servings))...)
+			leaves = append(leaves, foods.LeafIngredients(idx, m.FoodID, float64(m.Servings))...)
 		}
 		return leaves, true, nil
 	}
@@ -232,7 +232,7 @@ func (s *Server) handleGroceryGenerate(c echo.Context) error {
 			return err
 		}
 		if ok {
-			for _, ing := range recipes.Aggregate(leaves) {
+			for _, ing := range foods.Aggregate(leaves) {
 				d.Preview = append(d.Preview, pages.GenPreviewItem{Name: ing.Name, Amount: ing.Amount, Unit: ing.Unit})
 			}
 			d.HasPreview = true
@@ -258,7 +258,7 @@ func (s *Server) handleGroceryGenerateCommit(c echo.Context) error {
 	if id, err := uuid.Parse(d.ListID); err == nil {
 		listID = &id
 	}
-	target, err := s.grocery.AddIngredients(c.Request().Context(), listID, recipes.Aggregate(leaves))
+	target, err := s.grocery.AddIngredients(c.Request().Context(), listID, foods.Aggregate(leaves))
 	if err != nil {
 		return err
 	}

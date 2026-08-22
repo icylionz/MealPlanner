@@ -149,11 +149,11 @@ templ planDayList(d PlanData) {
 				for _, m := range d.DayMeals {
 					<div class="card card-flush meal-row">
 						<div class="meal-time" style="padding: 12px 14px; min-width: 64px; font-size: 14px;">{ m.Meal.Time }</div>
-						<a class="meal-link" style="padding: 12px 14px; gap: 10px;" href={ templ.URL(view.Href(ctx, "/recipes/"+m.Meal.RecipeID.String())) }>
+						<a class="meal-link" style="padding: 12px 14px; gap: 10px;" href={ templ.URL(view.Href(ctx, "/foods/"+m.Meal.FoodID.String())) }>
 							<div class="flex-1 min-w-0">
-								<div class="meal-name" style="font-size: 14px;">{ m.Recipe.Name }</div>
+								<div class="meal-name" style="font-size: 14px;">{ m.Food.Name }</div>
 								<div style="margin-top: 4px;">
-									@RecipeTags(m.Recipe.Tags, 3)
+									@RecipeTags(m.Food.Tags, 3)
 								</div>
 							</div>
 							<div style="font-size: 13px; color: var(--fg-3); white-space: nowrap;">{ view.Itoa(m.Meal.Servings) } srv</div>
@@ -183,9 +183,9 @@ templ weekGrid(d PlanData) {
 				</div>
 				<div class="flex-1 flex flex-col overflow-y-auto" style="padding: 8px 6px; gap: 5px;">
 					for _, m := range d.WeekMeals[day.Date] {
-						<a class="week-meal" href={ templ.URL(view.Href(ctx, "/recipes/"+m.Meal.RecipeID.String())) }>
+						<a class="week-meal" href={ templ.URL(view.Href(ctx, "/foods/"+m.Meal.FoodID.String())) }>
 							<div class="tnum" style="font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: var(--accent); letter-spacing: .04em;">{ m.Meal.Time }</div>
-							<div style="font-weight: 600; font-size: 12px; color: var(--ink); margin-top: 2px; line-height: 1.3;">{ m.Recipe.Name }</div>
+							<div style="font-weight: 600; font-size: 12px; color: var(--ink); margin-top: 2px; line-height: 1.3;">{ m.Food.Name }</div>
 							<div style="font-family: var(--font-mono); font-size: 9px; color: var(--fg-3); margin-top: 3px; text-transform: uppercase; letter-spacing: .04em;">{ view.Itoa(m.Meal.Servings) } srv</div>
 						</a>
 					}

@@ -1,14 +1,21 @@
 package pages
 
 import (
+	"mealplanner/internal/foods"
 	"mealplanner/internal/view"
 	"mealplanner/internal/view/icons"
 	"mealplanner/internal/view/layout"
 )
 
-func editTitle(d RecipeEditData) string {
+// pickerVals is the hx-vals payload sent with each typeahead request: the row
+// index being edited and the food to exclude (the one being edited).
+func pickerVals(d FoodEditData) string {
+	return `{"i":"` + view.Itoa(d.PickerFor) + `","self":"` + d.FoodID + `"}`
+}
+
+func editTitle(d FoodEditData) string {
 	if d.IsNew {
-		return "New recipe"
+		return "New food"
 	}
 	if d.Name == "" {
 		return "Edit: Untitled"
@@ -16,24 +23,25 @@ func editTitle(d RecipeEditData) string {
 	return "Edit: " + d.Name
 }
 
-func cancelHref(d RecipeEditData) string {
+func cancelHref(d FoodEditData) string {
 	if d.IsNew {
 		return "/foods"
 	}
-	return "/recipes/" + d.RecipeID
+	return "/foods/" + d.FoodID
 }
 
-// RecipeEdit renders the recipe editor. Every structural change (add/remove
-// row, pick sub-recipe) posts the whole form back with an `action` value and
-// re-renders, so the editor works without JavaScript.
-templ RecipeEdit(d RecipeEditData) {
+// FoodEdit renders the food editor (also the New Food flow). Every structural
+// change (add/remove row, pick a component food) posts the whole form back with
+// an `action` value and re-renders, so the editor works without JavaScript.
+// Components always reference an existing food — there is no free-text entry.
+templ FoodEdit(d FoodEditData) {
 	@layout.Shell(editTitle(d)+" — Backbone Plate", "foods", d.Member) {
 		<form method="post" action={ templ.URL(view.Href(ctx, d.Action)) } class="flex flex-col flex-1 min-h-0">
 			@layout.PageHeaderBack("/foods", "Foods & recipes", editTitle(d)) {
 				<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, cancelHref(d))) }>Cancel</a>
 				<button type="submit" name="action" value="save" class="btn btn-sm">
 					@icons.Icon("check", 14)
-					Save recipe
+					Save food
 				</button>
 			}
 			<div class="page-pad flex-1" style="max-width: 680px;">
@@ -45,7 +53,7 @@ templ RecipeEdit(d RecipeEditData) {
 				}
 				<div style="margin-bottom: 20px;">
 					@FieldLabel("Name")
-					<input class="input" name="name" value={ d.Name } placeholder="Recipe name"/>
+					<input class="input" name="name" value={ d.Name } placeholder="Food name"/>
 				</div>
 				<div style="margin-bottom: 20px;">
 					@FieldLabel("Description")
@@ -61,8 +69,16 @@ templ RecipeEdit(d RecipeEditData) {
 						<input class="input input-sm" type="number" min="0" name="cook" value={ d.CookTime }/>
 					</div>
 					<div class="flex-1">
-						@FieldLabel("Servings")
+						@FieldLabel("Servings / yield")
 						<input class="input input-sm" type="number" min="1" name="servings" value={ d.Servings }/>
+					</div>
+					<div class="flex-1">
+						@FieldLabel("Default unit")
+						<select class="select input-sm" name="default_unit">
+							for _, u := range d.Units {
+								<option value={ u } selected?={ d.DefaultUnit == u }>{ u }</option>
+							}
+						</select>
 					</div>
 				</div>
 				<div style="margin-bottom: 20px;">
@@ -84,15 +100,16 @@ templ RecipeEdit(d RecipeEditData) {
 					</div>
 				</div>
 				<div style="margin-bottom: 20px;">
-					@FieldLabel("Ingredients")
+					@FieldLabel("Components")
+					<p style="font-size: 12px; color: var(--fg-3); margin: 0 0 8px;">A food with no components is a raw ingredient. Add components to make it a recipe — each references another food.</p>
 					<div class="flex flex-col" style="gap: 6px;">
-						for i, ing := range d.Ingredients {
-							@ingredientEditRow(d, i, ing)
+						for i, comp := range d.Components {
+							@componentEditRow(d, i, comp)
 						}
 						<div>
-							<button type="submit" name="action" value="add-ingredient" class="btn btn-secondary btn-sm">
+							<button type="submit" name="action" value="add-component" class="btn btn-secondary btn-sm">
 								@icons.Icon("plus", 14)
-								Add ingredient
+								Add component
 							</button>
 						</div>
 					</div>
@@ -119,105 +136,95 @@ templ RecipeEdit(d RecipeEditData) {
 				</div>
 			</div>
 			if d.PickerFor >= 0 {
-				@subRecipePicker(d)
+				@foodPicker(d)
 			}
 		</form>
 	}
 }
 
-templ ingredientEditRow(d RecipeEditData, i int, ing LineForm) {
+templ componentEditRow(d FoodEditData, i int, comp ComponentForm) {
 	<div class="ing-edit-row">
-		<input type="hidden" name="ing_isrecipe" value={ boolStr(ing.IsRecipe) }/>
-		<input type="hidden" name="ing_subid" value={ ing.SubRecipeID }/>
+		<input type="hidden" name="comp_foodid" value={ comp.FoodID }/>
 		<div style="flex: 2; min-width: 0;">
-			if ing.IsRecipe {
-				<input type="hidden" name="ing_name" value={ ing.Name }/>
-				<button type="submit" name="action" value={ "pick-sub:" + view.Itoa(i) } class="subrecipe-pick">
-					@icons.Icon("layers", 13)
-					if ing.SubName != "" {
-						{ ing.SubName }
-					} else {
-						Pick recipe…
-					}
-				</button>
-			} else {
-				<input class="input input-sm" name="ing_name" value={ ing.Name } placeholder="Ingredient name"/>
-			}
+			<button type="submit" name="action" value={ "pick-food:" + view.Itoa(i) } class="subrecipe-pick">
+				@icons.Icon("search", 13)
+				if comp.FoodName != "" {
+					{ comp.FoodName }
+				} else {
+					Pick food…
+				}
+			</button>
 		</div>
-		<input class="input input-sm" type="number" step="any" min="0" name="ing_amount" value={ ing.Amount } style="width: 72px;"/>
-		<select class="select input-sm" name="ing_unit" style="width: 80px;">
+		<input class="input input-sm" type="number" step="any" min="0" name="comp_amount" value={ comp.Amount } style="width: 72px;"/>
+		<select class="select input-sm" name="comp_unit" style="width: 80px;">
 			for _, u := range d.Units {
-				<option value={ u } selected?={ ing.Unit == u }>{ u }</option>
+				<option value={ u } selected?={ comp.Unit == u }>{ u }</option>
 			}
 		</select>
-		<button
-			type="submit"
-			name="action"
-			value={ "toggle-recipe:" + view.Itoa(i) }
-			class="icon-btn"
-			style={ toggleColor(ing.IsRecipe) }
-			title={ toggleTitle(ing.IsRecipe) }
-		>
-			@icons.Icon("layers", 14)
-		</button>
-		<button type="submit" name="action" value={ "remove-ingredient:" + view.Itoa(i) } class="icon-btn icon-btn-danger" style="padding: 4px;" title="Remove ingredient">
+		<button type="submit" name="action" value={ "remove-component:" + view.Itoa(i) } class="icon-btn icon-btn-danger" style="padding: 4px;" title="Remove component">
 			@icons.Icon("trash-2", 14)
 		</button>
 	</div>
 }
 
-func boolStr(b bool) string {
-	if b {
-		return "1"
-	}
-	return "0"
-}
-
-func toggleColor(isRecipe bool) string {
-	if isRecipe {
-		return "padding: 4px; color: var(--accent);"
-	}
-	return "padding: 4px; color: var(--fg-3);"
-}
-
-func toggleTitle(isRecipe bool) string {
-	if isRecipe {
-		return "Switch to raw ingredient"
-	}
-	return "Use sub-recipe"
-}
-
-templ subRecipePicker(d RecipeEditData) {
+templ foodPicker(d FoodEditData) {
 	<div style="position: fixed; inset: 0; z-index: 500; display: flex; align-items: center; justify-content: center; background: rgba(20,22,26,.45); padding: 16px;">
 		<div class="modal-card" style="width: 380px;">
 			<div class="modal-head">
-				<span class="modal-title">Pick a sub-recipe</span>
+				<span class="modal-title">Pick a food</span>
 				<button type="submit" name="action" value="cancel-pick" class="modal-close icon-btn">
 					@icons.Icon("x", 15)
 				</button>
 			</div>
 			<div class="modal-body">
-				<div class="flex flex-col" style="gap: 4px;">
-					for _, r := range d.AllRecipes {
-						if r.ID.String() != d.RecipeID {
-							<button
-								type="submit"
-								name="action"
-								value={ "pick-sub-set:" + view.Itoa(d.PickerFor) + ":" + r.ID.String() }
-								class="pick-row"
-								style="border: 1px solid var(--line); border-radius: var(--radius-sm); background: transparent; width: 100%; text-align: left; padding: 10px 12px;"
-							>
-								<div class="flex-1 min-w-0">
-									<div class="pick-name" style="font-size: 14px;">{ r.Name }</div>
-									<div style="margin-top: 3px;">
-										@RecipeTags(r.Tags, 3)
-									</div>
-								</div>
-							</button>
-						}
-					}
+				<div class="flex" style="gap: 6px; margin-bottom: 10px;">
+					<input
+						class="input input-sm flex-1"
+						name="picker_query"
+						value={ d.PickerQuery }
+						placeholder="Search foods…"
+						autocomplete="off"
+						autofocus
+						hx-get={ view.Href(ctx, "/foods/search") }
+						hx-trigger="keyup changed delay:150ms, search"
+						hx-target="#food-picker-results"
+						hx-swap="innerHTML"
+						hx-vals={ pickerVals(d) }
+					/>
+					<button type="submit" name="action" value={ "picker-filter:" + view.Itoa(d.PickerFor) } class="btn btn-secondary btn-xs">Search</button>
+				</div>
+				<div id="food-picker-results" class="flex flex-col" style="gap: 4px;">
+					@FoodPickerResults(foods.Search(d.AllFoods, d.PickerQuery, 8), d.PickerFor, d.FoodID)
 				</div>
 			</div>
 		</div>
 	</div>
+}
+
+// FoodPickerResults renders the ranked typeahead results as pick buttons. It is
+// used both for the picker's initial render and for the live hx-get fragment.
+templ FoodPickerResults(list []foods.Food, pickerFor int, selfID string) {
+	for _, f := range list {
+		if f.ID.String() != selfID {
+			<button
+				type="submit"
+				name="action"
+				value={ "pick-food-set:" + view.Itoa(pickerFor) + ":" + f.ID.String() }
+				class="pick-row"
+				style="border: 1px solid var(--line); border-radius: var(--radius-sm); background: transparent; width: 100%; text-align: left; padding: 10px 12px;"
+			>
+				<div class="flex-1 min-w-0">
+					<div class="pick-name" style="font-size: 14px;">{ f.Name }</div>
+					if len(f.Tags) > 0 {
+						<div style="margin-top: 3px;">
+							@RecipeTags(f.Tags, 3)
+						</div>
+					}
+				</div>
+			</button>
+		}
+	}
+	if len(list) == 0 {
+		<div style="padding: 12px; font-size: 13px; color: var(--fg-3); text-align: center;">No foods match.</div>
+	}
 }

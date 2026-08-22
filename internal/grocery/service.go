@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"mealplanner/internal/database/db"
-	"mealplanner/internal/recipes"
+	"mealplanner/internal/foods"
 	"mealplanner/internal/units"
 )
 
@@ -144,7 +144,7 @@ func (s *Service) ConvertItem(ctx context.Context, itemID uuid.UUID, toUnit stri
 // AddIngredients merges generated ingredients into a list: amounts add up for
 // same name+unit matches, everything else is appended — mirroring the
 // prototype's onGenerate merge. When listID is nil a new list is created.
-func (s *Service) AddIngredients(ctx context.Context, listID *uuid.UUID, ings []recipes.LeafIngredient) (uuid.UUID, error) {
+func (s *Service) AddIngredients(ctx context.Context, listID *uuid.UUID, ings []foods.LeafIngredient) (uuid.UUID, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return uuid.Nil, err

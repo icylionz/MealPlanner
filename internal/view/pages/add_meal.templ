@@ -28,17 +28,17 @@ templ AddMeal(d AddMealData) {
 						<input class="input" type="number" name="servings" min="1" value={ view.Itoa(d.Servings) } style="max-width: 110px;"/>
 					</div>
 					<div>
-						@FieldLabel("Recipe")
+						@FieldLabel("Food")
 						<div class="flex" style="gap: 6px;">
-							<input class="input input-sm" type="search" name="q" value={ d.Search } placeholder="Search recipes…"/>
+							<input class="input input-sm" type="search" name="q" value={ d.Search } placeholder="Search foods…"/>
 							<button type="submit" formmethod="get" formaction={ templ.URL(view.Href(ctx, "/meals/new")) } class="btn btn-secondary btn-sm">
 								@icons.Icon("search", 13)
 							</button>
 						</div>
 						<div class="pick-list" style="margin-top: 6px; max-height: 200px;">
-							for _, r := range d.Recipes {
+							for _, r := range d.Foods {
 								<label class="pick-row" style="padding: 10px 12px;">
-									<input type="radio" name="recipe" value={ r.ID.String() } checked?={ d.Selected == r.ID.String() } required/>
+									<input type="radio" name="food" value={ r.ID.String() } checked?={ d.Selected == r.ID.String() } required/>
 									<span class="pick-check">
 										@icons.Icon("check", 14)
 									</span>
@@ -50,17 +50,17 @@ templ AddMeal(d AddMealData) {
 									</div>
 								</label>
 							}
-							if len(d.Recipes) == 0 {
-								<div style="padding: 14px 12px; font-size: 13px; color: var(--fg-3); text-align: center;">No recipes match.</div>
+							if len(d.Foods) == 0 {
+								<div style="padding: 14px 12px; font-size: 13px; color: var(--fg-3); text-align: center;">No foods match.</div>
 							}
 						</div>
 					</div>
-					if d.SelectedRecipe != nil {
+					if d.SelectedFood != nil {
 						<div class="flex" style="background: var(--surface); border-radius: var(--radius); padding: 10px 12px; gap: 12px;">
 							<div class="flex-1">
-								<div style="font-weight: 600; font-size: 13px; color: var(--ink);">{ d.SelectedRecipe.Name }</div>
+								<div style="font-weight: 600; font-size: 13px; color: var(--ink);">{ d.SelectedFood.Name }</div>
 								<div class="overline" style="letter-spacing: .05em; margin-top: 2px;">
-									{ view.Itoa(d.SelectedRecipe.PrepTime + d.SelectedRecipe.CookTime) } min · serves { view.Itoa(d.SelectedRecipe.Servings) }
+									{ view.Itoa(d.SelectedFood.PrepTime + d.SelectedFood.CookTime) } min · serves { view.Itoa(d.SelectedFood.Servings) }
 								</div>
 							</div>
 						</div>

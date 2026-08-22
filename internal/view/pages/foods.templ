@@ -3,7 +3,7 @@ package pages
 import (
 	"net/url"
 
-	"mealplanner/internal/recipes"
+	"mealplanner/internal/foods"
 
 	"mealplanner/internal/view"
 	"mealplanner/internal/view/icons"
@@ -32,9 +32,9 @@ templ Foods(d FoodsData) {
 				@icons.Icon("upload", 14)
 				Import
 			</a>
-			<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/recipes/new")) }>
+			<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/foods/new")) }>
 				@icons.Icon("plus", 14)
-				New recipe
+				New food
 			</a>
 		}
 		<div class="page-pad flex items-center flex-wrap" style="padding: 12px 28px; border-bottom: 1px solid var(--line); background: var(--paper); gap: 10px;">
@@ -55,17 +55,17 @@ templ Foods(d FoodsData) {
 			</div>
 		</div>
 		<div class="page-pad flex-1" style="padding: 20px 28px;">
-			if len(d.Recipes) == 0 {
-				@layout.Empty("utensils", "No recipes found", emptyFoodsBody(d.Search)) {
-					<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/recipes/new")) }>
+			if len(d.Foods) == 0 {
+				@layout.Empty("utensils", "No foods found", emptyFoodsBody(d.Search)) {
+					<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/foods/new")) }>
 						@icons.Icon("plus", 14)
-						New recipe
+						New food
 					</a>
 				}
 			} else {
 				<div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px;">
-					for _, r := range d.Recipes {
-						@recipeCard(r)
+					for _, r := range d.Foods {
+						@foodCard(r)
 					}
 				</div>
 			}
@@ -80,11 +80,11 @@ func emptyFoodsBody(search string) string {
 	return "Add your first recipe to get started."
 }
 
-templ recipeCard(r recipes.Recipe) {
+templ foodCard(r foods.Food) {
 	<div class="card card-hover flex flex-col" style="gap: 8px;">
 		<div class="flex items-start justify-between" style="gap: 8px;">
-			<a href={ templ.URL(view.Href(ctx, "/recipes/"+r.ID.String())) } style="font-family: var(--font-display); font-weight: 700; font-size: 15px; color: var(--ink); line-height: 1.3;">{ r.Name }</a>
-			<a href={ templ.URL(view.Href(ctx, "/recipes/"+r.ID.String()+"/edit")) } class="icon-btn flex-none" title="Edit recipe">
+			<a href={ templ.URL(view.Href(ctx, "/foods/"+r.ID.String())) } style="font-family: var(--font-display); font-weight: 700; font-size: 15px; color: var(--ink); line-height: 1.3;">{ r.Name }</a>
+			<a href={ templ.URL(view.Href(ctx, "/foods/"+r.ID.String()+"/edit")) } class="icon-btn flex-none" title="Edit food">
 				@icons.Icon("pencil", 13)
 			</a>
 		</div>
@@ -101,7 +101,7 @@ templ recipeCard(r recipes.Recipe) {
 			}
 			<span class="flex items-center overline" style="gap: 4px; letter-spacing: .05em;">
 				@icons.Icon("list", 12)
-				{ view.Itoa(len(r.Ingredients)) } ing.
+				{ view.Itoa(len(r.Components)) } comp.
 			</span>
 			if SubCount(r) > 0 {
 				<span class="flex items-center overline" style="gap: 4px; letter-spacing: .05em; color: var(--accent);">

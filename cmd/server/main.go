@@ -6,13 +6,13 @@ import (
 	"log"
 
 	"mealplanner/internal/config"
-	httpserver "mealplanner/internal/http"
+	"mealplanner/internal/foods"
 	"mealplanner/internal/grocery"
 	"mealplanner/internal/households"
+	httpserver "mealplanner/internal/http"
 	"mealplanner/internal/planner"
 	"mealplanner/internal/platform/database"
 	"mealplanner/internal/prep"
-	"mealplanner/internal/recipes"
 )
 
 func main() {
@@ -34,7 +34,7 @@ func main() {
 	srv := httpserver.New(
 		cfg,
 		households.NewService(pool),
-		recipes.NewService(pool),
+		foods.NewService(pool),
 		planner.NewService(pool),
 		grocery.NewService(pool),
 		prep.NewService(pool),

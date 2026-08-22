@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
+	"mealplanner/internal/foods"
 	"mealplanner/internal/planner"
-	"mealplanner/internal/recipes"
 	"mealplanner/internal/view"
 	"mealplanner/internal/view/pages"
 )
@@ -23,7 +23,7 @@ func mondayOf(t time.Time) time.Time {
 	return t.AddDate(0, 0, -(offset - 1))
 }
 
-func (s *Server) mealVMs(c echo.Context, meals []planner.Meal, idx map[uuid.UUID]recipes.Recipe, markNext bool) []pages.MealVM {
+func (s *Server) mealVMs(c echo.Context, meals []planner.Meal, idx map[uuid.UUID]foods.Food, markNext bool) []pages.MealVM {
 	now := time.Now()
 	nowHHMM := now.Format("15:04")
 	today := todayStr()
@@ -31,11 +31,11 @@ func (s *Server) mealVMs(c echo.Context, meals []planner.Meal, idx map[uuid.UUID
 	out := make([]pages.MealVM, 0, len(meals))
 	nextAssigned := false
 	for _, m := range meals {
-		r, ok := idx[m.RecipeID]
+		r, ok := idx[m.FoodID]
 		if !ok {
 			continue
 		}
-		vm := pages.MealVM{Meal: m, Recipe: r}
+		vm := pages.MealVM{Meal: m, Food: r}
 		if markNext && m.Date == today {
 			vm.IsPast = m.Time < nowHHMM
 			if !vm.IsPast && !nextAssigned {
@@ -56,11 +56,11 @@ func (s *Server) handleToday(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	all, err := s.recipes.List(ctx)
+	all, err := s.foods.List(ctx)
 	if err != nil {
 		return err
 	}
-	idx := recipes.Index(all)
+	idx := foods.Index(all)
 
 	return s.render(c, pages.Today(pages.TodayData{
 		Member:    s.member(c),
@@ -115,11 +115,11 @@ func (s *Server) handlePlan(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	all, err := s.recipes.List(ctx)
+	all, err := s.foods.List(ctx)
 	if err != nil {
 		return err
 	}
-	idx := recipes.Index(all)
+	idx := foods.Index(all)
 
 	dayAbbr := []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
 	mealCount := map[string]int{}
@@ -193,42 +193,42 @@ func (s *Server) handleAddMealForm(c echo.Context) error {
 		servings = 2
 	}
 	search := c.QueryParam("q")
-	selected := c.QueryParam("recipe")
+	selected := c.QueryParam("food")
 	returnTo := safeReturn(c.QueryParam("return"), "/today")
 
-	all, err := s.recipes.List(ctx)
+	all, err := s.foods.List(ctx)
 	if err != nil {
 		return err
 	}
-	var filtered []recipes.Recipe
-	var selectedRecipe *recipes.Recipe
+	var filtered []foods.Food
+	var selectedFood *foods.Food
 	for _, r := range all {
 		if search == "" || strings.Contains(strings.ToLower(r.Name), strings.ToLower(search)) {
 			filtered = append(filtered, r)
 		}
 		if r.ID.String() == selected {
 			rc := r
-			selectedRecipe = &rc
+			selectedFood = &rc
 		}
 	}
 
 	active := "today"
 	if strings.HasPrefix(returnTo, "/plan") {
 		active = "plan"
-	} else if strings.HasPrefix(returnTo, "/recipes") {
+	} else if strings.HasPrefix(returnTo, "/foods") {
 		active = "foods"
 	}
 
 	return s.render(c, pages.AddMeal(pages.AddMealData{
 		Member: s.member(c), Date: date, Time: timeOfDay, Servings: servings,
-		Search: search, Recipes: filtered, Selected: selected,
-		SelectedRecipe: selectedRecipe, ReturnTo: returnTo, Active: active,
+		Search: search, Foods: filtered, Selected: selected,
+		SelectedFood: selectedFood, ReturnTo: returnTo, Active: active,
 	}))
 }
 
 func (s *Server) handleAddMeal(c echo.Context) error {
 	returnTo := safeReturn(c.FormValue("return"), "/today")
-	recipeID, err := uuid.Parse(c.FormValue("recipe"))
+	foodID, err := uuid.Parse(c.FormValue("food"))
 	if err != nil {
 		return s.redirect(c, returnTo)
 	}
@@ -236,7 +236,7 @@ func (s *Server) handleAddMeal(c echo.Context) error {
 	if err != nil {
 		servings = 2
 	}
-	if err := s.planner.Add(c.Request().Context(), c.FormValue("date"), c.FormValue("time"), recipeID, servings); err != nil {
+	if err := s.planner.Add(c.Request().Context(), c.FormValue("date"), c.FormValue("time"), foodID, servings); err != nil {
 		return err
 	}
 	return s.redirect(c, returnTo)

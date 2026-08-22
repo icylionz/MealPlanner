@@ -20,17 +20,17 @@ SELECT * FROM prep_session_meals WHERE session_id = $1 ORDER BY sort_order;
 SELECT * FROM prep_session_meals ORDER BY session_id, sort_order;
 
 -- name: AddPrepSessionMeal :exec
-INSERT INTO prep_session_meals (session_id, recipe_id, servings, sort_order)
+INSERT INTO prep_session_meals (session_id, food_id, servings, sort_order)
 VALUES ($1, $2, $3, $4)
-ON CONFLICT (session_id, recipe_id) DO NOTHING;
+ON CONFLICT (session_id, food_id) DO NOTHING;
 
 -- name: RemovePrepSessionMeal :exec
-DELETE FROM prep_session_meals WHERE session_id = $1 AND recipe_id = $2;
+DELETE FROM prep_session_meals WHERE session_id = $1 AND food_id = $2;
 
 -- name: AdjustPrepSessionServings :exec
 UPDATE prep_session_meals
 SET servings = greatest(1, servings + $3)
-WHERE session_id = $1 AND recipe_id = $2;
+WHERE session_id = $1 AND food_id = $2;
 
 -- name: MaxPrepSortOrder :one
 SELECT coalesce(max(sort_order), -1)::int FROM prep_session_meals WHERE session_id = $1;

@@ -1,0 +1,86 @@
+package pages
+
+import (
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/icons"
+	"mealplanner/internal/view/layout"
+)
+
+// ImportReconcile renders the import reconcile screen: the parsed recipe with a
+// food dropdown per ingredient line. Each line must map to an existing food (or
+// be created as a new one) before the recipe can be saved. The whole form posts
+// back with an `action`, so it works without JavaScript.
+templ ImportReconcile(d ImportReconcileData) {
+	@layout.ModalPage("Reconcile import", "Reconcile import — Backbone Plate", "foods", d.Member, "/import") {
+		<form method="post" action={ templ.URL(view.Href(ctx, "/import/reconcile")) }>
+			<input type="hidden" name="imp_name" value={ d.Name }/>
+			<input type="hidden" name="imp_desc" value={ d.Description }/>
+			<input type="hidden" name="imp_prep" value={ d.Prep }/>
+			<input type="hidden" name="imp_cook" value={ d.Cook }/>
+			<input type="hidden" name="imp_servings" value={ d.Servings }/>
+			<input type="hidden" name="imp_default_unit" value={ d.DefaultUnit }/>
+			for _, t := range d.Tags {
+				<input type="hidden" name="imp_tags" value={ t }/>
+			}
+			for _, st := range d.Steps {
+				<input type="hidden" name="imp_steps" value={ st }/>
+			}
+			<div class="modal-body">
+				<div class="flex flex-col" style="gap: 14px;">
+					if d.Error != "" {
+						<div class="flex items-center" style="gap: 6px; color: var(--danger); background: var(--danger-tint); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 13px;">
+							@icons.Icon("alert-circle", 14)
+							{ d.Error }
+						</div>
+					}
+					<div>
+						<div class="overline" style="margin-bottom: 4px;">Importing</div>
+						<div style="font-family: var(--font-display); font-weight: 700; font-size: 18px; color: var(--ink);">{ d.Name }</div>
+						<div class="overline" style="font-size: 10px; letter-spacing: .05em; margin-top: 2px;">
+							{ d.Prep } min prep · { d.Cook } min cook · serves { d.Servings } · { view.Itoa(len(d.Steps)) } steps
+						</div>
+					</div>
+					<div>
+						<div class="overline" style="margin-bottom: 6px;">Match each ingredient to a food</div>
+						<div class="flex flex-col" style="gap: 6px;">
+							for i, line := range d.Lines {
+								@importLineRow(d, i, line)
+							}
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="modal-foot">
+				<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/import")) }>Back</a>
+				<button type="submit" name="action" value="commit" class="btn btn-sm">
+					@icons.Icon("check", 14)
+					Save recipe
+				</button>
+			</div>
+		</form>
+	}
+}
+
+templ importLineRow(d ImportReconcileData, i int, line ImportLine) {
+	<div class="flex items-center" style="gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface);">
+		<input type="hidden" name="line_name" value={ line.Name }/>
+		<div style="flex: 1.4; min-width: 0;">
+			<div style="font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{ line.Name }</div>
+			if !line.Matched() {
+				<div class="overline" style="font-size: 9px; color: var(--danger); letter-spacing: .05em;">unmatched</div>
+			}
+		</div>
+		<input class="input input-sm" type="number" step="any" min="0" name="line_amount" value={ line.Amount } style="width: 64px;"/>
+		<input class="input input-sm" name="line_unit" value={ line.Unit } style="width: 60px;"/>
+		<select class="select input-sm" name="line_food" style="flex: 1; min-width: 0;">
+			<option value="" selected?={ line.FoodID == "" }>— unmatched —</option>
+			for _, f := range d.AllFoods {
+				<option value={ f.ID.String() } selected?={ line.FoodID == f.ID.String() }>{ f.Name }</option>
+			}
+		</select>
+		<button type="submit" name="action" value={ "create-line:" + view.Itoa(i) } class="btn btn-secondary btn-xs" title="Create this as a new food">
+			@icons.Icon("plus", 12)
+			New
+		</button>
+	</div>
+}

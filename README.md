@@ -12,8 +12,13 @@ claude.ai/design MealPlanner project.
 
 - **Today** — agenda for today with next-meal highlight
 - **Plan** — mini calendar + week list, day list or week grid layout
-- **Foods** — recipe library with search, tag filter, nested component recipes
-- **Recipe detail** — ×1–×4 scaling, expandable sub-recipe tree, unit conversion
+- **Foods** — food catalog with search, tag filter; atomic ingredients and
+  nested component recipes live in one library
+- **Food detail** — ×1–×4 scaling, expandable component tree, unit conversion
+- **New Food / editor** — every component is a search-and-select of an existing
+  food; there is no free-text ingredient entry
+- **Import** — URL/JSON/XML/MMF parse, then a reconcile screen maps each parsed
+  ingredient line to a food (or creates one) before saving
 - **Grocery** — lists, check-off, unit conversion, generation from planned
   meals / recipes / date ranges with ingredient aggregation
 - **Prep** — prep sessions with aggregate ingredients and printable view
@@ -32,6 +37,18 @@ sqlc generate                                    # regenerate query code
   -i web/static/css/input.css -o web/static/css/app.css --minify
 go build -o bin/server ./cmd/server
 ./bin/server                                     # migrates + seeds on boot
+```
+
+The data model is unified around a single `foods` table: every ingredient is a
+food that is either *atomic* (no components) or a *recipe* (one or more
+components, each referencing another food). The `0001`/`0002` migrations define
+and seed this model. If you are upgrading a database created before the unified
+model, wipe it first (the migrations were rewritten in place, so they will not
+re-run on an already-migrated DB):
+
+```sh
+# drop + recreate the schema, then re-run the server to migrate + seed
+psql "$DATABASE_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 ```
 
 Configuration comes from `.env` (see `internal/config`): `PORT`, `BASE_PATH`,

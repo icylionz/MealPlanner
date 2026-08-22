@@ -12,7 +12,7 @@ ORDER BY plan_date;
 SELECT * FROM meal_plan WHERE id = $1;
 
 -- name: CreateMeal :one
-INSERT INTO meal_plan (plan_date, plan_time, recipe_id, servings)
+INSERT INTO meal_plan (plan_date, plan_time, food_id, servings)
 VALUES ($1, $2, $3, $4)
 RETURNING *;
 

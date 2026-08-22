@@ -21,8 +21,8 @@ var importFormats = []struct{ Value, Label string }{
 	{"mmf", "MealMaster (.mmf)"},
 }
 
-// Import renders the import recipe modal page. Parsing is not connected to a
-// backend yet, matching the prototype.
+// Import renders the import recipe modal page. All four formats — URL scrape,
+// JSON/Paprika, RecipeML/XML, and MealMaster — parse a recipe and save it.
 templ Import(d ImportData) {
 	@layout.ModalPage("Import recipe", "Import recipe — Backbone Plate", "foods", d.Member, "/foods") {
 		<form method="post" action={ templ.URL(view.Href(ctx, "/import")) }>

@@ -100,19 +100,19 @@ templ prepSessionDetail(d PrepData) {
 						<div class="card card-flush flex items-stretch">
 							<div class="flex-1 flex items-center" style="padding: 12px 14px; gap: 10px;">
 								<div class="flex-1">
-									<div style="font-weight: 600; font-size: 14px; color: var(--ink);">{ m.Recipe.Name }</div>
+									<div style="font-weight: 600; font-size: 14px; color: var(--ink);">{ m.Food.Name }</div>
 									<div style="margin-top: 4px;">
-										@RecipeTags(m.Recipe.Tags, 3)
+										@RecipeTags(m.Food.Tags, 3)
 									</div>
 								</div>
 								<div class="flex items-center" style="gap: 6px;">
-									<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/meals/"+m.Recipe.ID.String()+"/servings?delta=-1")) } style="display: contents;">
+									<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/meals/"+m.Food.ID.String()+"/servings?delta=-1")) } style="display: contents;">
 										<button type="submit" class="stepper-btn stepper-btn-sm">
 											@icons.Icon("minus", 12)
 										</button>
 									</form>
 									<span class="tnum" style="font-family: var(--font-mono); font-weight: 700; font-size: 14px; color: var(--ink); min-width: 28px; text-align: center;">{ view.Itoa(m.Servings) }</span>
-									<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/meals/"+m.Recipe.ID.String()+"/servings?delta=1")) } style="display: contents;">
+									<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/meals/"+m.Food.ID.String()+"/servings?delta=1")) } style="display: contents;">
 										<button type="submit" class="stepper-btn stepper-btn-sm">
 											@icons.Icon("plus", 12)
 										</button>
@@ -120,7 +120,7 @@ templ prepSessionDetail(d PrepData) {
 									<span style="font-size: 12px; color: var(--fg-3); margin-left: 2px;">srv</span>
 								</div>
 							</div>
-							<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/meals/"+m.Recipe.ID.String()+"/remove")) } style="display: contents;">
+							<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/meals/"+m.Food.ID.String()+"/remove")) } style="display: contents;">
 								<button type="submit" class="row-del" style="padding: 12px;" title="Remove from session">
 									@icons.Icon("x", 14)
 								</button>
@@ -137,13 +137,13 @@ templ prepSessionDetail(d PrepData) {
 							<input type="hidden" name="add" value="1"/>
 							<div class="search-wrap flex-1">
 								@icons.Icon("search", 13)
-								<input class="input input-sm" type="search" name="q" value={ d.RecipeSearch } placeholder="Search recipes…" autofocus/>
+								<input class="input input-sm" type="search" name="q" value={ d.FoodSearch } placeholder="Search recipes…" autofocus/>
 							</div>
 							<a class="btn btn-ghost btn-xs" href={ templ.URL(view.Href(ctx, prepHref(d.Active.ID))) }>Cancel</a>
 						</form>
 						<div class="flex flex-col overflow-y-auto" style="max-height: 200px; gap: 4px;">
-							for _, r := range d.Recipes {
-								@prepAddRecipeRow(d, r.ID.String(), r.Name, prepAlreadyIn(d, r.ID.String()))
+							for _, r := range d.Foods {
+								@prepAddFoodRow(d, r.ID.String(), r.Name, prepAlreadyIn(d, r.ID.String()))
 							}
 						</div>
 					</div>
@@ -180,7 +180,7 @@ templ prepSessionDetail(d PrepData) {
 								<span class="chev" style="color: var(--fg-3); display: flex;">
 									@icons.Icon("chevron-right", 14)
 								</span>
-								<span class="flex-1" style="font-weight: 700; font-size: 14px; color: var(--ink);">{ m.Recipe.Name }</span>
+								<span class="flex-1" style="font-weight: 700; font-size: 14px; color: var(--ink);">{ m.Food.Name }</span>
 								<span class="tnum" style="font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); font-weight: 600;">×{ view.Itoa(m.Servings) } servings · { view.Itoa(len(m.Breakdown)) } ingredients</span>
 							</summary>
 							<div style="border-top: 1px solid var(--line);">
@@ -190,10 +190,10 @@ templ prepSessionDetail(d PrepData) {
 										@UnitTagStatic(ing.Amount, ing.Unit, true)
 									</div>
 								}
-								if len(m.Recipe.Steps) > 0 {
+								if len(m.Food.Steps) > 0 {
 									<div style="padding: 10px 14px 10px 38px; background: var(--surface);">
 										<div class="overline" style="font-size: 9px; margin-bottom: 6px;">Steps</div>
-										for i, s := range m.Recipe.Steps {
+										for i, s := range m.Food.Steps {
 											<div class="flex" style="gap: 8px; margin-bottom: 5px;">
 												<span class="step-num" style="font-size: 10px; min-width: 18px;">{ view.Itoa(i+1) }.</span>
 												<span style="font-size: 13px; color: var(--fg-2); line-height: 1.5;">{ s }</span>
@@ -210,14 +210,14 @@ templ prepSessionDetail(d PrepData) {
 	</div>
 }
 
-templ prepAddRecipeRow(d PrepData, recipeID string, name string, alreadyIn bool) {
+templ prepAddFoodRow(d PrepData, foodID string, name string, alreadyIn bool) {
 	if alreadyIn {
 		<div class="flex items-center" style="gap: 8px; padding: 8px 10px; border-radius: var(--radius-sm); opacity: .45; background: var(--surface);">
 			<span class="flex-1" style="font-weight: 600; font-size: 13px; color: var(--ink);">{ name }</span>
 			@layout.TagAccent("Added")
 		</div>
 	} else {
-		<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/meals?recipe="+recipeID)) } style="display: contents;">
+		<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/meals?food="+foodID)) } style="display: contents;">
 			<button type="submit" class="flex items-center" style="gap: 8px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface); border: none; cursor: pointer; width: 100%; text-align: left;">
 				<span class="flex-1" style="font-weight: 600; font-size: 13px; color: var(--ink);">{ name }</span>
 				<span style="color: var(--fg-3); display: flex;">
@@ -228,12 +228,12 @@ templ prepAddRecipeRow(d PrepData, recipeID string, name string, alreadyIn bool)
 	}
 }
 
-func prepAlreadyIn(d PrepData, recipeID string) bool {
+func prepAlreadyIn(d PrepData, foodID string) bool {
 	if d.Active == nil {
 		return false
 	}
 	for _, m := range d.Active.Meals {
-		if m.Recipe.ID.String() == recipeID {
+		if m.Food.ID.String() == foodID {
 			return true
 		}
 	}

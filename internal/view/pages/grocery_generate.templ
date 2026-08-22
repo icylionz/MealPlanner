@@ -24,7 +24,7 @@ templ GroceryGenerate(d GroceryGenData) {
 						<div class="overline" style="margin-bottom: 6px;">Source</div>
 						<div class="flex" style="border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden;">
 							@genModeTab(d, "planned-meal", "calendar", "Planned meal")
-							@genModeTab(d, "recipe", "utensils", "Food / recipe")
+							@genModeTab(d, "food", "utensils", "Food / recipe")
 							@genModeTab(d, "date-range", "list", "Date range")
 						</div>
 					</div>
@@ -51,7 +51,7 @@ templ GroceryGenerate(d GroceryGenData) {
 											@icons.Icon("check-circle", 15)
 										</span>
 										<div class="flex-1 min-w-0">
-											<div class="pick-name">{ m.Recipe.Name }</div>
+											<div class="pick-name">{ m.Food.Name }</div>
 											<div class="overline" style="font-size: 10px; letter-spacing: .05em; margin-top: 1px;">{ m.DayLabel } · { m.Time }</div>
 										</div>
 										<span class="tnum" style="font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); white-space: nowrap;">{ view.Itoa(m.Servings) } srv</span>
@@ -60,22 +60,22 @@ templ GroceryGenerate(d GroceryGenData) {
 							</div>
 						</div>
 					}
-					if d.Mode == "recipe" {
+					if d.Mode == "food" {
 						<div>
 							<div class="overline" style="margin-bottom: 6px;">Pick a food or recipe</div>
 							<div class="flex" style="gap: 6px; margin-bottom: 6px;">
 								<div class="search-wrap flex-1">
 									@icons.Icon("search", 13)
-									<input class="input input-sm" type="search" name="recipe_q" value={ d.RecipeSearch } placeholder="Search recipes…"/>
+									<input class="input input-sm" type="search" name="food_q" value={ d.FoodSearch } placeholder="Search recipes…"/>
 								</div>
 								<button type="submit" class="btn btn-secondary btn-sm" title="Filter">
 									@icons.Icon("search", 13)
 								</button>
 							</div>
 							<div class="pick-list" style="max-height: 200px; margin-bottom: 10px;">
-								for _, r := range d.Recipes {
+								for _, r := range d.Foods {
 									<label class="pick-row">
-										<input type="radio" name="recipe" value={ r.ID.String() } checked?={ d.SelectedRecipe == r.ID.String() }/>
+										<input type="radio" name="food" value={ r.ID.String() } checked?={ d.SelectedFood == r.ID.String() }/>
 										<span class="pick-check">
 											@icons.Icon("check-circle", 15)
 										</span>
@@ -91,7 +91,7 @@ templ GroceryGenerate(d GroceryGenData) {
 							</div>
 							<div>
 								<div class="overline" style="margin-bottom: 6px;">Servings</div>
-								<input class="input input-sm" type="number" min="1" name="servings" value={ view.Itoa(d.RecipeServings) } style="max-width: 100px;"/>
+								<input class="input input-sm" type="number" min="1" name="servings" value={ view.Itoa(d.FoodServings) } style="max-width: 100px;"/>
 							</div>
 						</div>
 					}

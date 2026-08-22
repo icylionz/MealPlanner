@@ -2,10 +2,10 @@
 package pages
 
 import (
+	"mealplanner/internal/foods"
 	"mealplanner/internal/grocery"
 	"mealplanner/internal/households"
 	"mealplanner/internal/planner"
-	"mealplanner/internal/recipes"
 	"mealplanner/internal/units"
 )
 
@@ -27,12 +27,12 @@ func ConvertOptionsFor(amount float64, unit string) []ConvertOption {
 // FormatAmount proxies units.Format for templates.
 func FormatAmount(n float64) string { return units.Format(n) }
 
-// MealVM pairs a scheduled meal with its recipe for display.
+// MealVM pairs a scheduled meal with its food for display.
 type MealVM struct {
-	Meal    planner.Meal
-	Recipe  recipes.Recipe
-	IsPast  bool
-	IsNext  bool
+	Meal   planner.Meal
+	Food   foods.Food
+	IsPast bool
+	IsNext bool
 }
 
 // TodayData feeds the Today screen.
@@ -64,18 +64,18 @@ type CalCell struct {
 
 // PlanData feeds the Plan screen.
 type PlanData struct {
-	Member       *households.Member
-	SelectedDate string
+	Member        *households.Member
+	SelectedDate  string
 	SelectedLabel string
-	IsSelToday   bool
-	Layout       string // "list" or "calendar"
-	MonthLabel   string
-	PrevMonth    string // YYYY-MM
-	NextMonth    string
-	CalCells     []CalCell
-	WeekDays     []PlanDay
-	DayMeals     []MealVM            // meals for the selected day (list layout)
-	WeekMeals    map[string][]MealVM // meals per date (calendar layout)
+	IsSelToday    bool
+	Layout        string // "list" or "calendar"
+	MonthLabel    string
+	PrevMonth     string // YYYY-MM
+	NextMonth     string
+	CalCells      []CalCell
+	WeekDays      []PlanDay
+	DayMeals      []MealVM            // meals for the selected day (list layout)
+	WeekMeals     map[string][]MealVM // meals per date (calendar layout)
 }
 
 // FoodsData feeds the Foods screen.
@@ -84,77 +84,78 @@ type FoodsData struct {
 	Search  string
 	Tag     string
 	AllTags []string
-	Recipes []recipes.Recipe
+	Foods   []foods.Food
 }
 
-// SubCount returns how many lines of a recipe are sub-recipes.
-func SubCount(r recipes.Recipe) int {
+// SubCount returns how many components of a food are themselves recipes.
+func SubCount(f foods.Food) int {
 	n := 0
-	for _, l := range r.Ingredients {
-		if l.IsRecipe() {
+	for _, c := range f.Components {
+		if c.ChildIsRecipe {
 			n++
 		}
 	}
 	return n
 }
 
-// IngNode is a resolved node in the recipe detail ingredient tree.
+// IngNode is a resolved node in the food detail component tree.
 type IngNode struct {
-	Line       recipes.Line
+	Component  foods.Component
 	Amount     float64 // scaled
 	Unit       string  // display unit (after ?u= conversion)
-	SubRecipe  *recipes.Recipe
+	SubFood    *foods.Food
 	SubScale   float64
 	Children   []IngNode
 	Depth      int
 	ConvertKey string // query key controlling this line's display unit
 }
 
-// RecipeDetailData feeds the recipe detail screen.
-type RecipeDetailData struct {
+// FoodDetailData feeds the food detail screen.
+type FoodDetailData struct {
 	Member  *households.Member
-	Recipe  recipes.Recipe
+	Food    foods.Food
 	Scale   int
 	Tree    []IngNode
 	BaseURL string // detail path with scale/unit params preserved except scale
 }
 
-// LineForm is one editable ingredient row in the editor.
-type LineForm struct {
-	Name        string
-	Amount      string
-	Unit        string
-	IsRecipe    bool
-	SubRecipeID string
-	SubName     string
+// ComponentForm is one editable component row in the editor. Every component
+// references an existing food (chosen via the picker), never free text.
+type ComponentForm struct {
+	FoodID   string
+	FoodName string
+	Amount   string
+	Unit     string
 }
 
-// RecipeEditData feeds the recipe editor.
-type RecipeEditData struct {
+// FoodEditData feeds the food editor (also the New Food flow).
+type FoodEditData struct {
 	Member      *households.Member
 	IsNew       bool
-	RecipeID    string
+	FoodID      string
 	Action      string
 	Name        string
 	Description string
 	PrepTime    string
 	CookTime    string
 	Servings    string
+	DefaultUnit string
 	Tags        []string
-	Ingredients []LineForm
+	Components  []ComponentForm
 	Steps       []string
-	AllRecipes  []recipes.Recipe // for sub-recipe pickers
-	PickerFor   int              // index of row picking a sub-recipe, -1 none
+	AllFoods    []foods.Food // for the component picker
+	PickerFor   int          // index of row picking a food, -1 none
+	PickerQuery string       // search text within the picker
 	Error       string
 	Units       []string
 }
 
 // GroceryData feeds the Grocery screen.
 type GroceryData struct {
-	Member     *households.Member
-	Lists      []grocery.List
-	Active     *grocery.List
-	Renaming   bool
+	Member   *households.Member
+	Lists    []grocery.List
+	Active   *grocery.List
+	Renaming bool
 }
 
 // GenPreviewItem is one previewed generated ingredient.
@@ -167,7 +168,7 @@ type GenPreviewItem struct {
 // GenMealOption is a planned meal selectable as a generation source.
 type GenMealOption struct {
 	ID       string
-	Recipe   recipes.Recipe
+	Food     foods.Food
 	DayLabel string
 	Time     string
 	Servings int
@@ -175,40 +176,40 @@ type GenMealOption struct {
 
 // GroceryGenData feeds the generate-ingredients modal page.
 type GroceryGenData struct {
-	Member         *households.Member
-	ListID         string
-	Mode           string // planned-meal | recipe | date-range
-	MealSearch     string
-	Meals          []GenMealOption
-	SelectedMeal   string
-	RecipeSearch   string
-	Recipes        []recipes.Recipe
-	SelectedRecipe string
-	RecipeServings int
-	FromDate       string
-	ToDate         string
-	DateError      bool
-	Preview        []GenPreviewItem
-	HasPreview     bool
-	QueryBase      string // current query string minus preview, for tab links
+	Member       *households.Member
+	ListID       string
+	Mode         string // planned-meal | food | date-range
+	MealSearch   string
+	Meals        []GenMealOption
+	SelectedMeal string
+	FoodSearch   string
+	Foods        []foods.Food
+	SelectedFood string
+	FoodServings int
+	FromDate     string
+	ToDate       string
+	DateError    bool
+	Preview      []GenPreviewItem
+	HasPreview   bool
+	QueryBase    string // current query string minus preview, for tab links
 }
 
-// PrepMealVM is a prep session meal with its recipe and breakdown.
+// PrepMealVM is a prep session meal with its food and breakdown.
 type PrepMealVM struct {
-	Recipe    recipes.Recipe
+	Food      foods.Food
 	Servings  int
 	Breakdown []GenPreviewItem
 }
 
 // PrepData feeds the Prep screen.
 type PrepData struct {
-	Member    *households.Member
-	Sessions  []PrepSessionVM
-	Active    *PrepSessionVM
-	Aggregate []GenPreviewItem
+	Member     *households.Member
+	Sessions   []PrepSessionVM
+	Active     *PrepSessionVM
+	Aggregate  []GenPreviewItem
 	AddingMeal bool
-	RecipeSearch string
-	Recipes   []recipes.Recipe
+	FoodSearch string
+	Foods      []foods.Food
 }
 
 type PrepSessionVM struct {
@@ -233,21 +234,49 @@ type PrepPrintData struct {
 
 // HouseholdData feeds the Household screen.
 type HouseholdData struct {
-	Member    *households.Member
-	Members   []households.Member
+	Member     *households.Member
+	Members    []households.Member
 	ShowInvite bool
+}
+
+// ImportLine is one parsed ingredient line awaiting reconciliation to a food.
+type ImportLine struct {
+	Name   string // parsed free-text name
+	Amount string
+	Unit   string
+	FoodID string // selected food id, "" when unmatched
+}
+
+// Matched reports whether the line has been mapped to a food.
+func (l ImportLine) Matched() bool { return l.FoodID != "" }
+
+// ImportReconcileData feeds the import reconcile screen: an imported recipe
+// whose ingredient lines are being mapped to existing foods before saving.
+type ImportReconcileData struct {
+	Member      *households.Member
+	Name        string
+	Description string
+	Prep        string
+	Cook        string
+	Servings    string
+	DefaultUnit string
+	Tags        []string
+	Steps       []string
+	Lines       []ImportLine
+	AllFoods    []foods.Food
+	Error       string
 }
 
 // AddMealData feeds the add-meal modal page.
 type AddMealData struct {
-	Member    *households.Member
-	Date      string
-	Time      string
-	Servings  int
-	Search    string
-	Recipes   []recipes.Recipe
-	Selected  string
-	SelectedRecipe *recipes.Recipe
-	ReturnTo  string
-	Active    string // nav section the modal was opened from
+	Member       *households.Member
+	Date         string
+	Time         string
+	Servings     int
+	Search       string
+	Foods        []foods.Food
+	Selected     string
+	SelectedFood *foods.Food
+	ReturnTo     string
+	Active       string // nav section the modal was opened from
 }

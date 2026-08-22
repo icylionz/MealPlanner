@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
+	"mealplanner/internal/foods"
 	"mealplanner/internal/prep"
-	"mealplanner/internal/recipes"
 	"mealplanner/internal/view/pages"
 )
 
@@ -19,20 +19,20 @@ func (s *Server) prepData(c echo.Context) (pages.PrepData, error) {
 	if err != nil {
 		return pages.PrepData{}, err
 	}
-	all, err := s.recipes.List(ctx)
+	all, err := s.foods.List(ctx)
 	if err != nil {
 		return pages.PrepData{}, err
 	}
-	idx := recipes.Index(all)
+	idx := foods.Index(all)
 
 	d := pages.PrepData{
-		Member:       s.member(c),
-		AddingMeal:   c.QueryParam("add") == "1",
-		RecipeSearch: c.QueryParam("q"),
+		Member:     s.member(c),
+		AddingMeal: c.QueryParam("add") == "1",
+		FoodSearch: c.QueryParam("q"),
 	}
 	for _, r := range all {
-		if d.RecipeSearch == "" || strings.Contains(strings.ToLower(r.Name), strings.ToLower(d.RecipeSearch)) {
-			d.Recipes = append(d.Recipes, r)
+		if d.FoodSearch == "" || strings.Contains(strings.ToLower(r.Name), strings.ToLower(d.FoodSearch)) {
+			d.Foods = append(d.Foods, r)
 		}
 	}
 
@@ -54,29 +54,29 @@ func (s *Server) prepData(c echo.Context) (pages.PrepData, error) {
 	}
 
 	if d.Active != nil {
-		var leaves []recipes.LeafIngredient
+		var leaves []foods.LeafIngredient
 		for _, m := range d.Active.Meals {
-			leaves = append(leaves, recipes.LeafIngredients(idx, m.Recipe.ID, float64(m.Servings))...)
+			leaves = append(leaves, foods.LeafIngredients(idx, m.Food.ID, float64(m.Servings))...)
 		}
-		for _, ing := range recipes.Aggregate(leaves) {
+		for _, ing := range foods.Aggregate(leaves) {
 			d.Aggregate = append(d.Aggregate, pages.GenPreviewItem{Name: ing.Name, Amount: ing.Amount, Unit: ing.Unit})
 		}
 	}
 	return d, nil
 }
 
-func (s *Server) prepSessionVM(sess prep.Session, idx map[uuid.UUID]recipes.Recipe) pages.PrepSessionVM {
+func (s *Server) prepSessionVM(sess prep.Session, idx map[uuid.UUID]foods.Food) pages.PrepSessionVM {
 	var meals []pages.PrepMealVM
 	for _, m := range sess.Meals {
-		r, ok := idx[m.RecipeID]
+		r, ok := idx[m.FoodID]
 		if !ok {
 			continue
 		}
 		var breakdown []pages.GenPreviewItem
-		for _, ing := range recipes.Aggregate(recipes.LeafIngredients(idx, r.ID, float64(m.Servings))) {
+		for _, ing := range foods.Aggregate(foods.LeafIngredients(idx, r.ID, float64(m.Servings))) {
 			breakdown = append(breakdown, pages.GenPreviewItem{Name: ing.Name, Amount: ing.Amount, Unit: ing.Unit})
 		}
-		meals = append(meals, pages.PrepMealVM{Recipe: r, Servings: m.Servings, Breakdown: breakdown})
+		meals = append(meals, pages.PrepMealVM{Food: r, Servings: m.Servings, Breakdown: breakdown})
 	}
 	return pages.NewPrepSessionVM(sess.ID.String(), sess.Name, sess.Date, meals)
 }
@@ -137,15 +137,15 @@ func (s *Server) handlePrepAddMeal(c echo.Context) error {
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	recipeID, err := uuid.Parse(c.QueryParam("recipe"))
+	foodID, err := uuid.Parse(c.QueryParam("food"))
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	r, err := s.recipes.Get(c.Request().Context(), recipeID)
+	r, err := s.foods.Get(c.Request().Context(), foodID)
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	if err := s.prep.AddMeal(c.Request().Context(), sessionID, recipeID, r.Servings); err != nil {
+	if err := s.prep.AddMeal(c.Request().Context(), sessionID, foodID, r.Servings); err != nil {
 		return err
 	}
 	return s.redirect(c, "/prep?session="+sessionID.String())
@@ -156,11 +156,11 @@ func (s *Server) handlePrepRemoveMeal(c echo.Context) error {
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	recipeID, err := uuid.Parse(c.Param("rid"))
+	foodID, err := uuid.Parse(c.Param("rid"))
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	if err := s.prep.RemoveMeal(c.Request().Context(), sessionID, recipeID); err != nil {
+	if err := s.prep.RemoveMeal(c.Request().Context(), sessionID, foodID); err != nil {
 		return err
 	}
 	return s.redirect(c, "/prep?session="+sessionID.String())
@@ -171,7 +171,7 @@ func (s *Server) handlePrepServings(c echo.Context) error {
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	recipeID, err := uuid.Parse(c.Param("rid"))
+	foodID, err := uuid.Parse(c.Param("rid"))
 	if err != nil {
 		return echo.ErrNotFound
 	}
@@ -179,7 +179,7 @@ func (s *Server) handlePrepServings(c echo.Context) error {
 	if err != nil || (delta != 1 && delta != -1) {
 		return echo.ErrBadRequest
 	}
-	if err := s.prep.AdjustServings(c.Request().Context(), sessionID, recipeID, delta); err != nil {
+	if err := s.prep.AdjustServings(c.Request().Context(), sessionID, foodID, delta); err != nil {
 		return err
 	}
 	return s.redirect(c, "/prep?session="+sessionID.String())

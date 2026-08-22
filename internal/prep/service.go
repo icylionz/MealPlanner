@@ -15,9 +15,9 @@ import (
 // DateFormat is the wire format for session dates.
 const DateFormat = "2006-01-02"
 
-// SessionMeal is a recipe included in a prep session.
+// SessionMeal is a food included in a prep session.
 type SessionMeal struct {
-	RecipeID uuid.UUID
+	FoodID   uuid.UUID
 	Servings int
 }
 
@@ -51,7 +51,7 @@ func (s *Service) ListAll(ctx context.Context) ([]Session, error) {
 	}
 	byID := map[uuid.UUID][]SessionMeal{}
 	for _, m := range meals {
-		byID[m.SessionID] = append(byID[m.SessionID], SessionMeal{RecipeID: m.RecipeID, Servings: int(m.Servings)})
+		byID[m.SessionID] = append(byID[m.SessionID], SessionMeal{FoodID: m.FoodID, Servings: int(m.Servings)})
 	}
 	out := make([]Session, 0, len(rows))
 	for _, r := range rows {
@@ -99,8 +99,8 @@ func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 	return s.q.DeletePrepSession(ctx, id)
 }
 
-// AddMeal includes a recipe in a session with its default servings.
-func (s *Service) AddMeal(ctx context.Context, sessionID, recipeID uuid.UUID, servings int) error {
+// AddMeal includes a food in a session with its default servings.
+func (s *Service) AddMeal(ctx context.Context, sessionID, foodID uuid.UUID, servings int) error {
 	if servings < 1 {
 		servings = 1
 	}
@@ -109,18 +109,18 @@ func (s *Service) AddMeal(ctx context.Context, sessionID, recipeID uuid.UUID, se
 		return err
 	}
 	return s.q.AddPrepSessionMeal(ctx, db.AddPrepSessionMealParams{
-		SessionID: sessionID, RecipeID: recipeID, Servings: int32(servings), SortOrder: maxSort + 1,
+		SessionID: sessionID, FoodID: foodID, Servings: int32(servings), SortOrder: maxSort + 1,
 	})
 }
 
-// RemoveMeal removes a recipe from a session.
-func (s *Service) RemoveMeal(ctx context.Context, sessionID, recipeID uuid.UUID) error {
-	return s.q.RemovePrepSessionMeal(ctx, db.RemovePrepSessionMealParams{SessionID: sessionID, RecipeID: recipeID})
+// RemoveMeal removes a food from a session.
+func (s *Service) RemoveMeal(ctx context.Context, sessionID, foodID uuid.UUID) error {
+	return s.q.RemovePrepSessionMeal(ctx, db.RemovePrepSessionMealParams{SessionID: sessionID, FoodID: foodID})
 }
 
 // AdjustServings changes a session meal's servings by delta, floored at 1.
-func (s *Service) AdjustServings(ctx context.Context, sessionID, recipeID uuid.UUID, delta int) error {
+func (s *Service) AdjustServings(ctx context.Context, sessionID, foodID uuid.UUID, delta int) error {
 	return s.q.AdjustPrepSessionServings(ctx, db.AdjustPrepSessionServingsParams{
-		SessionID: sessionID, RecipeID: recipeID, Servings: int32(delta),
+		SessionID: sessionID, FoodID: foodID, Servings: int32(delta),
 	})
 }

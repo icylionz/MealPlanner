@@ -34,20 +34,20 @@ templ Today(d TodayData) {
 templ todayMealRow(m MealVM) {
 	<div class={ "card card-flush meal-row", templ.KV("past", m.IsPast), templ.KV("next", m.IsNext) }>
 		<div class="meal-time">{ m.Meal.Time }</div>
-		<a class="meal-link" href={ templ.URL(view.Href(ctx, "/recipes/"+m.Meal.RecipeID.String())) }>
+		<a class="meal-link" href={ templ.URL(view.Href(ctx, "/foods/"+m.Meal.FoodID.String())) }>
 			<div class="flex-1 min-w-0">
-				<div class="meal-name">{ m.Recipe.Name }</div>
+				<div class="meal-name">{ m.Food.Name }</div>
 				<div style="margin-top: 5px;">
-					@RecipeTags(m.Recipe.Tags, 3)
+					@RecipeTags(m.Food.Tags, 3)
 				</div>
 			</div>
 			<div class="text-right flex-none">
 				<div class="tnum" style="font-size: 13px; color: var(--fg-3);">
 					{ view.Itoa(m.Meal.Servings) } { view.Plural(m.Meal.Servings, "serving", "servings") }
 				</div>
-				if m.Recipe.PrepTime+m.Recipe.CookTime > 0 {
+				if m.Food.PrepTime+m.Food.CookTime > 0 {
 					<div class="overline" style="font-size: 10px; color: var(--fg-4); letter-spacing: .04em; margin-top: 2px;">
-						{ view.Itoa(m.Recipe.PrepTime + m.Recipe.CookTime) } min
+						{ view.Itoa(m.Food.PrepTime + m.Food.CookTime) } min
 					</div>
 				}
 			</div>

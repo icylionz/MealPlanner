@@ -40,7 +40,7 @@ templ PrepPrint(d PrepPrintData) {
 					for _, m := range d.Session.Meals {
 						<div style="margin-bottom: 16px;">
 							<div style="font-family: var(--font-display); font-weight: 700; font-size: 14px; color: var(--ink); margin-bottom: 6px;">
-								{ m.Recipe.Name }
+								{ m.Food.Name }
 								<span class="tnum" style="font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); font-weight: 600;">×{ view.Itoa(m.Servings) }</span>
 							</div>
 							for _, ing := range m.Breakdown {

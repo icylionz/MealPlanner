@@ -23,7 +23,7 @@ type Meal struct {
 	ID       uuid.UUID
 	Date     string // YYYY-MM-DD
 	Time     string // HH:MM
-	RecipeID uuid.UUID
+	FoodID   uuid.UUID
 	Servings int
 }
 
@@ -89,8 +89,8 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Meal, error) {
 	return &m, nil
 }
 
-// Add schedules a recipe on a date and time.
-func (s *Service) Add(ctx context.Context, date, timeOfDay string, recipeID uuid.UUID, servings int) error {
+// Add schedules a food on a date and time.
+func (s *Service) Add(ctx context.Context, date, timeOfDay string, foodID uuid.UUID, servings int) error {
 	d, err := time.Parse(DateFormat, date)
 	if err != nil {
 		return errors.New("invalid date")
@@ -102,7 +102,7 @@ func (s *Service) Add(ctx context.Context, date, timeOfDay string, recipeID uuid
 		servings = 1
 	}
 	_, err = s.q.CreateMeal(ctx, db.CreateMealParams{
-		PlanDate: d, PlanTime: timeOfDay, RecipeID: recipeID, Servings: int32(servings),
+		PlanDate: d, PlanTime: timeOfDay, FoodID: foodID, Servings: int32(servings),
 	})
 	return err
 }
@@ -117,7 +117,7 @@ func fromRow(m db.MealPlan) Meal {
 		ID:       m.ID,
 		Date:     m.PlanDate.Format(DateFormat),
 		Time:     m.PlanTime,
-		RecipeID: m.RecipeID,
+		FoodID:   m.FoodID,
 		Servings: int(m.Servings),
 	}
 }
