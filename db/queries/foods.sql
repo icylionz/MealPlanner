@@ -9,12 +9,14 @@ INSERT INTO foods (name, description, prep_time_min, cook_time_min, servings, de
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
--- name: UpdateFood :exec
+-- name: UpdateFood :execrows
+-- Optimistic lock (FR16): only writes when the caller's expected_version still
+-- matches. Returns the number of rows updated — 0 means a stale write.
 UPDATE foods
 SET name = $2, description = $3, prep_time_min = $4, cook_time_min = $5,
     servings = $6, default_unit = $7, density_g_per_ml = $8, density_source = $9,
-    updated_at = now()
-WHERE id = $1;
+    version = version + 1, updated_at = now()
+WHERE id = $1 AND version = $10;
 
 -- name: DeleteFood :exec
 DELETE FROM foods WHERE id = $1;

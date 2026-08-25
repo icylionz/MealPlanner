@@ -30,6 +30,9 @@ func cancelHref(d FoodEditData) string {
 templ FoodEdit(d FoodEditData) {
 	@layout.Shell(editTitle(d)+" — Backbone Plate", "foods", d.Member) {
 		<form method="post" action={ templ.URL(view.Href(ctx, d.Action)) } class="flex flex-col flex-1 min-h-0">
+			if !d.IsNew {
+				<input type="hidden" name="version" value={ d.Version }/>
+			}
 			@layout.PageHeaderBack("/foods", "Foods & recipes", editTitle(d)) {
 				<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, cancelHref(d))) }>Cancel</a>
 				<button type="submit" name="action" value="save" class="btn btn-sm">
@@ -43,6 +46,9 @@ templ FoodEdit(d FoodEditData) {
 						@icons.Icon("alert-circle", 14)
 						{ d.Error }
 					</div>
+				}
+				if d.Conflict != nil {
+					@foodConflictPanel(d.Conflict)
 				}
 				<div style="margin-bottom: 20px;">
 					@FieldLabel("Name")
@@ -175,3 +181,19 @@ templ componentEditRow(d FoodEditData, i int, comp ComponentForm) {
 	</div>
 }
 
+
+// foodConflictPanel shows the current saved food next to the editor after an
+// optimistic-lock rejection, so the user can compare before re-saving (FR16.2).
+templ foodConflictPanel(c *FoodConflict) {
+	<div class="card" style="border-color: var(--danger); margin-bottom: 16px;">
+		<div class="overline" style="margin-bottom: 8px; color: var(--danger);">Current saved version (v{ view.Itoa(c.Version) })</div>
+		<div class="flex flex-col" style="gap: 4px; font-size: 13px; color: var(--fg-3);">
+			<div><strong style="color: var(--fg-1);">{ c.Name }</strong></div>
+			if c.Description != "" {
+				<div>{ c.Description }</div>
+			}
+			<div>Prep { view.Itoa(c.PrepTime) } · Cook { view.Itoa(c.CookTime) } · Serves { view.Itoa(c.Servings) } · Unit { c.DefaultUnit }</div>
+		</div>
+		<div style="margin-top: 8px; font-size: 12px; color: var(--fg-4);">Your edits are kept in the form below. Saving again will overwrite this version.</div>
+	</div>
+}

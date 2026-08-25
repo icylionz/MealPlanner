@@ -162,12 +162,26 @@ type FoodEditData struct {
 	DefaultUnit   string
 	Density       string // g/ml, blank = unset (falls back to starter set)
 	DensitySource string // "starter", "custom", or "none" (display hint)
+	Version       string // optimistic-lock version, posted back as a hidden field (FR16)
 	Tags          []string
 	Components    []ComponentForm
 	Steps         []string
 	AllFoods      []foods.Food // options for the component search-select
 	Error         string
+	Conflict      *FoodConflict // set when a save was rejected as stale (FR16)
 	Units         []string
+}
+
+// FoodConflict holds the current saved food shown on the conflict screen so the
+// user can compare it with their attempted edit before re-saving (FR16.2).
+type FoodConflict struct {
+	Version     int
+	Name        string
+	Description string
+	PrepTime    int
+	CookTime    int
+	Servings    int
+	DefaultUnit string
 }
 
 // GroceryData feeds the Grocery screen.

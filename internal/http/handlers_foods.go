@@ -157,6 +157,7 @@ func (s *Server) editorData(c echo.Context, isNew bool, foodID string) (pages.Fo
 		Servings:    c.FormValue("servings"),
 		DefaultUnit: c.FormValue("default_unit"),
 		Density:     c.FormValue("density"),
+		Version:     c.FormValue("version"),
 		Tags:        f["tags"],
 		Steps:       f["steps"],
 		Units:       units.EditorUnits,
@@ -235,6 +236,7 @@ func (s *Server) handleFoodEdit(c echo.Context) error {
 		Servings:      strconv.Itoa(r.Servings),
 		DefaultUnit:   r.DefaultUnit,
 		DensitySource: r.DensitySource,
+		Version:       strconv.Itoa(r.Version),
 		Tags:          r.Tags,
 		Steps:         r.Steps,
 		Units:         units.EditorUnits,
@@ -286,6 +288,21 @@ func (s *Server) handleFoodEditPost(c echo.Context) error {
 		}
 		savedID, err := s.foods.Save(c.Request().Context(), idPtr, form)
 		if err != nil {
+			if errors.Is(err, foods.ErrConflict) && idPtr != nil {
+				// Optimistic-lock conflict (FR16): show the current saved record
+				// alongside the user's attempt, and advance the hidden version so a
+				// deliberate re-save succeeds if no newer conflict has landed.
+				if cur, gerr := s.foods.Get(c.Request().Context(), *idPtr); gerr == nil {
+					d.Conflict = &pages.FoodConflict{
+						Version: cur.Version, Name: cur.Name, Description: cur.Description,
+						PrepTime: cur.PrepTime, CookTime: cur.CookTime,
+						Servings: cur.Servings, DefaultUnit: cur.DefaultUnit,
+					}
+					d.Version = strconv.Itoa(cur.Version)
+				}
+				d.Error = "This food was changed by someone else since you opened it. Review the current version below, then save again to overwrite it."
+				break
+			}
 			if errors.Is(err, foods.ErrCycle) || err.Error() == "food needs a name" {
 				d.Error = err.Error()
 				break
@@ -359,6 +376,7 @@ func editorToForm(d pages.FoodEditData) (foods.Form, error) {
 		Servings:    atoiDefault(d.Servings, 1),
 		DefaultUnit: d.DefaultUnit,
 		Density:     density,
+		Version:     atoiDefault(d.Version, 0),
 		Tags:        d.Tags,
 		Steps:       d.Steps,
 	}

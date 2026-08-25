@@ -23,6 +23,10 @@ var ErrCycle = errors.New("food components must not form a cycle")
 // ErrInUse is returned when deleting a food that other foods use as a component.
 var ErrInUse = errors.New("food is used as a component by other foods")
 
+// ErrConflict is returned when a save is rejected because the food changed since
+// the editor loaded it (optimistic lock, FR16).
+var ErrConflict = errors.New("food was changed by someone else since you opened it")
+
 // Component is one component line: a reference to another food with a quantity.
 type Component struct {
 	ID            uuid.UUID
@@ -45,6 +49,7 @@ type Food struct {
 	DefaultUnit   string
 	Density       float64 // grams per millilitre; 0 means unset
 	DensitySource string  // "starter", "custom", or "none"
+	Version       int     // optimistic-lock version (FR16)
 	Tags          []string
 	Components    []Component
 	Steps         []string
@@ -73,6 +78,7 @@ type Form struct {
 	Servings    int
 	DefaultUnit string
 	Density     float64 // grams per millilitre; 0 = fall back to the starter set
+	Version     int     // expected version for the optimistic-lock check (FR16)
 	Tags        []string
 	Components  []Component
 	Steps       []string
@@ -131,7 +137,8 @@ func (s *Service) List(ctx context.Context) ([]Food, error) {
 			ID: r.ID, Name: r.Name, Description: r.Description,
 			PrepTime: int(r.PrepTimeMin), CookTime: int(r.CookTimeMin), Servings: int(r.Servings),
 			DefaultUnit: r.DefaultUnit, Density: r.DensityGPerMl, DensitySource: r.DensitySource,
-			Tags: tagsBy[r.ID], Components: compsBy[r.ID],
+			Version: int(r.Version),
+			Tags:    tagsBy[r.ID], Components: compsBy[r.ID],
 		})
 	}
 	return out, nil
@@ -161,6 +168,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Food, error) {
 		ID: r.ID, Name: r.Name, Description: r.Description,
 		PrepTime: int(r.PrepTimeMin), CookTime: int(r.CookTimeMin), Servings: int(r.Servings),
 		DefaultUnit: r.DefaultUnit, Density: r.DensityGPerMl, DensitySource: r.DensitySource,
+		Version: int(r.Version),
 	}
 	for _, t := range tags {
 		if t.FoodID == id {
@@ -248,13 +256,19 @@ func (s *Service) Save(ctx context.Context, id *uuid.UUID, form Form) (uuid.UUID
 		foodID = created.ID
 	} else {
 		foodID = *id
-		if err := q.UpdateFood(ctx, db.UpdateFoodParams{
+		rows, err := q.UpdateFood(ctx, db.UpdateFoodParams{
 			ID: foodID, Name: form.Name, Description: form.Description,
 			PrepTimeMin: int32(form.PrepTime), CookTimeMin: int32(form.CookTime),
 			Servings: int32(form.Servings), DefaultUnit: form.DefaultUnit,
 			DensityGPerMl: density, DensitySource: source,
-		}); err != nil {
+			Version: int32(form.Version),
+		})
+		if err != nil {
 			return uuid.Nil, err
+		}
+		if rows == 0 {
+			// Either the row is gone or its version moved on: a stale write (FR16).
+			return uuid.Nil, ErrConflict
 		}
 	}
 
