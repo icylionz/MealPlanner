@@ -1,47 +1,78 @@
--- name: ListMembers :many
-SELECT * FROM household_members ORDER BY created_at;
+-- Accounts: the login identity.
 
--- name: GetMember :one
-SELECT * FROM household_members WHERE id = $1;
-
--- name: GetMemberByEmail :one
-SELECT * FROM household_members WHERE lower(email) = lower($1);
-
--- name: GetPasswordlessMemberByName :one
-SELECT * FROM household_members
-WHERE lower(name) = lower($1) AND password_hash IS NULL
-ORDER BY created_at
-LIMIT 1;
-
--- name: CountMembers :one
-SELECT count(*) FROM household_members;
-
--- name: CreateMember :one
-INSERT INTO household_members (name, role, initials, color)
-VALUES ($1, $2, $3, $4)
+-- name: CreateAccount :one
+INSERT INTO accounts (email, password_hash, name)
+VALUES ($1, $2, $3)
 RETURNING *;
 
--- name: CreateMemberWithAuth :one
-INSERT INTO household_members (name, role, initials, color, email, password_hash)
-VALUES ($1, $2, $3, $4, $5, $6)
+-- name: GetAccount :one
+SELECT * FROM accounts WHERE id = $1;
+
+-- name: GetAccountByEmail :one
+SELECT * FROM accounts WHERE lower(email) = lower($1);
+
+-- Households.
+
+-- name: CreateHousehold :one
+INSERT INTO households (name, invite_code) VALUES ($1, $2)
 RETURNING *;
 
--- name: SetMemberCredentials :one
-UPDATE household_members
-SET email = $2, password_hash = $3
-WHERE id = $1
+-- name: GetHousehold :one
+SELECT * FROM households WHERE id = $1 AND is_template = false;
+
+-- name: GetHouseholdByInvite :one
+SELECT * FROM households WHERE invite_code = $1 AND is_template = false;
+
+-- name: RegenerateInviteCode :exec
+UPDATE households SET invite_code = $2 WHERE id = $1 AND is_template = false;
+
+-- Household membership (account <-> household join).
+
+-- name: AddMember :one
+INSERT INTO household_members (household_id, account_id, role, initials, color)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (household_id, account_id) DO NOTHING
 RETURNING *;
 
--- name: DeleteMember :exec
-DELETE FROM household_members WHERE id = $1 AND role <> 'owner';
+-- name: CountHouseholdMembers :one
+SELECT count(*) FROM household_members WHERE household_id = $1;
+
+-- name: GetMembership :one
+SELECT * FROM household_members WHERE household_id = $1 AND account_id = $2;
+
+-- name: ListHouseholdMembers :many
+SELECT m.id, m.household_id, m.account_id, m.role, m.initials, m.color, m.created_at,
+       a.name AS account_name, a.email AS account_email
+FROM household_members m
+JOIN accounts a ON a.id = m.account_id
+WHERE m.household_id = $1
+ORDER BY m.created_at;
+
+-- name: ListHouseholdsForAccount :many
+SELECT h.id, h.name, h.invite_code, h.created_at, m.role, m.initials, m.color
+FROM household_members m
+JOIN households h ON h.id = m.household_id
+WHERE m.account_id = $1 AND h.is_template = false
+ORDER BY h.created_at;
+
+-- name: RemoveMember :exec
+DELETE FROM household_members
+WHERE household_id = $1 AND account_id = $2 AND role <> 'owner';
+
+-- Sessions: keyed on the account, carrying the active household.
 
 -- name: CreateSession :exec
-INSERT INTO sessions (token, member_id, expires_at) VALUES ($1, $2, $3);
+INSERT INTO sessions (token, account_id, active_household_id, expires_at)
+VALUES ($1, $2, $3, $4);
 
--- name: GetSessionMember :one
-SELECT m.* FROM sessions s
-JOIN household_members m ON m.id = s.member_id
+-- name: GetSessionAccount :one
+SELECT a.*, s.active_household_id, s.token
+FROM sessions s
+JOIN accounts a ON a.id = s.account_id
 WHERE s.token = $1 AND s.expires_at > now();
+
+-- name: SetActiveHousehold :exec
+UPDATE sessions SET active_household_id = $2 WHERE token = $1;
 
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE token = $1;

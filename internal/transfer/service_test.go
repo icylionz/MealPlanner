@@ -12,7 +12,7 @@ import (
 func TestImportRejectsUnsupportedSchemaVersion(t *testing.T) {
 	// Version is checked before any DB access, so a nil pool is fine here.
 	s := &Service{}
-	_, err := s.Import(context.Background(), &Archive{SchemaVersion: SchemaVersion + 1}, nil)
+	_, err := s.Import(context.Background(), uuid.New(), &Archive{SchemaVersion: SchemaVersion + 1}, nil)
 	if err == nil {
 		t.Fatal("expected error for unsupported schema_version, got nil")
 	}
@@ -83,9 +83,6 @@ func TestSkipNotesAreCapped(t *testing.T) {
 }
 
 func TestNormalizers(t *testing.T) {
-	if roleOrMember("owner") != "owner" || roleOrMember("junk") != "member" {
-		t.Fatal("roleOrMember wrong")
-	}
 	if densitySourceOrNone("starter") != "starter" || densitySourceOrNone("custom") != "custom" || densitySourceOrNone("junk") != "none" {
 		t.Fatal("densitySourceOrNone wrong")
 	}

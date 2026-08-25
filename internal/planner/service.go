@@ -93,7 +93,7 @@ func NewService(pool *pgxpool.Pool) *Service {
 }
 
 // ListBetween returns meals within [from, to], ordered by date then time.
-func (s *Service) ListBetween(ctx context.Context, from, to string) ([]Meal, error) {
+func (s *Service) ListBetween(ctx context.Context, householdID uuid.UUID, from, to string) ([]Meal, error) {
 	fromT, err := time.Parse(DateFormat, from)
 	if err != nil {
 		return nil, err
@@ -102,7 +102,7 @@ func (s *Service) ListBetween(ctx context.Context, from, to string) ([]Meal, err
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.q.ListMealsBetween(ctx, db.ListMealsBetweenParams{PlanDate: fromT, PlanDate_2: toT})
+	rows, err := s.q.ListMealsBetween(ctx, db.ListMealsBetweenParams{HouseholdID: householdID, PlanDate: fromT, PlanDate_2: toT})
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func (s *Service) ListBetween(ctx context.Context, from, to string) ([]Meal, err
 }
 
 // DatesWithMeals returns the distinct dates in [from, to] that have meals.
-func (s *Service) DatesWithMeals(ctx context.Context, from, to string) (map[string]bool, error) {
+func (s *Service) DatesWithMeals(ctx context.Context, householdID uuid.UUID, from, to string) (map[string]bool, error) {
 	fromT, err := time.Parse(DateFormat, from)
 	if err != nil {
 		return nil, err
@@ -123,7 +123,7 @@ func (s *Service) DatesWithMeals(ctx context.Context, from, to string) (map[stri
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.q.ListMealDatesBetween(ctx, db.ListMealDatesBetweenParams{PlanDate: fromT, PlanDate_2: toT})
+	rows, err := s.q.ListMealDatesBetween(ctx, db.ListMealDatesBetweenParams{HouseholdID: householdID, PlanDate: fromT, PlanDate_2: toT})
 	if err != nil {
 		return nil, err
 	}
@@ -135,8 +135,8 @@ func (s *Service) DatesWithMeals(ctx context.Context, from, to string) (map[stri
 }
 
 // Get returns one meal.
-func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Meal, error) {
-	row, err := s.q.GetMeal(ctx, id)
+func (s *Service) Get(ctx context.Context, householdID, id uuid.UUID) (*Meal, error) {
+	row, err := s.q.GetMeal(ctx, db.GetMealParams{ID: id, HouseholdID: householdID})
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +145,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Meal, error) {
 }
 
 // Add schedules a food on a date and time.
-func (s *Service) Add(ctx context.Context, date, timeOfDay string, foodID uuid.UUID, servings int) error {
+func (s *Service) Add(ctx context.Context, householdID uuid.UUID, date, timeOfDay string, foodID uuid.UUID, servings int) error {
 	d, err := time.Parse(DateFormat, date)
 	if err != nil {
 		return errors.New("invalid date")
@@ -157,14 +157,14 @@ func (s *Service) Add(ctx context.Context, date, timeOfDay string, foodID uuid.U
 		servings = 1
 	}
 	_, err = s.q.CreateMeal(ctx, db.CreateMealParams{
-		PlanDate: d, PlanTime: timeOfDay, FoodID: foodID, Servings: int32(servings),
+		HouseholdID: householdID, PlanDate: d, PlanTime: timeOfDay, FoodID: foodID, Servings: int32(servings),
 	})
 	return err
 }
 
 // AddRecurring creates a recurring series and materializes its occurrences
 // as concrete meal_plan rows carrying the series id.
-func (s *Service) AddRecurring(ctx context.Context, startDate, timeOfDay string, foodID uuid.UUID, servings int, r Recurrence) error {
+func (s *Service) AddRecurring(ctx context.Context, householdID uuid.UUID, startDate, timeOfDay string, foodID uuid.UUID, servings int, r Recurrence) error {
 	start, err := time.Parse(DateFormat, startDate)
 	if err != nil {
 		return errors.New("invalid date")
@@ -208,7 +208,7 @@ func (s *Service) AddRecurring(ctx context.Context, startDate, timeOfDay string,
 	}
 
 	series, err := s.q.CreateSeries(ctx, db.CreateSeriesParams{
-		FoodID: foodID, PlanTime: timeOfDay, Servings: int32(servings),
+		HouseholdID: householdID, FoodID: foodID, PlanTime: timeOfDay, Servings: int32(servings),
 		Freq: r.Freq, Byweekday: byweekday, StartDate: start, UntilDate: until,
 	})
 	if err != nil {
@@ -217,7 +217,7 @@ func (s *Service) AddRecurring(ctx context.Context, startDate, timeOfDay string,
 	sid := series.ID
 	for _, d := range dates {
 		if _, err := s.q.CreateMeal(ctx, db.CreateMealParams{
-			PlanDate: d, PlanTime: timeOfDay, FoodID: foodID, Servings: int32(servings), SeriesID: &sid,
+			HouseholdID: householdID, PlanDate: d, PlanTime: timeOfDay, FoodID: foodID, Servings: int32(servings), SeriesID: &sid,
 		}); err != nil {
 			return err
 		}
@@ -267,7 +267,7 @@ func decodeWeekdays(s string) []time.Weekday {
 
 // Update edits a meal. For non-series meals scope is ignored. For series meals
 // scope selects this occurrence, this and future, or all occurrences.
-func (s *Service) Update(ctx context.Context, id uuid.UUID, date, timeOfDay string, foodID uuid.UUID, servings int, scope Scope) error {
+func (s *Service) Update(ctx context.Context, householdID, id uuid.UUID, date, timeOfDay string, foodID uuid.UUID, servings int, scope Scope) error {
 	d, err := time.Parse(DateFormat, date)
 	if err != nil {
 		return errors.New("invalid date")
@@ -278,7 +278,7 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, date, timeOfDay stri
 	if servings < 1 {
 		servings = 1
 	}
-	m, err := s.q.GetMeal(ctx, id)
+	m, err := s.q.GetMeal(ctx, db.GetMealParams{ID: id, HouseholdID: householdID})
 	if err != nil {
 		return err
 	}
@@ -286,12 +286,12 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, date, timeOfDay stri
 	if m.SeriesID == nil || scope == ScopeOne {
 		// A single-occurrence edit detaches it so series-wide edits skip it.
 		if err := s.q.UpdateMeal(ctx, db.UpdateMealParams{
-			ID: id, PlanDate: d, PlanTime: timeOfDay, FoodID: foodID, Servings: int32(servings),
+			ID: id, HouseholdID: householdID, PlanDate: d, PlanTime: timeOfDay, FoodID: foodID, Servings: int32(servings),
 		}); err != nil {
 			return err
 		}
 		if m.SeriesID != nil {
-			return s.q.DetachMeal(ctx, id)
+			return s.q.DetachMeal(ctx, db.DetachMealParams{ID: id, HouseholdID: householdID})
 		}
 		return nil
 	}
@@ -308,16 +308,16 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, date, timeOfDay stri
 
 // Delete removes a scheduled meal. For series meals scope selects this
 // occurrence, this and future, or all occurrences.
-func (s *Service) Delete(ctx context.Context, id uuid.UUID, scope Scope) error {
-	m, err := s.q.GetMeal(ctx, id)
+func (s *Service) Delete(ctx context.Context, householdID, id uuid.UUID, scope Scope) error {
+	m, err := s.q.GetMeal(ctx, db.GetMealParams{ID: id, HouseholdID: householdID})
 	if err != nil {
 		return err
 	}
 	if m.SeriesID == nil || scope == ScopeOne {
-		return s.q.DeleteMeal(ctx, id)
+		return s.q.DeleteMeal(ctx, db.DeleteMealParams{ID: id, HouseholdID: householdID})
 	}
 	if scope == ScopeAll {
-		return s.q.DeleteSeries(ctx, *m.SeriesID) // cascade removes occurrences
+		return s.q.DeleteSeries(ctx, db.DeleteSeriesParams{ID: *m.SeriesID, HouseholdID: householdID}) // cascade removes occurrences
 	}
 	return s.q.DeleteSeriesMealsFrom(ctx, db.DeleteSeriesMealsFromParams{
 		SeriesID: m.SeriesID, PlanDate: m.PlanDate,
@@ -325,8 +325,8 @@ func (s *Service) Delete(ctx context.Context, id uuid.UUID, scope Scope) error {
 }
 
 // GetSeries returns a recurrence rule for display.
-func (s *Service) GetSeries(ctx context.Context, id uuid.UUID) (*Series, error) {
-	row, err := s.q.GetSeries(ctx, id)
+func (s *Service) GetSeries(ctx context.Context, householdID, id uuid.UUID) (*Series, error) {
+	row, err := s.q.GetSeries(ctx, db.GetSeriesParams{ID: id, HouseholdID: householdID})
 	if err != nil {
 		return nil, err
 	}
@@ -355,8 +355,8 @@ func fromRow(m db.MealPlan) Meal {
 
 // SetLink stores (or clears, when url is empty) the external link and its
 // preview on a single meal occurrence (FR13).
-func (s *Service) SetLink(ctx context.Context, id uuid.UUID, url, title, imageURL string) error {
+func (s *Service) SetLink(ctx context.Context, householdID, id uuid.UUID, url, title, imageURL string) error {
 	return s.q.UpdateMealLink(ctx, db.UpdateMealLinkParams{
-		ID: id, LinkUrl: url, LinkTitle: title, LinkImageUrl: imageURL,
+		ID: id, HouseholdID: householdID, LinkUrl: url, LinkTitle: title, LinkImageUrl: imageURL,
 	})
 }

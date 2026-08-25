@@ -65,12 +65,12 @@ func NewService(pool *pgxpool.Pool) *Service {
 }
 
 // ListAll returns every list with items loaded.
-func (s *Service) ListAll(ctx context.Context) ([]List, error) {
-	lists, err := s.q.ListGroceryLists(ctx)
+func (s *Service) ListAll(ctx context.Context, householdID uuid.UUID) ([]List, error) {
+	lists, err := s.q.ListGroceryLists(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
-	items, err := s.q.ListAllGroceryItems(ctx)
+	items, err := s.q.ListAllGroceryItems(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
@@ -88,11 +88,11 @@ func (s *Service) ListAll(ctx context.Context) ([]List, error) {
 }
 
 // Create adds a new empty list.
-func (s *Service) Create(ctx context.Context, name string) (uuid.UUID, error) {
+func (s *Service) Create(ctx context.Context, householdID uuid.UUID, name string) (uuid.UUID, error) {
 	if strings.TrimSpace(name) == "" {
 		name = "New list"
 	}
-	l, err := s.q.CreateGroceryList(ctx, name)
+	l, err := s.q.CreateGroceryList(ctx, db.CreateGroceryListParams{HouseholdID: householdID, Name: name})
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -100,30 +100,33 @@ func (s *Service) Create(ctx context.Context, name string) (uuid.UUID, error) {
 }
 
 // Rename changes a list's name.
-func (s *Service) Rename(ctx context.Context, id uuid.UUID, name string) error {
+func (s *Service) Rename(ctx context.Context, householdID, id uuid.UUID, name string) error {
 	if strings.TrimSpace(name) == "" {
 		return nil
 	}
-	return s.q.RenameGroceryList(ctx, db.RenameGroceryListParams{ID: id, Name: name})
+	return s.q.RenameGroceryList(ctx, db.RenameGroceryListParams{ID: id, Name: name, HouseholdID: householdID})
 }
 
 // Delete removes a list and its items.
-func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
-	return s.q.DeleteGroceryList(ctx, id)
+func (s *Service) Delete(ctx context.Context, householdID, id uuid.UUID) error {
+	return s.q.DeleteGroceryList(ctx, db.DeleteGroceryListParams{ID: id, HouseholdID: householdID})
 }
 
 // ToggleItem flips an item's checked state.
-func (s *Service) ToggleItem(ctx context.Context, itemID uuid.UUID) error {
-	return s.q.ToggleGroceryItem(ctx, itemID)
+func (s *Service) ToggleItem(ctx context.Context, householdID, itemID uuid.UUID) error {
+	return s.q.ToggleGroceryItem(ctx, db.ToggleGroceryItemParams{ID: itemID, HouseholdID: householdID})
 }
 
 // DeleteItem removes one item.
-func (s *Service) DeleteItem(ctx context.Context, itemID uuid.UUID) error {
-	return s.q.DeleteGroceryItem(ctx, itemID)
+func (s *Service) DeleteItem(ctx context.Context, householdID, itemID uuid.UUID) error {
+	return s.q.DeleteGroceryItem(ctx, db.DeleteGroceryItemParams{ID: itemID, HouseholdID: householdID})
 }
 
-// ClearChecked removes all checked items from a list.
-func (s *Service) ClearChecked(ctx context.Context, listID uuid.UUID) error {
+// ClearChecked removes all checked items from a list the household owns.
+func (s *Service) ClearChecked(ctx context.Context, householdID, listID uuid.UUID) error {
+	if _, err := s.q.GetGroceryList(ctx, db.GetGroceryListParams{ID: listID, HouseholdID: householdID}); err != nil {
+		return err
+	}
 	return s.q.DeleteCheckedGroceryItems(ctx, listID)
 }
 
@@ -131,8 +134,8 @@ func (s *Service) ClearChecked(ctx context.Context, listID uuid.UUID) error {
 // boundary when a density for the item is known (densities keyed by lowercased
 // name). If the target needs a density that is not available, the item is left
 // unchanged and flagged for review instead of guessing (FR10.5).
-func (s *Service) ConvertItem(ctx context.Context, itemID uuid.UUID, toUnit string, densities map[string]float64) error {
-	item, err := s.q.GetGroceryItem(ctx, itemID)
+func (s *Service) ConvertItem(ctx context.Context, householdID, itemID uuid.UUID, toUnit string, densities map[string]float64) error {
+	item, err := s.q.GetGroceryItem(ctx, db.GetGroceryItemParams{ID: itemID, HouseholdID: householdID})
 	if err != nil {
 		return err
 	}
@@ -144,18 +147,25 @@ func (s *Service) ConvertItem(ctx context.Context, itemID uuid.UUID, toUnit stri
 	if !ok {
 		// Cross-dimension conversion requested but no density available.
 		return s.q.SetGroceryItemNote(ctx, db.SetGroceryItemNoteParams{
-			ID: itemID, Note: "needs density to convert to " + toUnit,
+			ID: itemID, Note: "needs density to convert to " + toUnit, HouseholdID: householdID,
 		})
 	}
 	return s.q.UpdateGroceryItemAmount(ctx, db.UpdateGroceryItemAmountParams{
-		ID: itemID, Amount: units.Round3(converted), Unit: toUnit,
+		ID: itemID, Amount: units.Round3(converted), Unit: toUnit, HouseholdID: householdID,
 	})
 }
 
 // AddIngredients merges generated ingredients into a list: amounts add up for
 // same name+unit matches, everything else is appended — mirroring the
 // prototype's onGenerate merge. When listID is nil a new list is created.
-func (s *Service) AddIngredients(ctx context.Context, listID *uuid.UUID, ings []foods.LeafIngredient) (uuid.UUID, error) {
+func (s *Service) AddIngredients(ctx context.Context, householdID uuid.UUID, listID *uuid.UUID, ings []foods.LeafIngredient) (uuid.UUID, error) {
+	// Verify a supplied target list belongs to this household before writing.
+	if listID != nil {
+		if _, err := s.q.GetGroceryList(ctx, db.GetGroceryListParams{ID: *listID, HouseholdID: householdID}); err != nil {
+			return uuid.Nil, err
+		}
+	}
+
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return uuid.Nil, err
@@ -165,7 +175,7 @@ func (s *Service) AddIngredients(ctx context.Context, listID *uuid.UUID, ings []
 
 	var target uuid.UUID
 	if listID == nil {
-		l, err := q.CreateGroceryList(ctx, "Generated list")
+		l, err := q.CreateGroceryList(ctx, db.CreateGroceryListParams{HouseholdID: householdID, Name: "Generated list"})
 		if err != nil {
 			return uuid.Nil, err
 		}

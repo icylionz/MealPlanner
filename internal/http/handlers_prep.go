@@ -14,12 +14,13 @@ import (
 
 func (s *Server) prepData(c echo.Context) (pages.PrepData, error) {
 	ctx := c.Request().Context()
+	hh := s.household(c)
 
-	sessions, err := s.prep.ListAll(ctx)
+	sessions, err := s.prep.ListAll(ctx, hh)
 	if err != nil {
 		return pages.PrepData{}, err
 	}
-	all, err := s.foods.List(ctx)
+	all, err := s.foods.List(ctx, hh)
 	if err != nil {
 		return pages.PrepData{}, err
 	}
@@ -103,7 +104,7 @@ func (s *Server) handlePrepPrint(c echo.Context) error {
 }
 
 func (s *Server) handlePrepNewSession(c echo.Context) error {
-	id, err := s.prep.Create(c.Request().Context(), "Prep session", todayStr())
+	id, err := s.prep.Create(c.Request().Context(), s.household(c), "Prep session", todayStr())
 	if err != nil {
 		return err
 	}
@@ -115,7 +116,7 @@ func (s *Server) handlePrepUpdate(c echo.Context) error {
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	if err := s.prep.Update(c.Request().Context(), id, c.FormValue("name"), c.FormValue("date")); err != nil {
+	if err := s.prep.Update(c.Request().Context(), s.household(c), id, c.FormValue("name"), c.FormValue("date")); err != nil {
 		return err
 	}
 	return s.redirect(c, "/prep?session="+id.String())
@@ -126,13 +127,14 @@ func (s *Server) handlePrepDelete(c echo.Context) error {
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	if err := s.prep.Delete(c.Request().Context(), id); err != nil {
+	if err := s.prep.Delete(c.Request().Context(), s.household(c), id); err != nil {
 		return err
 	}
 	return s.redirect(c, "/prep")
 }
 
 func (s *Server) handlePrepAddMeal(c echo.Context) error {
+	hh := s.household(c)
 	sessionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		return echo.ErrNotFound
@@ -141,11 +143,11 @@ func (s *Server) handlePrepAddMeal(c echo.Context) error {
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	r, err := s.foods.Get(c.Request().Context(), foodID)
+	r, err := s.foods.Get(c.Request().Context(), hh, foodID)
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	if err := s.prep.AddMeal(c.Request().Context(), sessionID, foodID, r.Servings); err != nil {
+	if err := s.prep.AddMeal(c.Request().Context(), hh, sessionID, foodID, r.Servings); err != nil {
 		return err
 	}
 	return s.redirect(c, "/prep?session="+sessionID.String())
@@ -160,7 +162,7 @@ func (s *Server) handlePrepRemoveMeal(c echo.Context) error {
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	if err := s.prep.RemoveMeal(c.Request().Context(), sessionID, foodID); err != nil {
+	if err := s.prep.RemoveMeal(c.Request().Context(), s.household(c), sessionID, foodID); err != nil {
 		return err
 	}
 	return s.redirect(c, "/prep?session="+sessionID.String())
@@ -179,37 +181,70 @@ func (s *Server) handlePrepServings(c echo.Context) error {
 	if err != nil || (delta != 1 && delta != -1) {
 		return echo.ErrBadRequest
 	}
-	if err := s.prep.AdjustServings(c.Request().Context(), sessionID, foodID, delta); err != nil {
+	if err := s.prep.AdjustServings(c.Request().Context(), s.household(c), sessionID, foodID, delta); err != nil {
 		return err
 	}
 	return s.redirect(c, "/prep?session="+sessionID.String())
 }
 
 func (s *Server) handleHousehold(c echo.Context) error {
-	members, err := s.households.List(c.Request().Context())
+	return s.renderHousehold(c, "")
+}
+
+func (s *Server) renderHousehold(c echo.Context, errMsg string) error {
+	ctx := c.Request().Context()
+	hh := s.household(c)
+	household, err := s.households.GetHousehold(ctx, hh)
+	if err != nil {
+		return err
+	}
+	members, err := s.households.ListMembers(ctx, hh)
+	if err != nil {
+		return err
+	}
+	all, err := s.households.ListForAccount(ctx, s.account(c).ID)
 	if err != nil {
 		return err
 	}
 	return s.render(c, pages.Household(pages.HouseholdData{
 		Member:     s.member(c),
+		Household:  household,
 		Members:    members,
+		Households: all,
 		ShowInvite: c.QueryParam("invite") == "1",
+		Error:      errMsg,
 	}))
 }
 
 func (s *Server) handleHouseholdAdd(c echo.Context) error {
-	if err := s.households.Add(c.Request().Context(), c.FormValue("name")); err != nil {
-		return s.redirect(c, "/household?invite=1")
+	if s.member(c).Role != "owner" {
+		return echo.ErrForbidden
+	}
+	if err := s.households.AddMemberByEmail(c.Request().Context(), s.household(c), c.FormValue("email")); err != nil {
+		return s.renderHousehold(c, err.Error())
 	}
 	return s.redirect(c, "/household")
 }
 
 func (s *Server) handleHouseholdRemove(c echo.Context) error {
-	memberID, err := uuid.Parse(c.QueryParam("member"))
+	if s.member(c).Role != "owner" {
+		return echo.ErrForbidden
+	}
+	accountID, err := uuid.Parse(c.QueryParam("member"))
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	if err := s.households.Remove(c.Request().Context(), memberID); err != nil {
+	if err := s.households.RemoveMember(c.Request().Context(), s.household(c), accountID); err != nil {
+		return err
+	}
+	return s.redirect(c, "/household")
+}
+
+func (s *Server) handleHouseholdRegenerateInvite(c echo.Context) error {
+	if s.member(c).Role != "owner" {
+		return echo.ErrForbidden
+	}
+	if _, err := s.households.RegenerateInvite(c.Request().Context(), s.household(c)); err != nil {
 		return err
 	}
 	return s.redirect(c, "/household")

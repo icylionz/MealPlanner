@@ -53,11 +53,11 @@ func (s *Server) handleToday(c echo.Context) error {
 	ctx := c.Request().Context()
 	today := todayStr()
 
-	meals, err := s.planner.ListBetween(ctx, today, today)
+	meals, err := s.planner.ListBetween(ctx, s.household(c), today, today)
 	if err != nil {
 		return err
 	}
-	all, err := s.foods.List(ctx)
+	all, err := s.foods.List(ctx, s.household(c))
 	if err != nil {
 		return err
 	}
@@ -108,15 +108,15 @@ func (s *Server) handlePlan(c echo.Context) error {
 		rangeTo = weekDates[6]
 	}
 
-	weekMeals, err := s.planner.ListBetween(ctx, weekDates[0], weekDates[6])
+	weekMeals, err := s.planner.ListBetween(ctx, s.household(c), weekDates[0], weekDates[6])
 	if err != nil {
 		return err
 	}
-	hasMeals, err := s.planner.DatesWithMeals(ctx, rangeFrom, rangeTo)
+	hasMeals, err := s.planner.DatesWithMeals(ctx, s.household(c), rangeFrom, rangeTo)
 	if err != nil {
 		return err
 	}
-	all, err := s.foods.List(ctx)
+	all, err := s.foods.List(ctx, s.household(c))
 	if err != nil {
 		return err
 	}
@@ -197,7 +197,7 @@ func (s *Server) handleAddMealForm(c echo.Context) error {
 	selected := c.QueryParam("food")
 	returnTo := safeReturn(c.QueryParam("return"), "/today")
 
-	all, err := s.foods.List(ctx)
+	all, err := s.foods.List(ctx, s.household(c))
 	if err != nil {
 		return err
 	}
@@ -245,13 +245,13 @@ func (s *Server) handleAddMeal(c echo.Context) error {
 			Weekdays: parseWeekdays(c.Request().Form["weekday"]),
 			Until:    c.FormValue("until"),
 		}
-		if err := s.planner.AddRecurring(c.Request().Context(), date, timeOfDay, foodID, servings, rec); err != nil {
+		if err := s.planner.AddRecurring(c.Request().Context(), s.household(c), date, timeOfDay, foodID, servings, rec); err != nil {
 			return err
 		}
 		return s.redirect(c, returnTo)
 	}
 
-	if err := s.planner.Add(c.Request().Context(), date, timeOfDay, foodID, servings); err != nil {
+	if err := s.planner.Add(c.Request().Context(), s.household(c), date, timeOfDay, foodID, servings); err != nil {
 		return err
 	}
 	return s.redirect(c, returnTo)
@@ -274,7 +274,7 @@ func (s *Server) handleEditMealForm(c echo.Context) error {
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	m, err := s.planner.Get(ctx, id)
+	m, err := s.planner.Get(ctx, s.household(c), id)
 	if err != nil {
 		return echo.ErrNotFound
 	}
@@ -289,7 +289,7 @@ func (s *Server) handleEditMealForm(c echo.Context) error {
 // and its stored link preview. Reused by the GET form and the link sub-actions.
 func (s *Server) editMealData(c echo.Context, m *planner.Meal, returnTo, search string) (pages.EditMealData, error) {
 	ctx := c.Request().Context()
-	all, err := s.foods.List(ctx)
+	all, err := s.foods.List(ctx, s.household(c))
 	if err != nil {
 		return pages.EditMealData{}, err
 	}
@@ -314,7 +314,7 @@ func (s *Server) editMealData(c echo.Context, m *planner.Meal, returnTo, search 
 
 	var series *planner.Series
 	if m.SeriesID != nil {
-		series, _ = s.planner.GetSeries(ctx, *m.SeriesID)
+		series, _ = s.planner.GetSeries(ctx, s.household(c), *m.SeriesID)
 	}
 
 	return pages.EditMealData{
@@ -351,7 +351,7 @@ func (s *Server) handleEditMeal(c echo.Context) error {
 		servings = 2
 	}
 	scope := planner.ParseScope(c.FormValue("scope"))
-	if err := s.planner.Update(ctx, id, c.FormValue("date"), c.FormValue("time"), foodID, servings, scope); err != nil {
+	if err := s.planner.Update(ctx, s.household(c), id, c.FormValue("date"), c.FormValue("time"), foodID, servings, scope); err != nil {
 		return err
 	}
 
@@ -365,7 +365,7 @@ func (s *Server) handleEditMeal(c echo.Context) error {
 			title, image = pv.Title, pv.ImageURL
 		}
 	}
-	if err := s.planner.SetLink(ctx, id, url, title, image); err != nil {
+	if err := s.planner.SetLink(ctx, s.household(c), id, url, title, image); err != nil {
 		return err
 	}
 	return s.redirect(c, returnTo)
@@ -393,10 +393,10 @@ func (s *Server) handleMealLinkAction(c echo.Context, id uuid.UUID, action, retu
 		}
 	}
 
-	if err := s.planner.SetLink(ctx, id, url, title, image); err != nil {
+	if err := s.planner.SetLink(ctx, s.household(c), id, url, title, image); err != nil {
 		return err
 	}
-	m, err := s.planner.Get(ctx, id)
+	m, err := s.planner.Get(ctx, s.household(c), id)
 	if err != nil {
 		return echo.ErrNotFound
 	}
@@ -414,7 +414,7 @@ func (s *Server) handleDeleteMeal(c echo.Context) error {
 		return echo.ErrNotFound
 	}
 	scope := planner.ParseScope(c.FormValue("scope"))
-	if err := s.planner.Delete(c.Request().Context(), id, scope); err != nil {
+	if err := s.planner.Delete(c.Request().Context(), s.household(c), id, scope); err != nil {
 		return err
 	}
 	returnTo := c.FormValue("return")

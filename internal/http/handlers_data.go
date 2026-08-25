@@ -19,7 +19,7 @@ func (s *Server) handleData(c echo.Context) error {
 
 // handleDataExport streams a full-fidelity JSON archive as a download (FR15.1).
 func (s *Server) handleDataExport(c echo.Context) error {
-	arc, err := s.transfer.Export(c.Request().Context())
+	arc, err := s.transfer.Export(c.Request().Context(), s.household(c))
 	if err != nil {
 		return err
 	}
@@ -62,7 +62,7 @@ func (s *Server) handleDataImport(c echo.Context) error {
 		return fail("Pick at least one section to import.")
 	}
 
-	report, err := s.transfer.Import(c.Request().Context(), &arc, selected)
+	report, err := s.transfer.Import(c.Request().Context(), s.household(c), &arc, selected)
 	if err != nil {
 		return fail(err.Error())
 	}

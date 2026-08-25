@@ -20,7 +20,7 @@ func (s *Server) handleFoods(c echo.Context) error {
 	search := c.QueryParam("q")
 	tag := c.QueryParam("tag")
 
-	all, err := s.foods.List(ctx)
+	all, err := s.foods.List(ctx, s.household(c))
 	if err != nil {
 		return err
 	}
@@ -66,13 +66,13 @@ func (s *Server) handleFoodDetail(c echo.Context) error {
 		return echo.ErrNotFound
 	}
 
-	all, err := s.foods.List(ctx)
+	all, err := s.foods.List(ctx, s.household(c))
 	if err != nil {
 		return err
 	}
 	idx := foods.Index(all)
 
-	food, err := s.foods.Get(ctx, id)
+	food, err := s.foods.Get(ctx, s.household(c), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return echo.ErrNotFound
@@ -185,7 +185,7 @@ func (s *Server) editorData(c echo.Context, isNew bool, foodID string) (pages.Fo
 }
 
 func (s *Server) fillEditorLookups(c echo.Context, d *pages.FoodEditData) error {
-	all, err := s.foods.List(c.Request().Context())
+	all, err := s.foods.List(c.Request().Context(), s.household(c))
 	if err != nil {
 		return err
 	}
@@ -218,7 +218,7 @@ func (s *Server) handleFoodEdit(c echo.Context) error {
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	r, err := s.foods.Get(ctx, id)
+	r, err := s.foods.Get(ctx, s.household(c), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return echo.ErrNotFound
@@ -286,13 +286,13 @@ func (s *Server) handleFoodEditPost(c echo.Context) error {
 			}
 			idPtr = &id
 		}
-		savedID, err := s.foods.Save(c.Request().Context(), idPtr, form)
+		savedID, err := s.foods.Save(c.Request().Context(), s.household(c), idPtr, form)
 		if err != nil {
 			if errors.Is(err, foods.ErrConflict) && idPtr != nil {
 				// Optimistic-lock conflict (FR16): show the current saved record
 				// alongside the user's attempt, and advance the hidden version so a
 				// deliberate re-save succeeds if no newer conflict has landed.
-				if cur, gerr := s.foods.Get(c.Request().Context(), *idPtr); gerr == nil {
+				if cur, gerr := s.foods.Get(c.Request().Context(), s.household(c), *idPtr); gerr == nil {
 					d.Conflict = &pages.FoodConflict{
 						Version: cur.Version, Name: cur.Name, Description: cur.Description,
 						PrepTime: cur.PrepTime, CookTime: cur.CookTime,
@@ -354,7 +354,7 @@ func (s *Server) handleFoodDelete(c echo.Context) error {
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	if err := s.foods.Delete(c.Request().Context(), id); err != nil {
+	if err := s.foods.Delete(c.Request().Context(), s.household(c), id); err != nil {
 		if errors.Is(err, foods.ErrInUse) {
 			return s.redirect(c, "/foods/"+id.String()+"/edit?error=in-use")
 		}

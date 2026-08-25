@@ -10,11 +10,25 @@ import (
 
 type ctxKey int
 
-const basePathKey ctxKey = iota
+const (
+	basePathKey ctxKey = iota
+	householdNameKey
+)
 
 // WithBasePath stores the deployment base path in the request context.
 func WithBasePath(ctx context.Context, basePath string) context.Context {
 	return context.WithValue(ctx, basePathKey, basePath)
+}
+
+// WithActiveHousehold stores the active household's name for the chrome.
+func WithActiveHousehold(ctx context.Context, name string) context.Context {
+	return context.WithValue(ctx, householdNameKey, name)
+}
+
+// ActiveHousehold returns the active household's name, or "" when none.
+func ActiveHousehold(ctx context.Context) string {
+	n, _ := ctx.Value(householdNameKey).(string)
+	return n
 }
 
 // Href prefixes an app-absolute path with the deployment base path.

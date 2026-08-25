@@ -22,34 +22,23 @@ func NewService(pool *pgxpool.Pool) *Service {
 	return &Service{pool: pool, q: db.New(pool)}
 }
 
-// Export reads every household entity into a single archive.
-func (s *Service) Export(ctx context.Context) (*Archive, error) {
+// Export reads one household's entities into a single archive.
+func (s *Service) Export(ctx context.Context, householdID uuid.UUID) (*Archive, error) {
 	arc := &Archive{SchemaVersion: SchemaVersion, ExportedAt: nowUTC()}
 
-	members, err := s.q.ExportMembers(ctx)
+	foods, err := s.q.ExportFoods(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
-	for _, m := range members {
-		arc.Members = append(arc.Members, Member{
-			ID: m.ID, Name: m.Name, Role: m.Role, Initials: m.Initials,
-			Color: m.Color, CreatedAt: m.CreatedAt,
-		})
-	}
-
-	foods, err := s.q.ExportFoods(ctx)
+	tags, err := s.q.ExportFoodTags(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
-	tags, err := s.q.ExportFoodTags(ctx)
+	comps, err := s.q.ExportFoodComponents(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
-	comps, err := s.q.ExportFoodComponents(ctx)
-	if err != nil {
-		return nil, err
-	}
-	steps, err := s.q.ExportFoodSteps(ctx)
+	steps, err := s.q.ExportFoodSteps(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +69,7 @@ func (s *Service) Export(ctx context.Context) (*Archive, error) {
 		})
 	}
 
-	series, err := s.q.ExportMealSeries(ctx)
+	series, err := s.q.ExportMealSeries(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +80,7 @@ func (s *Service) Export(ctx context.Context) (*Archive, error) {
 		})
 	}
 
-	plans, err := s.q.ExportMealPlans(ctx)
+	plans, err := s.q.ExportMealPlans(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
@@ -103,11 +92,11 @@ func (s *Service) Export(ctx context.Context) (*Archive, error) {
 		})
 	}
 
-	lists, err := s.q.ExportGroceryLists(ctx)
+	lists, err := s.q.ExportGroceryLists(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
-	items, err := s.q.ExportGroceryItems(ctx)
+	items, err := s.q.ExportGroceryItems(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
@@ -124,11 +113,11 @@ func (s *Service) Export(ctx context.Context) (*Archive, error) {
 		})
 	}
 
-	sessions, err := s.q.ExportPrepSessions(ctx)
+	sessions, err := s.q.ExportPrepSessions(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
-	pmeals, err := s.q.ExportPrepSessionMeals(ctx)
+	pmeals, err := s.q.ExportPrepSessionMeals(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +142,7 @@ func (s *Service) Export(ctx context.Context) (*Archive, error) {
 // referencing a food that is neither present in the DB nor in an imported foods
 // section) are skipped and reported rather than aborting the whole import
 // (FR15.2, FR15.3, FR15.5). An unsupported schema_version is rejected (FR15.4).
-func (s *Service) Import(ctx context.Context, arc *Archive, sections map[string]bool) (*Report, error) {
+func (s *Service) Import(ctx context.Context, householdID uuid.UUID, arc *Archive, sections map[string]bool) (*Report, error) {
 	if arc.SchemaVersion != SchemaVersion {
 		return nil, fmt.Errorf("unsupported archive schema_version %d (this build reads version %d)", arc.SchemaVersion, SchemaVersion)
 	}
@@ -165,13 +154,13 @@ func (s *Service) Import(ctx context.Context, arc *Archive, sections map[string]
 	defer tx.Rollback(ctx)
 	q := s.q.WithTx(tx)
 
-	// Resolve foreign-key targets: rows already in the DB, plus rows about to be
-	// inserted by a selected section.
-	knownFoods, err := idSet(s.q.ExistingFoodIDs(ctx))
+	// Resolve foreign-key targets: rows already in this household, plus rows about
+	// to be inserted by a selected section.
+	knownFoods, err := idSet(s.q.ExistingFoodIDs(ctx, householdID))
 	if err != nil {
 		return nil, err
 	}
-	knownSeries, err := idSet(s.q.ExistingMealSeriesIDs(ctx))
+	knownSeries, err := idSet(s.q.ExistingMealSeriesIDs(ctx, householdID))
 	if err != nil {
 		return nil, err
 	}
@@ -188,27 +177,12 @@ func (s *Service) Import(ctx context.Context, arc *Archive, sections map[string]
 
 	rep := &Report{}
 
-	if sections[SectionMembers] {
-		sr := SectionReport{Name: SectionMembers}
-		for _, m := range arc.Members {
-			ins, err := q.ImportMember(ctx, db.ImportMemberParams{
-				ID: m.ID, Name: m.Name, Role: roleOrMember(m.Role),
-				Initials: m.Initials, Color: m.Color, CreatedAt: m.CreatedAt,
-			})
-			if err != nil {
-				return nil, err
-			}
-			sr.count(ins)
-		}
-		rep.Sections = append(rep.Sections, sr)
-	}
-
 	if sections[SectionFoods] {
 		sr := SectionReport{Name: SectionFoods}
 		// Insert every food first so components can reference any other food.
 		for _, f := range arc.Foods {
 			ins, err := q.ImportFood(ctx, db.ImportFoodParams{
-				ID: f.ID, Name: f.Name, Description: f.Description,
+				ID: f.ID, HouseholdID: householdID, Name: f.Name, Description: f.Description,
 				PrepTimeMin: f.PrepTimeMin, CookTimeMin: f.CookTimeMin, Servings: f.Servings,
 				DefaultUnit: f.DefaultUnit, CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt,
 				DensityGPerMl: f.DensityGPerMl, DensitySource: densitySourceOrNone(f.DensitySource),
@@ -266,7 +240,7 @@ func (s *Service) Import(ctx context.Context, arc *Archive, sections map[string]
 				continue
 			}
 			ins, err := q.ImportMealSeries(ctx, db.ImportMealSeriesParams{
-				ID: m.ID, FoodID: m.FoodID, PlanTime: m.PlanTime, Servings: m.Servings,
+				ID: m.ID, HouseholdID: householdID, FoodID: m.FoodID, PlanTime: m.PlanTime, Servings: m.Servings,
 				Freq: m.Freq, Byweekday: m.Byweekday, StartDate: m.StartDate, UntilDate: m.UntilDate,
 			})
 			if err != nil {
@@ -284,7 +258,7 @@ func (s *Service) Import(ctx context.Context, arc *Archive, sections map[string]
 				series = nil // keep the meal but drop the dangling series link
 			}
 			ins, err := q.ImportMealPlan(ctx, db.ImportMealPlanParams{
-				ID: m.ID, PlanDate: m.PlanDate, PlanTime: m.PlanTime,
+				ID: m.ID, HouseholdID: householdID, PlanDate: m.PlanDate, PlanTime: m.PlanTime,
 				FoodID: m.FoodID, Servings: m.Servings, SeriesID: series,
 				LinkUrl: m.LinkURL, LinkTitle: m.LinkTitle, LinkImageUrl: m.LinkImageURL,
 			})
@@ -300,7 +274,7 @@ func (s *Service) Import(ctx context.Context, arc *Archive, sections map[string]
 		sr := SectionReport{Name: SectionGrocery}
 		for _, l := range arc.GroceryLists {
 			ins, err := q.ImportGroceryList(ctx, db.ImportGroceryListParams{
-				ID: l.ID, Name: l.Name, CreatedAt: l.CreatedAt,
+				ID: l.ID, HouseholdID: householdID, Name: l.Name, CreatedAt: l.CreatedAt,
 			})
 			if err != nil {
 				return nil, err
@@ -322,7 +296,7 @@ func (s *Service) Import(ctx context.Context, arc *Archive, sections map[string]
 		sr := SectionReport{Name: SectionPrep}
 		for _, ps := range arc.PrepSessions {
 			ins, err := q.ImportPrepSession(ctx, db.ImportPrepSessionParams{
-				ID: ps.ID, Name: ps.Name, SessionDate: ps.SessionDate, CreatedAt: ps.CreatedAt,
+				ID: ps.ID, HouseholdID: householdID, Name: ps.Name, SessionDate: ps.SessionDate, CreatedAt: ps.CreatedAt,
 			})
 			if err != nil {
 				return nil, err
@@ -376,13 +350,6 @@ func idSet(ids []uuid.UUID, err error) (map[uuid.UUID]bool, error) {
 		m[id] = true
 	}
 	return m, nil
-}
-
-func roleOrMember(role string) string {
-	if role == "owner" {
-		return "owner"
-	}
-	return "member"
 }
 
 func densitySourceOrNone(s string) string {

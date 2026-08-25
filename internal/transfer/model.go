@@ -16,7 +16,6 @@ const SchemaVersion = 1
 // Section names selectable at import time (FR15.3). A section groups a parent
 // entity with its children (e.g. "foods" also carries tags, components, steps).
 const (
-	SectionMembers = "members"
 	SectionFoods   = "foods"
 	SectionMeals   = "meals"
 	SectionGrocery = "grocery"
@@ -24,27 +23,18 @@ const (
 )
 
 // AllSections lists every importable/exportable section in a stable order.
-var AllSections = []string{SectionMembers, SectionFoods, SectionMeals, SectionGrocery, SectionPrep}
+// Membership/accounts are not part of an archive — they are managed via invites.
+var AllSections = []string{SectionFoods, SectionMeals, SectionGrocery, SectionPrep}
 
-// Archive is the top-level export document.
+// Archive is the top-level export document, scoped to one household.
 type Archive struct {
 	SchemaVersion int           `json:"schema_version"`
 	ExportedAt    time.Time     `json:"exported_at"`
-	Members       []Member      `json:"members,omitempty"`
 	Foods         []Food        `json:"foods,omitempty"`
 	MealSeries    []MealSeries  `json:"meal_series,omitempty"`
 	MealPlans     []MealPlan    `json:"meal_plans,omitempty"`
 	GroceryLists  []GroceryList `json:"grocery_lists,omitempty"`
 	PrepSessions  []PrepSession `json:"prep_sessions,omitempty"`
-}
-
-type Member struct {
-	ID        uuid.UUID `json:"id"`
-	Name      string    `json:"name"`
-	Role      string    `json:"role"`
-	Initials  string    `json:"initials"`
-	Color     string    `json:"color"`
-	CreatedAt time.Time `json:"created_at"`
 }
 
 type Food struct {

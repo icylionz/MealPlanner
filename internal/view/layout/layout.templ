@@ -58,6 +58,12 @@ templ Shell(title string, active string, member *households.Member) {
 						</div>
 					</div>
 				</div>
+				if view.ActiveHousehold(ctx) != "" {
+					<a href={ templ.URL(view.Href(ctx, "/household")) } class="sidebar-household" title="Switch household">
+						<span class="sidebar-household-name">{ view.ActiveHousehold(ctx) }</span>
+						<span class="sidebar-household-switch">Switch</span>
+					</a>
+				}
 				<nav class="sidebar-nav">
 					for _, n := range allNavItems {
 						<a

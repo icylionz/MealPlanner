@@ -1,0 +1,47 @@
+package pages
+
+import "mealplanner/internal/view"
+
+// Onboarding is the create-or-join screen shown when an account has no active
+// household.
+templ Onboarding(d OnboardingData) {
+	@authScreen("Set up your household — Backbone Plate") {
+		<div class="auth-head">
+			<div class="auth-title">Welcome, { d.Account.Name }</div>
+			<div class="auth-sub">Create a household or join one to get started.</div>
+		</div>
+		if d.Error != "" {
+			<div class="auth-error">{ d.Error }</div>
+		}
+		if len(d.Households) > 0 {
+			<div class="onb-section">
+				<div class="onb-label">Your households</div>
+				for _, h := range d.Households {
+					<form method="post" action={ templ.URL(view.Href(ctx, "/households/switch")) } class="onb-pick">
+						<input type="hidden" name="household" value={ h.ID.String() }/>
+						<button type="submit" class="btn btn-secondary" style="width: 100%; justify-content: space-between;">
+							{ h.Name }
+							<span style="font-size: 12px; opacity: .7;">Open →</span>
+						</button>
+					</form>
+				}
+			</div>
+			<div class="onb-divider"><span>or</span></div>
+		}
+		<form method="post" action={ templ.URL(view.Href(ctx, "/households")) } class="auth-form">
+			<label class="auth-label">
+				Create a new household
+				<input class="input" type="text" name="name" placeholder="e.g. The Morgans" required/>
+			</label>
+			<button type="submit" class="btn" style="width: 100%; justify-content: center;">Create household</button>
+		</form>
+		<div class="onb-divider"><span>or</span></div>
+		<form method="post" action={ templ.URL(view.Href(ctx, "/households/join")) } class="auth-form">
+			<label class="auth-label">
+				Join with an invite code
+				<input class="input" type="text" name="invite_code" placeholder="e.g. K7QP2MZR" autocapitalize="characters" required/>
+			</label>
+			<button type="submit" class="btn btn-secondary" style="width: 100%; justify-content: center;">Join household</button>
+		</form>
+	}
+}

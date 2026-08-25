@@ -40,12 +40,12 @@ func NewService(pool *pgxpool.Pool) *Service {
 }
 
 // ListAll returns every session with meals loaded.
-func (s *Service) ListAll(ctx context.Context) ([]Session, error) {
-	rows, err := s.q.ListPrepSessions(ctx)
+func (s *Service) ListAll(ctx context.Context, householdID uuid.UUID) ([]Session, error) {
+	rows, err := s.q.ListPrepSessions(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
-	meals, err := s.q.ListAllPrepSessionMeals(ctx)
+	meals, err := s.q.ListAllPrepSessionMeals(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +63,7 @@ func (s *Service) ListAll(ctx context.Context) ([]Session, error) {
 }
 
 // Create adds a new session dated today.
-func (s *Service) Create(ctx context.Context, name string, date string) (uuid.UUID, error) {
+func (s *Service) Create(ctx context.Context, householdID uuid.UUID, name string, date string) (uuid.UUID, error) {
 	if strings.TrimSpace(name) == "" {
 		name = "Prep session"
 	}
@@ -71,7 +71,7 @@ func (s *Service) Create(ctx context.Context, name string, date string) (uuid.UU
 	if err != nil {
 		d = time.Now()
 	}
-	row, err := s.q.CreatePrepSession(ctx, db.CreatePrepSessionParams{Name: name, SessionDate: d})
+	row, err := s.q.CreatePrepSession(ctx, db.CreatePrepSessionParams{HouseholdID: householdID, Name: name, SessionDate: d})
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -79,8 +79,8 @@ func (s *Service) Create(ctx context.Context, name string, date string) (uuid.UU
 }
 
 // Update renames or re-dates a session.
-func (s *Service) Update(ctx context.Context, id uuid.UUID, name, date string) error {
-	current, err := s.q.GetPrepSession(ctx, id)
+func (s *Service) Update(ctx context.Context, householdID, id uuid.UUID, name, date string) error {
+	current, err := s.q.GetPrepSession(ctx, db.GetPrepSessionParams{ID: id, HouseholdID: householdID})
 	if err != nil {
 		return err
 	}
@@ -91,16 +91,25 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, name, date string) e
 	if err != nil {
 		d = current.SessionDate
 	}
-	return s.q.UpdatePrepSession(ctx, db.UpdatePrepSessionParams{ID: id, Name: name, SessionDate: d})
+	return s.q.UpdatePrepSession(ctx, db.UpdatePrepSessionParams{ID: id, Name: name, SessionDate: d, HouseholdID: householdID})
 }
 
 // Delete removes a session.
-func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
-	return s.q.DeletePrepSession(ctx, id)
+func (s *Service) Delete(ctx context.Context, householdID, id uuid.UUID) error {
+	return s.q.DeletePrepSession(ctx, db.DeletePrepSessionParams{ID: id, HouseholdID: householdID})
+}
+
+// ownSession verifies a session belongs to the household before a meal write.
+func (s *Service) ownSession(ctx context.Context, householdID, sessionID uuid.UUID) error {
+	_, err := s.q.GetPrepSession(ctx, db.GetPrepSessionParams{ID: sessionID, HouseholdID: householdID})
+	return err
 }
 
 // AddMeal includes a food in a session with its default servings.
-func (s *Service) AddMeal(ctx context.Context, sessionID, foodID uuid.UUID, servings int) error {
+func (s *Service) AddMeal(ctx context.Context, householdID, sessionID, foodID uuid.UUID, servings int) error {
+	if err := s.ownSession(ctx, householdID, sessionID); err != nil {
+		return err
+	}
 	if servings < 1 {
 		servings = 1
 	}
@@ -114,12 +123,18 @@ func (s *Service) AddMeal(ctx context.Context, sessionID, foodID uuid.UUID, serv
 }
 
 // RemoveMeal removes a food from a session.
-func (s *Service) RemoveMeal(ctx context.Context, sessionID, foodID uuid.UUID) error {
+func (s *Service) RemoveMeal(ctx context.Context, householdID, sessionID, foodID uuid.UUID) error {
+	if err := s.ownSession(ctx, householdID, sessionID); err != nil {
+		return err
+	}
 	return s.q.RemovePrepSessionMeal(ctx, db.RemovePrepSessionMealParams{SessionID: sessionID, FoodID: foodID})
 }
 
 // AdjustServings changes a session meal's servings by delta, floored at 1.
-func (s *Service) AdjustServings(ctx context.Context, sessionID, foodID uuid.UUID, delta int) error {
+func (s *Service) AdjustServings(ctx context.Context, householdID, sessionID, foodID uuid.UUID, delta int) error {
+	if err := s.ownSession(ctx, householdID, sessionID); err != nil {
+		return err
+	}
 	return s.q.AdjustPrepSessionServings(ctx, db.AdjustPrepSessionServingsParams{
 		SessionID: sessionID, FoodID: foodID, Servings: int32(delta),
 	})

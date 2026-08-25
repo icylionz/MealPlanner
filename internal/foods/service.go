@@ -96,16 +96,16 @@ func NewService(pool *pgxpool.Pool) *Service {
 }
 
 // List returns all foods with tags, components, and steps' presence loaded.
-func (s *Service) List(ctx context.Context) ([]Food, error) {
-	rows, err := s.q.ListFoods(ctx)
+func (s *Service) List(ctx context.Context, householdID uuid.UUID) ([]Food, error) {
+	rows, err := s.q.ListFoods(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
-	tags, err := s.q.ListTagsForFoods(ctx)
+	tags, err := s.q.ListTagsForFoods(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
-	comps, err := s.q.ListComponentsForFoods(ctx)
+	comps, err := s.q.ListComponentsForFoods(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
@@ -146,12 +146,12 @@ func (s *Service) List(ctx context.Context) ([]Food, error) {
 
 // Get returns one food with all detail rows, including steps and resolved
 // component names.
-func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Food, error) {
-	r, err := s.q.GetFood(ctx, id)
+func (s *Service) Get(ctx context.Context, householdID, id uuid.UUID) (*Food, error) {
+	r, err := s.q.GetFood(ctx, db.GetFoodParams{ID: id, HouseholdID: householdID})
 	if err != nil {
 		return nil, err
 	}
-	tags, err := s.q.ListTagsForFoods(ctx)
+	tags, err := s.q.ListTagsForFoods(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
@@ -176,11 +176,11 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Food, error) {
 		}
 	}
 	// Resolve child names and recipe-ness for display.
-	childNames, err := s.foodNames(ctx)
+	childNames, err := s.foodNames(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
-	allComps, err := s.q.ListComponentsForFoods(ctx)
+	allComps, err := s.q.ListComponentsForFoods(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
@@ -201,8 +201,8 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Food, error) {
 }
 
 // foodNames returns a map of food id to name for display resolution.
-func (s *Service) foodNames(ctx context.Context) (map[uuid.UUID]string, error) {
-	rows, err := s.q.ListFoods(ctx)
+func (s *Service) foodNames(ctx context.Context, householdID uuid.UUID) (map[uuid.UUID]string, error) {
+	rows, err := s.q.ListFoods(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +215,7 @@ func (s *Service) foodNames(ctx context.Context) (map[uuid.UUID]string, error) {
 
 // Save creates or updates a food with its tags, components, and steps in one
 // transaction. It rejects component graphs that would contain a cycle.
-func (s *Service) Save(ctx context.Context, id *uuid.UUID, form Form) (uuid.UUID, error) {
+func (s *Service) Save(ctx context.Context, householdID uuid.UUID, id *uuid.UUID, form Form) (uuid.UUID, error) {
 	if strings.TrimSpace(form.Name) == "" {
 		return uuid.Nil, errors.New("food needs a name")
 	}
@@ -245,7 +245,8 @@ func (s *Service) Save(ctx context.Context, id *uuid.UUID, form Form) (uuid.UUID
 	var foodID uuid.UUID
 	if id == nil {
 		created, err := q.CreateFood(ctx, db.CreateFoodParams{
-			Name: form.Name, Description: form.Description,
+			HouseholdID: householdID,
+			Name:        form.Name, Description: form.Description,
 			PrepTimeMin: int32(form.PrepTime), CookTimeMin: int32(form.CookTime),
 			Servings: int32(form.Servings), DefaultUnit: form.DefaultUnit,
 			DensityGPerMl: density, DensitySource: source,
@@ -257,7 +258,7 @@ func (s *Service) Save(ctx context.Context, id *uuid.UUID, form Form) (uuid.UUID
 	} else {
 		foodID = *id
 		rows, err := q.UpdateFood(ctx, db.UpdateFoodParams{
-			ID: foodID, Name: form.Name, Description: form.Description,
+			ID: foodID, HouseholdID: householdID, Name: form.Name, Description: form.Description,
 			PrepTimeMin: int32(form.PrepTime), CookTimeMin: int32(form.CookTime),
 			Servings: int32(form.Servings), DefaultUnit: form.DefaultUnit,
 			DensityGPerMl: density, DensitySource: source,
@@ -272,7 +273,7 @@ func (s *Service) Save(ctx context.Context, id *uuid.UUID, form Form) (uuid.UUID
 		}
 	}
 
-	if err := s.checkNoCycle(ctx, foodID, form.Components); err != nil {
+	if err := s.checkNoCycle(ctx, householdID, foodID, form.Components); err != nil {
 		return uuid.Nil, err
 	}
 
@@ -328,7 +329,7 @@ func (s *Service) Save(ctx context.Context, id *uuid.UUID, form Form) (uuid.UUID
 }
 
 // Delete removes a food unless another food uses it as a component.
-func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
+func (s *Service) Delete(ctx context.Context, householdID, id uuid.UUID) error {
 	uses, err := s.q.CountComponentUses(ctx, id)
 	if err != nil {
 		return err
@@ -336,13 +337,13 @@ func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 	if uses > 0 {
 		return ErrInUse
 	}
-	return s.q.DeleteFood(ctx, id)
+	return s.q.DeleteFood(ctx, db.DeleteFoodParams{ID: id, HouseholdID: householdID})
 }
 
 // checkNoCycle verifies that the food's new component references cannot reach
 // the food itself through the existing component graph.
-func (s *Service) checkNoCycle(ctx context.Context, foodID uuid.UUID, comps []Component) error {
-	all, err := s.q.ListComponentsForFoods(ctx)
+func (s *Service) checkNoCycle(ctx context.Context, householdID, foodID uuid.UUID, comps []Component) error {
+	all, err := s.q.ListComponentsForFoods(ctx, householdID)
 	if err != nil {
 		return err
 	}

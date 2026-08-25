@@ -277,8 +277,18 @@ type PrepPrintData struct {
 // HouseholdData feeds the Household screen.
 type HouseholdData struct {
 	Member     *households.Member
+	Household  *households.Household
 	Members    []households.Member
+	Households []households.Household // all households this account belongs to (switcher)
 	ShowInvite bool
+	Error      string
+}
+
+// OnboardingData feeds the create-or-join household screen.
+type OnboardingData struct {
+	Account    *households.Account
+	Households []households.Household // existing memberships to activate
+	Error      string
 }
 
 // ImportLine is one parsed ingredient line awaiting reconciliation to a food.

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/a-h/templ"
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
@@ -65,6 +66,13 @@ func (s *Server) Router() *echo.Echo {
 	g.POST("/register", s.handleRegister)
 	g.POST("/logout", s.handleLogout)
 
+	// Household onboarding and switching (require an account, not an active
+	// household).
+	g.GET("/onboarding", s.handleOnboarding)
+	g.POST("/households", s.handleCreateHousehold)
+	g.POST("/households/join", s.handleJoinHousehold)
+	g.POST("/households/switch", s.handleSwitchHousehold)
+
 	g.GET("/", func(c echo.Context) error { return s.redirect(c, "/today") })
 	g.GET("/today", s.handleToday)
 	g.GET("/plan", s.handlePlan)
@@ -113,12 +121,18 @@ func (s *Server) Router() *echo.Echo {
 	g.GET("/household", s.handleHousehold)
 	g.POST("/household/members", s.handleHouseholdAdd)
 	g.POST("/household/remove", s.handleHouseholdRemove)
+	g.POST("/household/invite/regenerate", s.handleHouseholdRegenerateInvite)
 
 	return e
 }
 
-const memberCtxKey = "member"
-const tokenCtxKey = "sessionToken"
+const (
+	accountCtxKey       = "account"
+	memberCtxKey        = "member"
+	householdCtxKey     = "household"
+	householdNameCtxKey = "householdName"
+	tokenCtxKey         = "sessionToken"
+)
 
 // csrfMiddleware blocks cross-site state-changing requests by verifying that the
 // Origin (or, failing that, Referer) of every unsafe request matches the host
@@ -155,9 +169,13 @@ func (s *Server) sameOrigin(r *http.Request) bool {
 	return s.cfg.IsDevelopment()
 }
 
-// sessionMiddleware resolves the logged-in member from the session cookie and
-// stores it on the request context. Unauthenticated requests to protected pages
-// are redirected to the login screen; the auth pages themselves stay public.
+// sessionMiddleware resolves the account and active household from the session
+// cookie and stores them on the request context. Three tiers of route access:
+//   - public: no account needed (login/register/static)
+//   - account-only: an account but no active household (onboarding/switch/logout)
+//   - household: an account with an active household (everything else)
+//
+// Requests missing the needed tier are redirected to /login or /onboarding.
 func (s *Server) sessionMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()
@@ -165,23 +183,47 @@ func (s *Server) sessionMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		if cookie, err := c.Cookie(s.cfg.SessionCookieName); err == nil {
 			token = cookie.Value
 		}
-		member, err := s.households.ResolveSession(ctx, token)
+		sess, err := s.households.ResolveSession(ctx, token)
 		if err != nil {
 			return err
 		}
-		if member != nil {
-			c.Set(memberCtxKey, member)
-			c.Set(tokenCtxKey, token)
+		if sess == nil {
+			if s.isPublicPath(c) {
+				return next(c)
+			}
+			return s.redirect(c, "/login")
+		}
+
+		c.Set(accountCtxKey, &sess.Account)
+		c.Set(tokenCtxKey, token)
+
+		// Resolve the active household membership, if the session has one and it
+		// is still valid.
+		if sess.ActiveHouseholdID != nil {
+			member, err := s.households.GetMembership(ctx, *sess.ActiveHouseholdID, sess.Account.ID)
+			if err != nil {
+				return err
+			}
+			if member != nil {
+				c.Set(memberCtxKey, member)
+				c.Set(householdCtxKey, *sess.ActiveHouseholdID)
+				if hh, err := s.households.GetHousehold(ctx, *sess.ActiveHouseholdID); err == nil {
+					c.Set(householdNameCtxKey, hh.Name)
+				}
+			}
+		}
+
+		if s.isPublicPath(c) || s.isAccountOnlyPath(c) {
 			return next(c)
 		}
-		if s.isPublicPath(c) {
-			return next(c)
+		if c.Get(householdCtxKey) == nil {
+			return s.redirect(c, "/onboarding")
 		}
-		return s.redirect(c, "/login")
+		return next(c)
 	}
 }
 
-// isPublicPath reports whether a route is reachable without a logged-in member.
+// isPublicPath reports whether a route is reachable without an account.
 func (s *Server) isPublicPath(c echo.Context) bool {
 	rel := strings.TrimPrefix(c.Request().URL.Path, s.cfg.BasePath)
 	switch rel {
@@ -189,6 +231,17 @@ func (s *Server) isPublicPath(c echo.Context) bool {
 		return true
 	}
 	return strings.HasPrefix(rel, "/static")
+}
+
+// isAccountOnlyPath reports whether a route needs an account but not yet an
+// active household (the onboarding and switching flow).
+func (s *Server) isAccountOnlyPath(c echo.Context) bool {
+	rel := strings.TrimPrefix(c.Request().URL.Path, s.cfg.BasePath)
+	switch rel {
+	case "/onboarding", "/households", "/households/join", "/households/switch":
+		return true
+	}
+	return false
 }
 
 // setSessionCookie writes the session cookie for a freshly minted token.
@@ -229,14 +282,29 @@ func (s *Server) member(c echo.Context) *households.Member {
 	return m
 }
 
+func (s *Server) account(c echo.Context) *households.Account {
+	a, _ := c.Get(accountCtxKey).(*households.Account)
+	return a
+}
+
+// household returns the active household id for the request (uuid.Nil if none).
+func (s *Server) household(c echo.Context) uuid.UUID {
+	h, _ := c.Get(householdCtxKey).(uuid.UUID)
+	return h
+}
+
 func (s *Server) token(c echo.Context) string {
 	t, _ := c.Get(tokenCtxKey).(string)
 	return t
 }
 
-// render writes a templ component with the base path installed in context.
+// render writes a templ component with the base path and active household name
+// installed in context.
 func (s *Server) render(c echo.Context, comp templ.Component) error {
 	ctx := view.WithBasePath(c.Request().Context(), s.cfg.BasePath)
+	if name, _ := c.Get(householdNameCtxKey).(string); name != "" {
+		ctx = view.WithActiveHousehold(ctx, name)
+	}
 	c.Response().Header().Set(echo.HeaderContentType, echo.MIMETextHTMLCharsetUTF8)
 	c.Response().WriteHeader(http.StatusOK)
 	return comp.Render(ctx, c.Response().Writer)

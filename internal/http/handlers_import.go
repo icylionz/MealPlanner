@@ -63,7 +63,7 @@ func (s *Server) handleImportPost(c echo.Context) error {
 		return fail("Import failed: " + err.Error())
 	}
 
-	all, err := s.foods.List(ctx)
+	all, err := s.foods.List(ctx, s.household(c))
 	if err != nil {
 		return err
 	}
@@ -106,7 +106,7 @@ func (s *Server) handleImportReconcile(c echo.Context) error {
 			d.Error = perr.Error()
 			break
 		}
-		savedID, err := s.foods.Save(ctx, nil, form)
+		savedID, err := s.foods.Save(ctx, s.household(c), nil, form)
 		if err != nil {
 			d.Error = "Couldn’t save the imported recipe: " + err.Error()
 			break
@@ -118,7 +118,7 @@ func (s *Server) handleImportReconcile(c echo.Context) error {
 			name := strings.TrimSpace(d.Lines[i].Name)
 			if name != "" {
 				unit := d.Lines[i].Unit
-				newID, err := s.foods.Save(ctx, nil, foods.Form{
+				newID, err := s.foods.Save(ctx, s.household(c), nil, foods.Form{
 					Name: name, Servings: 1, DefaultUnit: unit,
 				})
 				if err != nil {
@@ -131,7 +131,7 @@ func (s *Server) handleImportReconcile(c echo.Context) error {
 	}
 
 	// Refresh catalog so any newly created food appears in the dropdowns.
-	all, err := s.foods.List(ctx)
+	all, err := s.foods.List(ctx, s.household(c))
 	if err != nil {
 		return err
 	}
