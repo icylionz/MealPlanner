@@ -17,6 +17,7 @@ import (
 	"mealplanner/internal/households"
 	"mealplanner/internal/planner"
 	"mealplanner/internal/prep"
+	"mealplanner/internal/transfer"
 	"mealplanner/internal/view"
 )
 
@@ -28,11 +29,12 @@ type Server struct {
 	planner    *planner.Service
 	grocery    *grocery.Service
 	prep       *prep.Service
+	transfer   *transfer.Service
 }
 
 // New constructs the HTTP server wrapper.
-func New(cfg *config.Config, hh *households.Service, fs *foods.Service, ps *planner.Service, gs *grocery.Service, pr *prep.Service) *Server {
-	return &Server{cfg: cfg, households: hh, foods: fs, planner: ps, grocery: gs, prep: pr}
+func New(cfg *config.Config, hh *households.Service, fs *foods.Service, ps *planner.Service, gs *grocery.Service, pr *prep.Service, ts *transfer.Service) *Server {
+	return &Server{cfg: cfg, households: hh, foods: fs, planner: ps, grocery: gs, prep: pr, transfer: ts}
 }
 
 // Router builds the Echo instance with all routes mounted under BASE_PATH.
@@ -96,6 +98,10 @@ func (s *Server) Router() *echo.Echo {
 	g.POST("/prep/:id/meals/:rid/remove", s.handlePrepRemoveMeal)
 	g.POST("/prep/:id/meals/:rid/servings", s.handlePrepServings)
 	g.GET("/prep/:id/print", s.handlePrepPrint)
+
+	g.GET("/data", s.handleData)
+	g.GET("/data/export", s.handleDataExport)
+	g.POST("/data/import", s.handleDataImport)
 
 	g.GET("/household", s.handleHousehold)
 	g.POST("/household/members", s.handleHouseholdAdd)

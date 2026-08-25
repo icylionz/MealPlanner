@@ -39,7 +39,9 @@ var tabItems = []navEntry{
 	{"prep", "flame", "Prep", "/prep"},
 }
 
-var allNavItems = append(tabItems, navEntry{"household", "users", "Household", "/household"})
+var allNavItems = append(tabItems,
+	navEntry{"data", "upload", "Data", "/data"},
+	navEntry{"household", "users", "Household", "/household"})
 
 // Shell renders the app chrome: sidebar on desktop, top bar + bottom tabs on
 // mobile (CSS media queries switch between them).

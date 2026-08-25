@@ -1,0 +1,117 @@
+package pages
+
+import (
+	"mealplanner/internal/households"
+	"mealplanner/internal/transfer"
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/icons"
+	"mealplanner/internal/view/layout"
+)
+
+// DataData feeds the data export/import screen (FR15).
+type DataData struct {
+	Member   *households.Member
+	Error    string
+	Report   *transfer.Report
+	Selected map[string]bool // sections ticked on the last import attempt
+}
+
+var dataSectionLabels = map[string]string{
+	transfer.SectionMembers: "Household members",
+	transfer.SectionFoods:   "Foods & recipes",
+	transfer.SectionMeals:   "Scheduled meals & series",
+	transfer.SectionGrocery: "Grocery lists",
+	transfer.SectionPrep:    "Prep sessions",
+}
+
+func dataChecked(sel map[string]bool, name string) bool {
+	if sel == nil {
+		return true // default to all sections on first load
+	}
+	return sel[name]
+}
+
+// Data renders the JSON export/import screen.
+templ Data(d DataData) {
+	@layout.Shell("Data — Backbone Plate", "data", d.Member) {
+		@layout.PageHeader("Data", "Export & import") {
+			<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/data/export")) }>
+				@icons.Icon("upload", 14)
+				Export JSON
+			</a>
+		}
+		<div class="flex-1 overflow-y-auto page-pad" style="padding: 20px 28px; max-width: 720px;">
+			if d.Error != "" {
+				<div class="card" style="border-color: var(--danger); margin-bottom: 16px;">
+					<div class="flex items-center" style="gap: 8px; color: var(--danger);">
+						@icons.Icon("alert-circle", 16)
+						<span>{ d.Error }</span>
+					</div>
+				</div>
+			}
+			if d.Report != nil {
+				@dataReport(d.Report)
+			}
+			<div class="card" style="margin-bottom: 16px;">
+				<div class="overline" style="margin-bottom: 6px;">Export</div>
+				<p style="color: var(--fg-3); margin-bottom: 12px;">
+					Download a full-fidelity JSON backup of every food, meal, grocery list, prep session, and member. Stable IDs let you re-import it later to merge changes.
+				</p>
+				<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/data/export")) }>
+					@icons.Icon("upload", 14)
+					Export JSON
+				</a>
+			</div>
+			<div class="card">
+				<div class="overline" style="margin-bottom: 6px;">Import</div>
+				<p style="color: var(--fg-3); margin-bottom: 12px;">
+					Upload a JSON backup. Selected sections are merged by ID — existing records are updated, new ones added. Nothing is deleted.
+				</p>
+				<form method="post" action={ templ.URL(view.Href(ctx, "/data/import")) } enctype="multipart/form-data">
+					<div class="flex flex-col" style="gap: 8px; margin-bottom: 14px;">
+						for _, name := range transfer.AllSections {
+							<label class="flex items-center" style="gap: 8px; cursor: pointer;">
+								<input type="checkbox" name="section" value={ name } checked?={ dataChecked(d.Selected, name) }/>
+								<span>{ dataSectionLabels[name] }</span>
+							</label>
+						}
+					</div>
+					<div class="flex items-center" style="gap: 10px;">
+						<input type="file" name="file" accept="application/json,.json" required/>
+						<button type="submit" class="btn btn-sm">
+							@icons.Icon("refresh", 14)
+							Import
+						</button>
+					</div>
+				</form>
+			</div>
+		</div>
+	}
+}
+
+templ dataReport(r *transfer.Report) {
+	<div class="card" style="border-color: var(--success, var(--accent)); margin-bottom: 16px;">
+		<div class="overline" style="margin-bottom: 8px;">Import complete</div>
+		<div class="flex flex-col" style="gap: 10px;">
+			for _, s := range r.Sections {
+				<div>
+					<div class="flex items-center" style="gap: 8px;">
+						<strong>{ dataSectionLabels[s.Name] }</strong>
+						<span class="chip" style="font-size: 11px;">{ view.Itoa(s.Inserted) } added</span>
+						<span class="chip" style="font-size: 11px;">{ view.Itoa(s.Updated) } updated</span>
+						if s.Skipped > 0 {
+							<span class="chip" style="font-size: 11px; color: var(--danger);">{ view.Itoa(s.Skipped) } skipped</span>
+						}
+					</div>
+					if len(s.Notes) > 0 {
+						<ul style="margin: 4px 0 0 18px; color: var(--fg-4); font-size: 12px;">
+							for _, n := range s.Notes {
+								<li>{ n }</li>
+							}
+						</ul>
+					}
+				</div>
+			}
+		</div>
+	</div>
+}

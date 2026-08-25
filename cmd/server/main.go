@@ -13,6 +13,7 @@ import (
 	"mealplanner/internal/planner"
 	"mealplanner/internal/platform/database"
 	"mealplanner/internal/prep"
+	"mealplanner/internal/transfer"
 )
 
 func main() {
@@ -38,6 +39,7 @@ func main() {
 		planner.NewService(pool),
 		grocery.NewService(pool),
 		prep.NewService(pool),
+		transfer.NewService(pool),
 	)
 
 	e := srv.Router()
