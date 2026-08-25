@@ -7,3 +7,4 @@ internal/database/db
 bin/
 *.exe
 *.out
+.server.log

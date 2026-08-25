@@ -36,17 +36,22 @@ type Component struct {
 // Food is the full aggregate used by views and services. A food with no
 // components is atomic (a raw ingredient); one with components is a recipe.
 type Food struct {
-	ID          uuid.UUID
-	Name        string
-	Description string
-	PrepTime    int
-	CookTime    int
-	Servings    int
-	DefaultUnit string
-	Tags        []string
-	Components  []Component
-	Steps       []string
+	ID            uuid.UUID
+	Name          string
+	Description   string
+	PrepTime      int
+	CookTime      int
+	Servings      int
+	DefaultUnit   string
+	Density       float64 // grams per millilitre; 0 means unset
+	DensitySource string  // "starter", "custom", or "none"
+	Tags          []string
+	Components    []Component
+	Steps         []string
 }
+
+// HasDensity reports whether a usable density is set on the food.
+func (f Food) HasDensity() bool { return f.Density > 0 }
 
 // IsRecipe reports whether the food has components (is a recipe, not atomic).
 func (f Food) IsRecipe() bool { return len(f.Components) > 0 }
@@ -67,6 +72,7 @@ type Form struct {
 	CookTime    int
 	Servings    int
 	DefaultUnit string
+	Density     float64 // grams per millilitre; 0 = fall back to the starter set
 	Tags        []string
 	Components  []Component
 	Steps       []string
@@ -124,8 +130,8 @@ func (s *Service) List(ctx context.Context) ([]Food, error) {
 		out = append(out, Food{
 			ID: r.ID, Name: r.Name, Description: r.Description,
 			PrepTime: int(r.PrepTimeMin), CookTime: int(r.CookTimeMin), Servings: int(r.Servings),
-			DefaultUnit: r.DefaultUnit,
-			Tags:        tagsBy[r.ID], Components: compsBy[r.ID],
+			DefaultUnit: r.DefaultUnit, Density: r.DensityGPerMl, DensitySource: r.DensitySource,
+			Tags: tagsBy[r.ID], Components: compsBy[r.ID],
 		})
 	}
 	return out, nil
@@ -154,7 +160,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Food, error) {
 	food := &Food{
 		ID: r.ID, Name: r.Name, Description: r.Description,
 		PrepTime: int(r.PrepTimeMin), CookTime: int(r.CookTimeMin), Servings: int(r.Servings),
-		DefaultUnit: r.DefaultUnit,
+		DefaultUnit: r.DefaultUnit, Density: r.DensityGPerMl, DensitySource: r.DensitySource,
 	}
 	for _, t := range tags {
 		if t.FoodID == id {
@@ -212,6 +218,15 @@ func (s *Service) Save(ctx context.Context, id *uuid.UUID, form Form) (uuid.UUID
 		form.DefaultUnit = "g"
 	}
 
+	// Resolve density: a positive form value is a custom override; otherwise fall
+	// back to the starter set by name; otherwise leave unset (FR10.3, FR10.4).
+	density, source := form.Density, "none"
+	if density > 0 {
+		source = "custom"
+	} else if d, ok := units.StarterDensity(form.Name); ok {
+		density, source = d, "starter"
+	}
+
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return uuid.Nil, err
@@ -225,6 +240,7 @@ func (s *Service) Save(ctx context.Context, id *uuid.UUID, form Form) (uuid.UUID
 			Name: form.Name, Description: form.Description,
 			PrepTimeMin: int32(form.PrepTime), CookTimeMin: int32(form.CookTime),
 			Servings: int32(form.Servings), DefaultUnit: form.DefaultUnit,
+			DensityGPerMl: density, DensitySource: source,
 		})
 		if err != nil {
 			return uuid.Nil, err
@@ -236,6 +252,7 @@ func (s *Service) Save(ctx context.Context, id *uuid.UUID, form Form) (uuid.UUID
 			ID: foodID, Name: form.Name, Description: form.Description,
 			PrepTimeMin: int32(form.PrepTime), CookTimeMin: int32(form.CookTime),
 			Servings: int32(form.Servings), DefaultUnit: form.DefaultUnit,
+			DensityGPerMl: density, DensitySource: source,
 		}); err != nil {
 			return uuid.Nil, err
 		}
@@ -358,6 +375,40 @@ func Index(list []Food) map[uuid.UUID]Food {
 	return m
 }
 
+// DensityIndex maps food ID to its density (g/ml), omitting foods without one.
+func DensityIndex(list []Food) map[uuid.UUID]float64 {
+	m := make(map[uuid.UUID]float64)
+	for _, f := range list {
+		if f.HasDensity() {
+			m[f.ID] = f.Density
+		}
+	}
+	return m
+}
+
+// DensityMap builds a food-ID density map from an existing food index.
+func DensityMap(idx map[uuid.UUID]Food) map[uuid.UUID]float64 {
+	m := make(map[uuid.UUID]float64)
+	for id, f := range idx {
+		if f.HasDensity() {
+			m[id] = f.Density
+		}
+	}
+	return m
+}
+
+// DensityByName maps lowercased food name to density (g/ml) for lookups where
+// only a name is available (e.g. grocery items). Omits foods without a density.
+func DensityByName(list []Food) map[string]float64 {
+	m := make(map[string]float64)
+	for _, f := range list {
+		if f.HasDensity() {
+			m[strings.ToLower(strings.TrimSpace(f.Name))] = f.Density
+		}
+	}
+	return m
+}
+
 // LeafIngredients walks the component graph from a food and returns the scaled
 // atomic foods (leaves), mirroring the prototype's getLeafIngredients.
 func LeafIngredients(idx map[uuid.UUID]Food, foodID uuid.UUID, scale float64) []LeafIngredient {
@@ -402,8 +453,10 @@ func leafIngredients(idx map[uuid.UUID]Food, foodID uuid.UUID, scale float64, vi
 
 // Aggregate merges leaf ingredients by food identity and compatible unit,
 // converting same-dimension quantities, mirroring the prototype's
-// aggregateIngredients.
-func Aggregate(leaves []LeafIngredient) []LeafIngredient {
+// aggregateIngredients. When a food has a known density (densities keyed by
+// food ID), mass and volume lines of that food are merged into one line using
+// the density (FR10.2, FR12.1). Pass a nil map to skip density merging.
+func Aggregate(leaves []LeafIngredient, densities map[uuid.UUID]float64) []LeafIngredient {
 	type slot struct {
 		ing   LeafIngredient
 		order int
@@ -414,6 +467,7 @@ func Aggregate(leaves []LeafIngredient) []LeafIngredient {
 		key := ing.FoodID.String()
 		t := units.TypeOf(ing.Unit)
 		existing, ok := m[key]
+		density := densities[ing.FoodID]
 		switch {
 		case !ok:
 			m[key] = &slot{ing: ing, order: order}
@@ -424,6 +478,11 @@ func Aggregate(leaves []LeafIngredient) []LeafIngredient {
 			combined := units.ToBase(existing.ing.Amount, existing.ing.Unit) + units.ToBase(ing.Amount, ing.Unit)
 			existing.ing.Amount = units.FromBase(combined, existing.ing.Unit)
 		default:
+			// Different dimensions: merge across mass<->volume when density is known.
+			if conv, ok := units.ConvertDensity(ing.Amount, ing.Unit, existing.ing.Unit, density); ok && t != units.Count && units.TypeOf(existing.ing.Unit) != units.Count {
+				existing.ing.Amount += conv
+				continue
+			}
 			alt := key + "__" + ing.Unit
 			if a, ok := m[alt]; ok {
 				a.ing.Amount += ing.Amount

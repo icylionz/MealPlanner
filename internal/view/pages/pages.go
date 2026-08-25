@@ -2,6 +2,7 @@
 package pages
 
 import (
+	"strconv"
 	"strings"
 
 	"mealplanner/internal/foods"
@@ -26,8 +27,25 @@ func ConvertOptionsFor(amount float64, unit string) []ConvertOption {
 	return out
 }
 
+// ConvertOptionsForDensity lists same-dimension targets plus, when a density is
+// known, cross-dimension (volume<->weight) targets with density-computed
+// amounts (FR10.2).
+func ConvertOptionsForDensity(amount float64, unit string, density float64) []ConvertOption {
+	out := ConvertOptionsFor(amount, unit)
+	for _, u := range units.CrossTargets(unit, density) {
+		if v, ok := units.ConvertDensity(amount, unit, u, density); ok {
+			out = append(out, ConvertOption{Unit: u, Amount: v})
+		}
+	}
+	return out
+}
+
 // FormatAmount proxies units.Format for templates.
 func FormatAmount(n float64) string { return units.Format(n) }
+
+// FormatDensity renders a density with full precision (no rounding), since
+// densities carry meaningful sub-decimal values (e.g. 0.918, 1.25 g/ml).
+func FormatDensity(n float64) string { return strconv.FormatFloat(n, 'g', -1, 64) }
 
 // MealVM pairs a scheduled meal with its food for display.
 type MealVM struct {
@@ -132,22 +150,24 @@ type ComponentForm struct {
 
 // FoodEditData feeds the food editor (also the New Food flow).
 type FoodEditData struct {
-	Member      *households.Member
-	IsNew       bool
-	FoodID      string
-	Action      string
-	Name        string
-	Description string
-	PrepTime    string
-	CookTime    string
-	Servings    string
-	DefaultUnit string
-	Tags        []string
-	Components  []ComponentForm
-	Steps       []string
-	AllFoods    []foods.Food // options for the component search-select
-	Error       string
-	Units       []string
+	Member        *households.Member
+	IsNew         bool
+	FoodID        string
+	Action        string
+	Name          string
+	Description   string
+	PrepTime      string
+	CookTime      string
+	Servings      string
+	DefaultUnit   string
+	Density       string // g/ml, blank = unset (falls back to starter set)
+	DensitySource string // "starter", "custom", or "none" (display hint)
+	Tags          []string
+	Components    []ComponentForm
+	Steps         []string
+	AllFoods      []foods.Food // options for the component search-select
+	Error         string
+	Units         []string
 }
 
 // GroceryData feeds the Grocery screen.

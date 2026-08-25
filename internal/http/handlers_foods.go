@@ -156,6 +156,7 @@ func (s *Server) editorData(c echo.Context, isNew bool, foodID string) (pages.Fo
 		CookTime:    c.FormValue("cook"),
 		Servings:    c.FormValue("servings"),
 		DefaultUnit: c.FormValue("default_unit"),
+		Density:     c.FormValue("density"),
 		Tags:        f["tags"],
 		Steps:       f["steps"],
 		Units:       units.EditorUnits,
@@ -226,16 +227,22 @@ func (s *Server) handleFoodEdit(c echo.Context) error {
 
 	d := pages.FoodEditData{
 		Member: s.member(c), IsNew: false, FoodID: id.String(),
-		Action:      "/foods/" + id.String() + "/edit",
-		Name:        r.Name,
-		Description: r.Description,
-		PrepTime:    strconv.Itoa(r.PrepTime),
-		CookTime:    strconv.Itoa(r.CookTime),
-		Servings:    strconv.Itoa(r.Servings),
-		DefaultUnit: r.DefaultUnit,
-		Tags:        r.Tags,
-		Steps:       r.Steps,
-		Units:       units.EditorUnits,
+		Action:        "/foods/" + id.String() + "/edit",
+		Name:          r.Name,
+		Description:   r.Description,
+		PrepTime:      strconv.Itoa(r.PrepTime),
+		CookTime:      strconv.Itoa(r.CookTime),
+		Servings:      strconv.Itoa(r.Servings),
+		DefaultUnit:   r.DefaultUnit,
+		DensitySource: r.DensitySource,
+		Tags:          r.Tags,
+		Steps:         r.Steps,
+		Units:         units.EditorUnits,
+	}
+	// Prefill the density input only for custom overrides; a starter default is
+	// re-derived on save, so leaving it blank keeps the starter value.
+	if r.DensitySource == "custom" && r.Density > 0 {
+		d.Density = strconv.FormatFloat(r.Density, 'g', -1, 64)
 	}
 	for _, comp := range r.Components {
 		d.Components = append(d.Components, pages.ComponentForm{
@@ -343,6 +350,7 @@ func editorToForm(d pages.FoodEditData) (foods.Form, error) {
 	if strings.TrimSpace(d.Name) == "" {
 		return foods.Form{}, errors.New("Food needs a name.")
 	}
+	density, _ := strconv.ParseFloat(strings.TrimSpace(d.Density), 64)
 	form := foods.Form{
 		Name:        strings.TrimSpace(d.Name),
 		Description: strings.TrimSpace(d.Description),
@@ -350,6 +358,7 @@ func editorToForm(d pages.FoodEditData) (foods.Form, error) {
 		CookTime:    atoiDefault(d.CookTime, 0),
 		Servings:    atoiDefault(d.Servings, 1),
 		DefaultUnit: d.DefaultUnit,
+		Density:     density,
 		Tags:        d.Tags,
 		Steps:       d.Steps,
 	}

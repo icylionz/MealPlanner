@@ -20,8 +20,8 @@ func TestLeafIngredients_FlattenAndScale(t *testing.T) {
 	bread := mkID(4)
 
 	idx := map[uuid.UUID]Food{
-		flour:   {ID: flour, Name: "Flour"},
-		water:   {ID: water, Name: "Water"},
+		flour: {ID: flour, Name: "Flour"},
+		water: {ID: water, Name: "Water"},
 		starter: {ID: starter, Name: "Starter", Servings: 1, Components: []Component{
 			{ChildFoodID: flour, Amount: 50, Unit: "g"},
 			{ChildFoodID: water, Amount: 50, Unit: "ml"},
@@ -66,7 +66,7 @@ func TestAggregate_ByFoodIDAndUnitConversion(t *testing.T) {
 		{FoodID: flour, Name: "Flour", Amount: 0.05, Unit: "kg"}, // 50 g
 		{FoodID: oil, Name: "Oil", Amount: 30, Unit: "ml"},
 	}
-	out := Aggregate(leaves)
+	out := Aggregate(leaves, nil)
 	if len(out) != 2 {
 		t.Fatalf("aggregate produced %d rows, want 2: %+v", len(out), out)
 	}
@@ -89,9 +89,35 @@ func TestAggregate_SameNameDifferentFoodsStaySeparate(t *testing.T) {
 	out := Aggregate([]LeafIngredient{
 		{FoodID: a, Name: "Salt", Amount: 5, Unit: "g"},
 		{FoodID: b, Name: "Salt", Amount: 5, Unit: "g"},
-	})
+	}, nil)
 	if len(out) != 2 {
 		t.Errorf("distinct foods merged: %+v", out)
+	}
+}
+
+func TestAggregate_DensityMergesMassAndVolume(t *testing.T) {
+	oil := mkID(2)
+	// 100 ml + 92 g of oil at 0.92 g/ml. First-seen unit is ml, so 92 g -> 100 ml.
+	out := Aggregate([]LeafIngredient{
+		{FoodID: oil, Name: "Oil", Amount: 100, Unit: "ml"},
+		{FoodID: oil, Name: "Oil", Amount: 92, Unit: "g"},
+	}, map[uuid.UUID]float64{oil: 0.92})
+	if len(out) != 1 {
+		t.Fatalf("density merge produced %d rows, want 1: %+v", len(out), out)
+	}
+	if out[0].Unit != "ml" || out[0].Amount != 200 {
+		t.Errorf("merged = %v %s, want 200 ml", out[0].Amount, out[0].Unit)
+	}
+}
+
+func TestAggregate_NoDensityStaysSeparate(t *testing.T) {
+	oil := mkID(2)
+	out := Aggregate([]LeafIngredient{
+		{FoodID: oil, Name: "Oil", Amount: 100, Unit: "ml"},
+		{FoodID: oil, Name: "Oil", Amount: 92, Unit: "g"},
+	}, nil)
+	if len(out) != 2 {
+		t.Errorf("without density mass/volume merged: %+v", out)
 	}
 }
 

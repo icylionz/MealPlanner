@@ -124,8 +124,13 @@ templ groceryItemRow(listID string, item grocery.Item) {
 				}
 			</button>
 		</form>
-		<span class="g-name">{ item.Name }</span>
-		@UnitTagForm(item.Amount, item.Unit, true, ConvertOptionsFor(item.Amount, item.Unit), "/grocery/items/"+item.ID.String()+"/convert?list="+listID)
+		<span class="g-name">
+			{ item.Name }
+			if item.Note != "" {
+				<span style="display: block; font-size: 11px; color: var(--danger); font-weight: 600;">{ item.Note }</span>
+			}
+		</span>
+		@UnitTagForm(item.Amount, item.Unit, true, ConvertOptionsForDensity(item.Amount, item.Unit, item.Density), "/grocery/items/"+item.ID.String()+"/convert?list="+listID)
 		<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/items/"+item.ID.String()+"/delete?list="+listID)) } style="display: contents;">
 			<button type="submit" class="icon-btn icon-btn-danger" title="Delete item">
 				@icons.Icon("trash-2", 13)

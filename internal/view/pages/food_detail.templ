@@ -50,6 +50,13 @@ templ FoodDetail(d FoodDetailData) {
 				} else {
 					@layout.Tag("raw ingredient")
 				}
+				if d.Food.HasDensity() {
+					if d.Food.DensitySource == "custom" {
+						@layout.TagAccent(FormatDensity(d.Food.Density) + " g/ml · custom")
+					} else {
+						@layout.Tag(FormatDensity(d.Food.Density) + " g/ml")
+					}
+				}
 			</div>
 			if d.Food.Description != "" {
 				<p style="font-size: 14px; color: var(--fg-2); line-height: 1.6; margin: 0 0 20px;">{ d.Food.Description }</p>

@@ -30,6 +30,9 @@ RETURNING *;
 -- name: UpdateGroceryItemAmount :exec
 UPDATE grocery_items SET amount = $2, unit = $3 WHERE id = $1;
 
+-- name: SetGroceryItemNote :exec
+UPDATE grocery_items SET note = $2 WHERE id = $1;
+
 -- name: AddGroceryItemAmount :exec
 UPDATE grocery_items SET amount = amount + $2 WHERE id = $1;
 

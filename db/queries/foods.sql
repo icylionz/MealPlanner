@@ -5,14 +5,15 @@ SELECT * FROM foods ORDER BY lower(name);
 SELECT * FROM foods WHERE id = $1;
 
 -- name: CreateFood :one
-INSERT INTO foods (name, description, prep_time_min, cook_time_min, servings, default_unit)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO foods (name, description, prep_time_min, cook_time_min, servings, default_unit, density_g_per_ml, density_source)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: UpdateFood :exec
 UPDATE foods
 SET name = $2, description = $3, prep_time_min = $4, cook_time_min = $5,
-    servings = $6, default_unit = $7, updated_at = now()
+    servings = $6, default_unit = $7, density_g_per_ml = $8, density_source = $9,
+    updated_at = now()
 WHERE id = $1;
 
 -- name: DeleteFood :exec

@@ -15,9 +15,24 @@ import (
 )
 
 func (s *Server) handleGrocery(c echo.Context) error {
-	lists, err := s.grocery.ListAll(c.Request().Context())
+	ctx := c.Request().Context()
+	lists, err := s.grocery.ListAll(ctx)
 	if err != nil {
 		return err
+	}
+
+	// Attach known densities by name so the UI can offer volume<->weight
+	// conversions on grocery items (FR10).
+	all, err := s.foods.List(ctx)
+	if err != nil {
+		return err
+	}
+	densities := foods.DensityByName(all)
+	for i := range lists {
+		for j := range lists[i].Items {
+			it := &lists[i].Items[j]
+			it.Density = densities[strings.ToLower(strings.TrimSpace(it.Name))]
+		}
 	}
 
 	var active *grocery.List
@@ -103,8 +118,14 @@ func (s *Server) handleGroceryToggle(c echo.Context) error {
 }
 
 func (s *Server) handleGroceryConvert(c echo.Context) error {
+	ctx := c.Request().Context()
+	all, err := s.foods.List(ctx)
+	if err != nil {
+		return err
+	}
+	densities := foods.DensityByName(all)
 	return s.groceryItemAction(c, func(id uuid.UUID) error {
-		return s.grocery.ConvertItem(c.Request().Context(), id, c.FormValue("unit"))
+		return s.grocery.ConvertItem(ctx, id, c.FormValue("unit"), densities)
 	})
 }
 
@@ -232,7 +253,7 @@ func (s *Server) handleGroceryGenerate(c echo.Context) error {
 			return err
 		}
 		if ok {
-			for _, ing := range foods.Aggregate(leaves) {
+			for _, ing := range foods.Aggregate(leaves, foods.DensityMap(idx)) {
 				d.Preview = append(d.Preview, pages.GenPreviewItem{Name: ing.Name, Amount: ing.Amount, Unit: ing.Unit})
 			}
 			d.HasPreview = true
@@ -258,7 +279,7 @@ func (s *Server) handleGroceryGenerateCommit(c echo.Context) error {
 	if id, err := uuid.Parse(d.ListID); err == nil {
 		listID = &id
 	}
-	target, err := s.grocery.AddIngredients(c.Request().Context(), listID, foods.Aggregate(leaves))
+	target, err := s.grocery.AddIngredients(c.Request().Context(), listID, foods.Aggregate(leaves, foods.DensityMap(idx)))
 	if err != nil {
 		return err
 	}

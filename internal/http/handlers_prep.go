@@ -58,7 +58,7 @@ func (s *Server) prepData(c echo.Context) (pages.PrepData, error) {
 		for _, m := range d.Active.Meals {
 			leaves = append(leaves, foods.LeafIngredients(idx, m.Food.ID, float64(m.Servings))...)
 		}
-		for _, ing := range foods.Aggregate(leaves) {
+		for _, ing := range foods.Aggregate(leaves, foods.DensityMap(idx)) {
 			d.Aggregate = append(d.Aggregate, pages.GenPreviewItem{Name: ing.Name, Amount: ing.Amount, Unit: ing.Unit})
 		}
 	}
@@ -73,7 +73,7 @@ func (s *Server) prepSessionVM(sess prep.Session, idx map[uuid.UUID]foods.Food) 
 			continue
 		}
 		var breakdown []pages.GenPreviewItem
-		for _, ing := range foods.Aggregate(foods.LeafIngredients(idx, r.ID, float64(m.Servings))) {
+		for _, ing := range foods.Aggregate(foods.LeafIngredients(idx, r.ID, float64(m.Servings)), foods.DensityMap(idx)) {
 			breakdown = append(breakdown, pages.GenPreviewItem{Name: ing.Name, Amount: ing.Amount, Unit: ing.Unit})
 		}
 		meals = append(meals, pages.PrepMealVM{Food: r, Servings: m.Servings, Breakdown: breakdown})

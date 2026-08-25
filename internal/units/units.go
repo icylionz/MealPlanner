@@ -72,6 +72,80 @@ func Convert(amount float64, from, to string) float64 {
 	return FromBase(ToBase(amount, from), to)
 }
 
+// StarterDensities maps lowercase ingredient names to a starter density in
+// grams per millilitre (FR10). Used as a default when the owner has not set a
+// custom density for a food.
+var StarterDensities = map[string]float64{
+	"water":             1.0,
+	"milk":              1.03,
+	"oat milk":          1.03,
+	"olive oil":         0.918,
+	"vegetable oil":     0.92,
+	"canola oil":        0.92,
+	"honey":             1.42,
+	"maple syrup":       1.37,
+	"lemon juice":       1.03,
+	"caesar dressing":   0.94,
+	"bread flour":       0.53,
+	"all-purpose flour": 0.53,
+	"flour":             0.53,
+	"granulated sugar":  0.85,
+	"sugar":             0.85,
+	"table salt":        1.22,
+	"salt":              1.22,
+	"butter":            0.911,
+}
+
+// StarterDensity returns the starter density for an ingredient name, if known.
+func StarterDensity(name string) (float64, bool) {
+	d, ok := StarterDensities[strings.ToLower(strings.TrimSpace(name))]
+	return d, ok
+}
+
+// ConvertDensity converts an amount between two units, crossing the mass<->volume
+// boundary using density (grams per millilitre) when needed. It returns ok=false
+// when the conversion is not possible: a count unit is involved, or a
+// cross-dimension conversion is required but density is not positive.
+func ConvertDensity(amount float64, from, to string, density float64) (float64, bool) {
+	tf, tt := TypeOf(from), TypeOf(to)
+	if tf == Count || tt == Count {
+		return 0, from == to
+	}
+	if tf == tt {
+		return Convert(amount, from, to), true
+	}
+	if density <= 0 {
+		return 0, false
+	}
+	// Cross-dimension: base units are grams (mass) and millilitres (volume);
+	// grams = millilitres * density.
+	base := ToBase(amount, from) // g if from is mass, ml if from is volume
+	var targetBase float64
+	if tf == Volume { // ml -> g
+		targetBase = base * density
+	} else { // g -> ml
+		targetBase = base / density
+	}
+	return FromBase(targetBase, to), true
+}
+
+// CrossTargets returns the units of the opposite mass/volume dimension, offered
+// as conversion targets only when a density is available. Returns nil for count
+// units or when density is not positive.
+func CrossTargets(unit string, density float64) []string {
+	t := TypeOf(unit)
+	if t == Count || density <= 0 {
+		return nil
+	}
+	other := Volume
+	if t == Volume {
+		other = Mass
+	}
+	out := make([]string, len(ByType[other]))
+	copy(out, ByType[other])
+	return out
+}
+
 // ConvertTargets returns the other units of the same dimension, or nil when
 // the unit is not convertible (count).
 func ConvertTargets(unit string) []string {

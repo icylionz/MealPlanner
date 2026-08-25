@@ -28,6 +28,7 @@ type Item struct {
 	Unit    string
 	Checked bool
 	Note    string
+	Density float64 // g/ml of the matching food, 0 if unknown (view-only)
 }
 
 // UncheckedCount returns how many items remain unchecked.
@@ -126,18 +127,28 @@ func (s *Service) ClearChecked(ctx context.Context, listID uuid.UUID) error {
 	return s.q.DeleteCheckedGroceryItems(ctx, listID)
 }
 
-// ConvertItem converts an item to another unit of the same dimension.
-func (s *Service) ConvertItem(ctx context.Context, itemID uuid.UUID, toUnit string) error {
+// ConvertItem converts an item to another unit, crossing the mass<->volume
+// boundary when a density for the item is known (densities keyed by lowercased
+// name). If the target needs a density that is not available, the item is left
+// unchanged and flagged for review instead of guessing (FR10.5).
+func (s *Service) ConvertItem(ctx context.Context, itemID uuid.UUID, toUnit string, densities map[string]float64) error {
 	item, err := s.q.GetGroceryItem(ctx, itemID)
 	if err != nil {
 		return err
 	}
-	if units.TypeOf(item.Unit) != units.TypeOf(toUnit) || units.TypeOf(toUnit) == units.Count {
+	if units.TypeOf(toUnit) == units.Count || units.TypeOf(item.Unit) == units.Count {
 		return nil
 	}
-	converted := units.Round3(units.Convert(item.Amount, item.Unit, toUnit))
+	density := densities[strings.ToLower(strings.TrimSpace(item.Name))]
+	converted, ok := units.ConvertDensity(item.Amount, item.Unit, toUnit, density)
+	if !ok {
+		// Cross-dimension conversion requested but no density available.
+		return s.q.SetGroceryItemNote(ctx, db.SetGroceryItemNoteParams{
+			ID: itemID, Note: "needs density to convert to " + toUnit,
+		})
+	}
 	return s.q.UpdateGroceryItemAmount(ctx, db.UpdateGroceryItemAmountParams{
-		ID: itemID, Amount: converted, Unit: toUnit,
+		ID: itemID, Amount: units.Round3(converted), Unit: toUnit,
 	})
 }
 
