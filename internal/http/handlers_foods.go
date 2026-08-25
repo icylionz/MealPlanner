@@ -59,19 +59,6 @@ func contains(list []string, v string) bool {
 	return false
 }
 
-// handleFoodSearch returns the typeahead results fragment for the component
-// food picker: the most likely few foods matching the query, as pick buttons.
-func (s *Server) handleFoodSearch(c echo.Context) error {
-	all, err := s.foods.List(c.Request().Context())
-	if err != nil {
-		return err
-	}
-	query := c.QueryParam("picker_query")
-	pickerFor, _ := strconv.Atoi(c.QueryParam("i"))
-	self := c.QueryParam("self")
-	return s.render(c, pages.FoodPickerResults(foods.Search(all, query, 8), pickerFor, self))
-}
-
 func (s *Server) handleFoodDetail(c echo.Context) error {
 	ctx := c.Request().Context()
 	id, err := uuid.Parse(c.Param("id"))
@@ -171,8 +158,6 @@ func (s *Server) editorData(c echo.Context, isNew bool, foodID string) (pages.Fo
 		DefaultUnit: c.FormValue("default_unit"),
 		Tags:        f["tags"],
 		Steps:       f["steps"],
-		PickerFor:   -1,
-		PickerQuery: c.FormValue("picker_query"),
 		Units:       units.EditorUnits,
 	}
 	if isNew {
@@ -217,7 +202,7 @@ func (s *Server) handleFoodNew(c echo.Context) error {
 	d := pages.FoodEditData{
 		Member: s.member(c), IsNew: true, Action: "/foods/new",
 		PrepTime: "0", CookTime: "0", Servings: "1", DefaultUnit: "g",
-		PickerFor: -1, Units: units.EditorUnits,
+		Units: units.EditorUnits,
 	}
 	if err := s.fillEditorLookups(c, &d); err != nil {
 		return err
@@ -250,7 +235,6 @@ func (s *Server) handleFoodEdit(c echo.Context) error {
 		DefaultUnit: r.DefaultUnit,
 		Tags:        r.Tags,
 		Steps:       r.Steps,
-		PickerFor:   -1,
 		Units:       units.EditorUnits,
 	}
 	for _, comp := range r.Components {
@@ -333,33 +317,6 @@ func (s *Server) handleFoodEditPost(c echo.Context) error {
 			}
 		}
 		d.Tags = kept
-
-	case strings.HasPrefix(action, "pick-food:"):
-		if i, err := strconv.Atoi(action[len("pick-food:"):]); err == nil && i >= 0 && i < len(d.Components) {
-			d.PickerFor = i
-			d.PickerQuery = ""
-		}
-
-	case strings.HasPrefix(action, "picker-filter:"):
-		if i, err := strconv.Atoi(action[len("picker-filter:"):]); err == nil && i >= 0 && i < len(d.Components) {
-			d.PickerFor = i
-		}
-
-	case strings.HasPrefix(action, "pick-food-set:"):
-		parts := strings.SplitN(action[len("pick-food-set:"):], ":", 2)
-		if len(parts) == 2 {
-			if i, err := strconv.Atoi(parts[0]); err == nil && i >= 0 && i < len(d.Components) {
-				if _, err := uuid.Parse(parts[1]); err == nil {
-					d.Components[i].FoodID = parts[1]
-				}
-			}
-		}
-		d.PickerFor = -1
-		d.PickerQuery = ""
-
-	case action == "cancel-pick":
-		d.PickerFor = -1
-		d.PickerQuery = ""
 	}
 
 	if err := s.fillEditorLookups(c, &d); err != nil {

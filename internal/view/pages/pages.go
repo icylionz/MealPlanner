@@ -143,9 +143,7 @@ type FoodEditData struct {
 	Tags        []string
 	Components  []ComponentForm
 	Steps       []string
-	AllFoods    []foods.Food // for the component picker
-	PickerFor   int          // index of row picking a food, -1 none
-	PickerQuery string       // search text within the picker
+	AllFoods    []foods.Food // options for the component search-select
 	Error       string
 	Units       []string
 }

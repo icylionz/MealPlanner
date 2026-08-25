@@ -1,17 +1,10 @@
 package pages
 
 import (
-	"mealplanner/internal/foods"
 	"mealplanner/internal/view"
 	"mealplanner/internal/view/icons"
 	"mealplanner/internal/view/layout"
 )
-
-// pickerVals is the hx-vals payload sent with each typeahead request: the row
-// index being edited and the food to exclude (the one being edited).
-func pickerVals(d FoodEditData) string {
-	return `{"i":"` + view.Itoa(d.PickerFor) + `","self":"` + d.FoodID + `"}`
-}
 
 func editTitle(d FoodEditData) string {
 	if d.IsNew {
@@ -135,25 +128,26 @@ templ FoodEdit(d FoodEditData) {
 					</div>
 				</div>
 			</div>
-			if d.PickerFor >= 0 {
-				@foodPicker(d)
-			}
 		</form>
 	}
 }
 
 templ componentEditRow(d FoodEditData, i int, comp ComponentForm) {
 	<div class="ing-edit-row">
-		<input type="hidden" name="comp_foodid" value={ comp.FoodID }/>
 		<div style="flex: 2; min-width: 0;">
-			<button type="submit" name="action" value={ "pick-food:" + view.Itoa(i) } class="subrecipe-pick">
-				@icons.Icon("search", 13)
-				if comp.FoodName != "" {
-					{ comp.FoodName }
-				} else {
-					Pick food…
+			<select
+				class="select input-sm"
+				name="comp_foodid"
+				data-search-select="1"
+				data-search-select-placeholder="Search foods…"
+			>
+				<option value="" selected?={ comp.FoodID == "" }>Pick food…</option>
+				for _, f := range d.AllFoods {
+					if f.ID.String() != d.FoodID {
+						<option value={ f.ID.String() } selected?={ comp.FoodID == f.ID.String() }>{ f.Name }</option>
+					}
 				}
-			</button>
+			</select>
 		</div>
 		<input class="input input-sm" type="number" step="any" min="0" name="comp_amount" value={ comp.Amount } style="width: 72px;"/>
 		<select class="select input-sm" name="comp_unit" style="width: 80px;">
@@ -167,64 +161,3 @@ templ componentEditRow(d FoodEditData, i int, comp ComponentForm) {
 	</div>
 }
 
-templ foodPicker(d FoodEditData) {
-	<div style="position: fixed; inset: 0; z-index: 500; display: flex; align-items: center; justify-content: center; background: rgba(20,22,26,.45); padding: 16px;">
-		<div class="modal-card" style="width: 380px;">
-			<div class="modal-head">
-				<span class="modal-title">Pick a food</span>
-				<button type="submit" name="action" value="cancel-pick" class="modal-close icon-btn">
-					@icons.Icon("x", 15)
-				</button>
-			</div>
-			<div class="modal-body">
-				<div class="flex" style="gap: 6px; margin-bottom: 10px;">
-					<input
-						class="input input-sm flex-1"
-						name="picker_query"
-						value={ d.PickerQuery }
-						placeholder="Search foods…"
-						autocomplete="off"
-						autofocus
-						hx-get={ view.Href(ctx, "/foods/search") }
-						hx-trigger="keyup changed delay:150ms, search"
-						hx-target="#food-picker-results"
-						hx-swap="innerHTML"
-						hx-vals={ pickerVals(d) }
-					/>
-					<button type="submit" name="action" value={ "picker-filter:" + view.Itoa(d.PickerFor) } class="btn btn-secondary btn-xs">Search</button>
-				</div>
-				<div id="food-picker-results" class="flex flex-col" style="gap: 4px;">
-					@FoodPickerResults(foods.Search(d.AllFoods, d.PickerQuery, 8), d.PickerFor, d.FoodID)
-				</div>
-			</div>
-		</div>
-	</div>
-}
-
-// FoodPickerResults renders the ranked typeahead results as pick buttons. It is
-// used both for the picker's initial render and for the live hx-get fragment.
-templ FoodPickerResults(list []foods.Food, pickerFor int, selfID string) {
-	for _, f := range list {
-		if f.ID.String() != selfID {
-			<button
-				type="submit"
-				name="action"
-				value={ "pick-food-set:" + view.Itoa(pickerFor) + ":" + f.ID.String() }
-				class="pick-row"
-				style="border: 1px solid var(--line); border-radius: var(--radius-sm); background: transparent; width: 100%; text-align: left; padding: 10px 12px;"
-			>
-				<div class="flex-1 min-w-0">
-					<div class="pick-name" style="font-size: 14px;">{ f.Name }</div>
-					if len(f.Tags) > 0 {
-						<div style="margin-top: 3px;">
-							@RecipeTags(f.Tags, 3)
-						</div>
-					}
-				</div>
-			</button>
-		}
-	}
-	if len(list) == 0 {
-		<div style="padding: 12px; font-size: 13px; color: var(--fg-3); text-align: center;">No foods match.</div>
-	}
-}

@@ -16,6 +16,7 @@ templ Base(title string) {
 			<title>{ title }</title>
 			<link rel="stylesheet" href={ templ.URL(view.Href(ctx, "/static/css/app.css")) }/>
 			<script src={ templ.URL(view.Href(ctx, "/static/js/htmx.min.js")) } defer></script>
+			<script src={ templ.URL(view.Href(ctx, "/static/js/search-select.js")) } defer></script>
 		</head>
 		<body hx-boost="true">
 			{ children... }

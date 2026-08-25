@@ -491,6 +491,26 @@
     font-weight: 600; font-size: 13px; cursor: pointer;
     display: flex; align-items: center; gap: 6px;
   }
+  /* ── Search-select (JS-enhanced <select data-search-select>) ──── */
+  .ss-root { position: relative; }
+  .ss-menu {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 400;
+    background: var(--paper); border: 1px solid var(--line);
+    border-radius: var(--radius); box-shadow: var(--shadow-pop);
+    padding: 4px; min-width: 200px; max-height: 260px; overflow-y: auto;
+  }
+  .ss-menu.hidden { display: none; }
+  .ss-option, .ss-create, .ss-clear {
+    display: block; width: 100%; text-align: left; border: none; background: transparent;
+    color: var(--ink); font-size: 13px; padding: 8px 10px; border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .ss-option:hover, .ss-create:hover, .ss-clear:hover,
+  .ss-option.ss-active, .ss-create.ss-active { background: var(--surface); }
+  .ss-option.ss-selected { color: var(--accent-strong); font-weight: 600; }
+  .ss-create { color: var(--accent-strong); font-weight: 600; }
+  .ss-clear { color: var(--fg-3); border: 1px solid var(--line); margin-bottom: 4px; }
+  select[data-search-select].hidden { display: none; }
 
   /* ── Step numbers ──────────────────────────────────────────── */
   .step-num { font-family: var(--font-mono); font-weight: 700; font-size: 11px; color: var(--accent); min-width: 22px; letter-spacing: .04em; }

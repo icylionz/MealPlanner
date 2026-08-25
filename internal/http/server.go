@@ -65,7 +65,6 @@ func (s *Server) Router() *echo.Echo {
 	g.POST("/meals/:id/delete", s.handleDeleteMeal)
 
 	g.GET("/foods", s.handleFoods)
-	g.GET("/foods/search", s.handleFoodSearch)
 	g.GET("/foods/new", s.handleFoodNew)
 	g.POST("/foods/new", s.handleFoodEditPost)
 	g.GET("/foods/:id", s.handleFoodDetail)

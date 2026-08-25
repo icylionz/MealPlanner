@@ -95,31 +95,6 @@ func TestAggregate_SameNameDifferentFoodsStaySeparate(t *testing.T) {
 	}
 }
 
-func TestSearch_RankingAndLimit(t *testing.T) {
-	all := []Food{
-		{ID: mkID(1), Name: "Bread flour"},
-		{ID: mkID(2), Name: "Flour"},
-		{ID: mkID(3), Name: "Self-raising flour"},
-		{ID: mkID(4), Name: "Water"},
-	}
-	got := Search(all, "flour", 8)
-	if len(got) != 3 {
-		t.Fatalf("got %d matches, want 3: %+v", len(got), got)
-	}
-	// Exact "Flour" ranks first; prefix/substring by rank then alphabetical.
-	if got[0].Name != "Flour" {
-		t.Errorf("first = %q, want exact match Flour", got[0].Name)
-	}
-	if got[1].Name != "Bread flour" || got[2].Name != "Self-raising flour" {
-		t.Errorf("substring order = %q,%q", got[1].Name, got[2].Name)
-	}
-
-	// Empty query returns alphabetical, capped at limit.
-	if lim := Search(all, "", 2); len(lim) != 2 || lim[0].Name != "Bread flour" {
-		t.Errorf("empty-query top-2 = %+v", lim)
-	}
-}
-
 func TestFoodIsRecipe(t *testing.T) {
 	atomic := Food{Name: "Flour"}
 	recipe := Food{Name: "Bread", Components: []Component{{ChildFoodID: mkID(1)}}}
