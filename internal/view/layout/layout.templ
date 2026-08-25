@@ -51,7 +51,7 @@ templ Shell(title string, active string, member *households.Member) {
 			<aside class="sidebar">
 				<div class="sidebar-logo">
 					<div class="flex items-center" style="gap: 9px;">
-						@logoMark()
+						@LogoMark()
 						<div>
 							<div class="logo-name">Backbone</div>
 							<div class="logo-sub">Plate</div>
@@ -74,18 +74,25 @@ templ Shell(title string, active string, member *households.Member) {
 					}
 				</nav>
 				if member != nil {
-					<a href={ templ.URL(view.Href(ctx, "/household")) } class="sidebar-user">
-						@Avatar(member.Initials, member.Color, 30)
-						<div class="flex-1 min-w-0">
-							<div class="sidebar-user-name">{ member.Name }</div>
-							<div class="sidebar-user-role">{ member.Role }</div>
-						</div>
-					</a>
+					<div class="sidebar-user">
+						<a href={ templ.URL(view.Href(ctx, "/household")) } class="sidebar-user-link">
+							@Avatar(member.Initials, member.Color, 30)
+							<div class="flex-1 min-w-0">
+								<div class="sidebar-user-name">{ member.Name }</div>
+								<div class="sidebar-user-role">{ member.Role }</div>
+							</div>
+						</a>
+						<form method="post" action={ templ.URL(view.Href(ctx, "/logout")) }>
+							<button type="submit" class="sidebar-logout" title="Sign out" aria-label="Sign out">
+								@icons.Icon("log-out", 16)
+							</button>
+						</form>
+					</div>
 				}
 			</aside>
 			<header class="mobile-topbar">
 				<div class="flex items-center gap-2">
-					@logoMark()
+					@LogoMark()
 					<div>
 						<div class="logo-name" style="font-size: 13px;">Backbone</div>
 						<div class="logo-sub" style="font-size: 8px;">Plate</div>
@@ -121,7 +128,7 @@ templ Shell(title string, active string, member *households.Member) {
 	}
 }
 
-templ logoMark() {
+templ LogoMark() {
 	<div class="logo-mark">
 		<span></span>
 		<span></span>

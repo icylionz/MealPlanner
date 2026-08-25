@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/a-h/templ"
@@ -58,6 +59,12 @@ func (s *Server) Router() *echo.Echo {
 		g.Static("/static", "web/static")
 	}
 
+	g.GET("/login", s.handleLoginForm)
+	g.POST("/login", s.handleLogin)
+	g.GET("/register", s.handleRegisterForm)
+	g.POST("/register", s.handleRegister)
+	g.POST("/logout", s.handleLogout)
+
 	g.GET("/", func(c echo.Context) error { return s.redirect(c, "/today") })
 	g.GET("/today", s.handleToday)
 	g.GET("/plan", s.handlePlan)
@@ -105,7 +112,6 @@ func (s *Server) Router() *echo.Echo {
 
 	g.GET("/household", s.handleHousehold)
 	g.POST("/household/members", s.handleHouseholdAdd)
-	g.POST("/household/switch", s.handleHouseholdSwitch)
 	g.POST("/household/remove", s.handleHouseholdRemove)
 
 	return e
@@ -149,8 +155,9 @@ func (s *Server) sameOrigin(r *http.Request) bool {
 	return s.cfg.IsDevelopment()
 }
 
-// sessionMiddleware resolves (or creates) the profile session and stores the
-// active member on the request context.
+// sessionMiddleware resolves the logged-in member from the session cookie and
+// stores it on the request context. Unauthenticated requests to protected pages
+// are redirected to the login screen; the auth pages themselves stay public.
 func (s *Server) sessionMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.Request().Context()
@@ -162,26 +169,52 @@ func (s *Server) sessionMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		if err != nil {
 			return err
 		}
-		if member == nil {
-			newToken, m, err := s.households.StartSession(ctx, nil)
-			if err != nil {
-				return err
-			}
-			token, member = newToken, m
-			c.SetCookie(&http.Cookie{
-				Name:     s.cfg.SessionCookieName,
-				Value:    token,
-				Path:     pathOrRoot(s.cfg.BasePath),
-				HttpOnly: true,
-				SameSite: http.SameSiteLaxMode,
-				Secure:   !s.cfg.IsDevelopment(),
-				Expires:  time.Now().Add(households.SessionTTL),
-			})
+		if member != nil {
+			c.Set(memberCtxKey, member)
+			c.Set(tokenCtxKey, token)
+			return next(c)
 		}
-		c.Set(memberCtxKey, member)
-		c.Set(tokenCtxKey, token)
-		return next(c)
+		if s.isPublicPath(c) {
+			return next(c)
+		}
+		return s.redirect(c, "/login")
 	}
+}
+
+// isPublicPath reports whether a route is reachable without a logged-in member.
+func (s *Server) isPublicPath(c echo.Context) bool {
+	rel := strings.TrimPrefix(c.Request().URL.Path, s.cfg.BasePath)
+	switch rel {
+	case "/login", "/register", "/logout":
+		return true
+	}
+	return strings.HasPrefix(rel, "/static")
+}
+
+// setSessionCookie writes the session cookie for a freshly minted token.
+func (s *Server) setSessionCookie(c echo.Context, token string) {
+	c.SetCookie(&http.Cookie{
+		Name:     s.cfg.SessionCookieName,
+		Value:    token,
+		Path:     pathOrRoot(s.cfg.BasePath),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   !s.cfg.IsDevelopment(),
+		Expires:  time.Now().Add(households.SessionTTL),
+	})
+}
+
+// clearSessionCookie expires the session cookie on logout.
+func (s *Server) clearSessionCookie(c echo.Context) {
+	c.SetCookie(&http.Cookie{
+		Name:     s.cfg.SessionCookieName,
+		Value:    "",
+		Path:     pathOrRoot(s.cfg.BasePath),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   !s.cfg.IsDevelopment(),
+		MaxAge:   -1,
+	})
 }
 
 func pathOrRoot(basePath string) string {

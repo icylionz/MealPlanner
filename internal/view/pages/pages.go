@@ -47,6 +47,14 @@ func FormatAmount(n float64) string { return units.Format(n) }
 // densities carry meaningful sub-decimal values (e.g. 0.918, 1.25 g/ml).
 func FormatDensity(n float64) string { return strconv.FormatFloat(n, 'g', -1, 64) }
 
+// AuthData feeds the login and registration screens. Name is only used by the
+// registration form; Error carries a validation or credential message.
+type AuthData struct {
+	Name  string
+	Email string
+	Error string
+}
+
 // MealVM pairs a scheduled meal with its food for display.
 type MealVM struct {
 	Meal   planner.Meal

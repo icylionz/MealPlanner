@@ -13,12 +13,19 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/bcrypt"
 
 	"mealplanner/internal/database/db"
 )
 
 // SessionTTL is how long a profile session stays valid.
 const SessionTTL = 180 * 24 * time.Hour
+
+// minPasswordLen is the shortest accepted password at registration.
+const minPasswordLen = 8
+
+// ErrInvalidCredentials is returned when an email/password pair does not match.
+var ErrInvalidCredentials = errors.New("invalid email or password")
 
 // Prototype avatar palette, assigned round-robin to new members.
 var memberColors = []string{"#22386A", "#1E8E5A", "#B57415", "#CE3B36", "#6B4EBF"}
@@ -141,12 +148,99 @@ func (s *Service) StartSession(ctx context.Context, memberID *uuid.UUID) (string
 	return token, &m, nil
 }
 
-// Switch repoints an existing session at another member profile.
-func (s *Service) Switch(ctx context.Context, token string, memberID uuid.UUID) error {
-	if _, err := s.q.GetMember(ctx, memberID); err != nil {
-		return err
+// EndSession invalidates a session token (logout). Unknown tokens are a no-op.
+func (s *Service) EndSession(ctx context.Context, token string) error {
+	if token == "" {
+		return nil
 	}
-	return s.q.UpdateSessionMember(ctx, db.UpdateSessionMemberParams{Token: token, MemberID: memberID})
+	return s.q.DeleteSession(ctx, token)
+}
+
+// Register creates (or claims) a member profile with login credentials and
+// returns it. If a passwordless member already exists with the same name it is
+// claimed — its credentials are set — rather than creating a duplicate. The
+// first member in an empty household becomes the owner.
+func (s *Service) Register(ctx context.Context, name, email, password string) (*Member, error) {
+	name = strings.TrimSpace(name)
+	email = strings.ToLower(strings.TrimSpace(email))
+	switch {
+	case name == "":
+		return nil, errors.New("name is required")
+	case !strings.Contains(email, "@") || strings.Contains(email, " "):
+		return nil, errors.New("a valid email is required")
+	case len(password) < minPasswordLen:
+		return nil, errors.New("password must be at least 8 characters")
+	}
+
+	if _, err := s.q.GetMemberByEmail(ctx, email); err == nil {
+		return nil, errors.New("that email is already registered")
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+	hashStr := string(hash)
+
+	// Claim an existing passwordless member with the same name, if any.
+	if claim, err := s.q.GetPasswordlessMemberByName(ctx, name); err == nil {
+		row, err := s.q.SetMemberCredentials(ctx, db.SetMemberCredentialsParams{
+			ID: claim.ID, Email: &email, PasswordHash: &hashStr,
+		})
+		if err != nil {
+			return nil, err
+		}
+		m := fromRow(row)
+		return &m, nil
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+
+	count, err := s.q.CountMembers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	role := "member"
+	if count == 0 {
+		role = "owner"
+	}
+	row, err := s.q.CreateMemberWithAuth(ctx, db.CreateMemberWithAuthParams{
+		Name:         name,
+		Role:         role,
+		Initials:     initialsOf(name),
+		Color:        memberColors[int(count)%len(memberColors)],
+		Email:        &email,
+		PasswordHash: &hashStr,
+	})
+	if err != nil {
+		return nil, err
+	}
+	m := fromRow(row)
+	return &m, nil
+}
+
+// Authenticate verifies an email/password pair and returns the member. It
+// returns ErrInvalidCredentials for any mismatch, without distinguishing an
+// unknown email from a bad password.
+func (s *Service) Authenticate(ctx context.Context, email, password string) (*Member, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	row, err := s.q.GetMemberByEmail(ctx, email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrInvalidCredentials
+	}
+	if err != nil {
+		return nil, err
+	}
+	if row.PasswordHash == nil {
+		return nil, ErrInvalidCredentials
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(*row.PasswordHash), []byte(password)); err != nil {
+		return nil, ErrInvalidCredentials
+	}
+	m := fromRow(row)
+	return &m, nil
 }
 
 func initialsOf(name string) string {

@@ -204,17 +204,6 @@ func (s *Server) handleHouseholdAdd(c echo.Context) error {
 	return s.redirect(c, "/household")
 }
 
-func (s *Server) handleHouseholdSwitch(c echo.Context) error {
-	memberID, err := uuid.Parse(c.QueryParam("member"))
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	if err := s.households.Switch(c.Request().Context(), s.token(c), memberID); err != nil {
-		return err
-	}
-	return s.redirect(c, "/household")
-}
-
 func (s *Server) handleHouseholdRemove(c echo.Context) error {
 	memberID, err := uuid.Parse(c.QueryParam("member"))
 	if err != nil {

@@ -1,0 +1,86 @@
+package pages
+
+import (
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/layout"
+)
+
+// Login renders the standalone sign-in screen.
+templ Login(d AuthData) {
+	@authScreen("Sign in — Backbone Plate") {
+		<div class="auth-head">
+			<div class="auth-title">Welcome back</div>
+			<div class="auth-sub">Sign in to your household plate.</div>
+		</div>
+		if d.Error != "" {
+			<div class="auth-error">{ d.Error }</div>
+		}
+		<form method="post" action={ templ.URL(view.Href(ctx, "/login")) } class="auth-form">
+			<label class="auth-label">
+				Email
+				<input class="input" type="email" name="email" value={ d.Email } autocomplete="username" autofocus required/>
+			</label>
+			<label class="auth-label">
+				Password
+				<input class="input" type="password" name="password" autocomplete="current-password" required/>
+			</label>
+			<button type="submit" class="btn" style="width: 100%; justify-content: center;">Sign in</button>
+		</form>
+		<div class="auth-alt">
+			New here?
+			<a href={ templ.URL(view.Href(ctx, "/register")) }>Create an account</a>
+		</div>
+	}
+}
+
+// Register renders the standalone sign-up screen.
+templ Register(d AuthData) {
+	@authScreen("Create account — Backbone Plate") {
+		<div class="auth-head">
+			<div class="auth-title">Create your account</div>
+			<div class="auth-sub">Join your household to plan meals together.</div>
+		</div>
+		if d.Error != "" {
+			<div class="auth-error">{ d.Error }</div>
+		}
+		<form method="post" action={ templ.URL(view.Href(ctx, "/register")) } class="auth-form">
+			<label class="auth-label">
+				Name
+				<input class="input" type="text" name="name" value={ d.Name } autocomplete="name" autofocus required/>
+			</label>
+			<label class="auth-label">
+				Email
+				<input class="input" type="email" name="email" value={ d.Email } autocomplete="username" required/>
+			</label>
+			<label class="auth-label">
+				Password
+				<input class="input" type="password" name="password" autocomplete="new-password" minlength="8" required/>
+				<span class="auth-hint">At least 8 characters.</span>
+			</label>
+			<button type="submit" class="btn" style="width: 100%; justify-content: center;">Create account</button>
+		</form>
+		<div class="auth-alt">
+			Already have an account?
+			<a href={ templ.URL(view.Href(ctx, "/login")) }>Sign in</a>
+		</div>
+	}
+}
+
+// authScreen is the shared centered chrome for the auth pages (no nav shell,
+// since there is no logged-in member yet).
+templ authScreen(title string) {
+	@layout.Base(title) {
+		<div class="auth-screen">
+			<div class="auth-card">
+				<div class="auth-brand">
+					@layout.LogoMark()
+					<div>
+						<div class="logo-name">Backbone</div>
+						<div class="logo-sub">Plate</div>
+					</div>
+				</div>
+				{ children... }
+			</div>
+		</div>
+	}
+}

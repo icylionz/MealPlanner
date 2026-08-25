@@ -1,11 +1,8 @@
--- Seed data mirroring the Backbone Plate prototype sample state.
--- Every ingredient is a first-class food: atomic foods (raw ingredients, no
--- components) plus recipe foods whose food_components reference other foods.
--- Meal plan dates are laid out over the week containing the migration run.
-
-INSERT INTO household_members (id, name, role, initials, color) VALUES
-    ('a0000000-0000-0000-0000-000000000001', 'Alex Morgan', 'owner',  'AM', '#22386A'),
-    ('a0000000-0000-0000-0000-000000000002', 'Sam Morgan',  'member', 'SM', '#1E8E5A');
+-- Seed data: the food catalog only. Household members are created at
+-- registration (no seeded users), and meal plans / grocery lists start empty so
+-- each household builds its own. Every ingredient is a first-class food: atomic
+-- foods (raw ingredients, no components) plus recipe foods whose food_components
+-- reference other foods.
 
 -- Atomic foods (raw ingredients). default_unit is how each is normally measured.
 INSERT INTO foods (id, name, default_unit) VALUES
@@ -138,43 +135,3 @@ INSERT INTO food_steps (food_id, step_number, instruction) VALUES
     ('b0000000-0000-0000-0000-000000000008', 2, 'Slice grilled chicken and lay on top.'),
     ('b0000000-0000-0000-0000-000000000008', 3, 'Add croutons and parmesan shavings.'),
     ('b0000000-0000-0000-0000-000000000008', 4, 'Drizzle with caesar dressing. Toss gently.');
-
--- Week layout: Monday of the current ISO week + offset days.
-INSERT INTO meal_plan (plan_date, plan_time, food_id, servings) VALUES
-    (date_trunc('week', current_date)::date + 0, '08:00', 'b0000000-0000-0000-0000-000000000006', 1),
-    (date_trunc('week', current_date)::date + 0, '12:30', 'b0000000-0000-0000-0000-000000000008', 2),
-    (date_trunc('week', current_date)::date + 0, '19:00', 'b0000000-0000-0000-0000-000000000005', 2),
-    (date_trunc('week', current_date)::date + 1, '07:45', 'b0000000-0000-0000-0000-000000000006', 1),
-    (date_trunc('week', current_date)::date + 1, '19:30', 'b0000000-0000-0000-0000-000000000007', 2),
-    (date_trunc('week', current_date)::date + 2, '08:00', 'b0000000-0000-0000-0000-000000000006', 1),
-    (date_trunc('week', current_date)::date + 2, '12:00', 'b0000000-0000-0000-0000-000000000008', 2),
-    (date_trunc('week', current_date)::date + 2, '19:00', 'b0000000-0000-0000-0000-000000000005', 2),
-    (date_trunc('week', current_date)::date + 3, '08:00', 'b0000000-0000-0000-0000-000000000006', 1),
-    (date_trunc('week', current_date)::date + 3, '19:30', 'b0000000-0000-0000-0000-000000000007', 2),
-    (date_trunc('week', current_date)::date + 4, '07:30', 'b0000000-0000-0000-0000-000000000006', 1),
-    (date_trunc('week', current_date)::date + 4, '12:30', 'b0000000-0000-0000-0000-000000000008', 2),
-    (date_trunc('week', current_date)::date + 4, '19:00', 'b0000000-0000-0000-0000-000000000005', 2),
-    (date_trunc('week', current_date)::date + 5, '09:00', 'b0000000-0000-0000-0000-000000000006', 2),
-    (date_trunc('week', current_date)::date + 5, '13:00', 'b0000000-0000-0000-0000-000000000008', 2),
-    (date_trunc('week', current_date)::date + 6, '09:30', 'b0000000-0000-0000-0000-000000000006', 2),
-    (date_trunc('week', current_date)::date + 6, '11:00', 'b0000000-0000-0000-0000-000000000002', 4);
-
-INSERT INTO grocery_lists (id, name) VALUES
-    ('c0000000-0000-0000-0000-000000000001', 'Weekly shop');
-
-INSERT INTO grocery_items (list_id, name, amount, unit, checked, sort_order) VALUES
-    ('c0000000-0000-0000-0000-000000000001', 'Rolled oats', 560, 'g', false, 0),
-    ('c0000000-0000-0000-0000-000000000001', 'Oat milk', 1750, 'ml', false, 1),
-    ('c0000000-0000-0000-0000-000000000001', 'Banana', 7, 'count', true, 2),
-    ('c0000000-0000-0000-0000-000000000001', 'Honey', 105, 'ml', false, 3),
-    ('c0000000-0000-0000-0000-000000000001', 'Ground cinnamon', 7, 'g', false, 4),
-    ('c0000000-0000-0000-0000-000000000001', 'Bread flour', 600, 'g', false, 5),
-    ('c0000000-0000-0000-0000-000000000001', 'Instant yeast', 8, 'g', true, 6),
-    ('c0000000-0000-0000-0000-000000000001', 'Mozzarella', 300, 'g', false, 7),
-    ('c0000000-0000-0000-0000-000000000001', 'Canned tomatoes', 800, 'g', true, 8),
-    ('c0000000-0000-0000-0000-000000000001', 'Garlic', 9, 'count', false, 9),
-    ('c0000000-0000-0000-0000-000000000001', 'Olive oil', 135, 'ml', false, 10),
-    ('c0000000-0000-0000-0000-000000000001', 'Chicken breast', 800, 'g', false, 11),
-    ('c0000000-0000-0000-0000-000000000001', 'Romaine lettuce', 600, 'g', false, 12),
-    ('c0000000-0000-0000-0000-000000000001', 'Parmesan', 120, 'g', false, 13),
-    ('c0000000-0000-0000-0000-000000000001', 'Croutons', 180, 'g', false, 14);
