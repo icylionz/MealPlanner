@@ -330,6 +330,10 @@ type EditMealData struct {
 	Active       string
 	Recurring    bool            // meal belongs to a series -> offer scope choice
 	Series       *planner.Series // recurrence rule for display (may be nil)
+	LinkURL      string          // external link + preview (FR13)
+	LinkTitle    string
+	LinkImageURL string
+	LinkError    string // preview fetch failure -> prompt manual entry (FR13.2)
 }
 
 // WeekdayLabels are the single-letter column headers, Sunday-first (0..6).

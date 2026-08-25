@@ -9,6 +9,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"mealplanner/internal/foods"
+	"mealplanner/internal/linkpreview"
 	"mealplanner/internal/planner"
 	"mealplanner/internal/view"
 	"mealplanner/internal/view/pages"
@@ -277,13 +278,21 @@ func (s *Server) handleEditMealForm(c echo.Context) error {
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	returnTo := safeReturn(c.QueryParam("return"), "/today")
-
-	all, err := s.foods.List(ctx)
+	d, err := s.editMealData(c, m, safeReturn(c.QueryParam("return"), "/today"), c.QueryParam("q"))
 	if err != nil {
 		return err
 	}
-	search := c.QueryParam("q")
+	return s.render(c, pages.EditMeal(d))
+}
+
+// editMealData builds the edit-meal view model from a meal, its food catalog,
+// and its stored link preview. Reused by the GET form and the link sub-actions.
+func (s *Server) editMealData(c echo.Context, m *planner.Meal, returnTo, search string) (pages.EditMealData, error) {
+	ctx := c.Request().Context()
+	all, err := s.foods.List(ctx)
+	if err != nil {
+		return pages.EditMealData{}, err
+	}
 	var filtered []foods.Food
 	var selectedFood *foods.Food
 	for _, r := range all {
@@ -308,21 +317,31 @@ func (s *Server) handleEditMealForm(c echo.Context) error {
 		series, _ = s.planner.GetSeries(ctx, *m.SeriesID)
 	}
 
-	return s.render(c, pages.EditMeal(pages.EditMealData{
+	return pages.EditMealData{
 		Member: s.member(c), MealID: m.ID.String(),
 		Date: m.Date, Time: m.Time, Servings: m.Servings,
 		Search: search, Foods: filtered, Selected: m.FoodID.String(),
 		SelectedFood: selectedFood, ReturnTo: returnTo, Active: active,
 		Recurring: m.SeriesID != nil, Series: series,
-	}))
+		LinkURL: m.LinkURL, LinkTitle: m.LinkTitle, LinkImageURL: m.LinkImageURL,
+	}, nil
 }
 
 func (s *Server) handleEditMeal(c echo.Context) error {
+	ctx := c.Request().Context()
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		return echo.ErrNotFound
 	}
 	returnTo := safeReturn(c.FormValue("return"), "/today")
+
+	// Link sub-actions re-render the modal instead of saving the whole meal, so
+	// the user can fetch/refresh a preview or enter fallback values (FR13).
+	action := c.FormValue("action")
+	if action == "refresh-link" || action == "remove-link" {
+		return s.handleMealLinkAction(c, id, action, returnTo)
+	}
+
 	foodID, err := uuid.Parse(c.FormValue("food"))
 	if err != nil {
 		return s.redirect(c, returnTo)
@@ -332,10 +351,61 @@ func (s *Server) handleEditMeal(c echo.Context) error {
 		servings = 2
 	}
 	scope := planner.ParseScope(c.FormValue("scope"))
-	if err := s.planner.Update(c.Request().Context(), id, c.FormValue("date"), c.FormValue("time"), foodID, servings, scope); err != nil {
+	if err := s.planner.Update(ctx, id, c.FormValue("date"), c.FormValue("time"), foodID, servings, scope); err != nil {
+		return err
+	}
+
+	// Persist the link on this occurrence. A new/changed URL with no manual
+	// title or image is auto-previewed; failures are non-fatal (raw URL kept).
+	url := strings.TrimSpace(c.FormValue("link_url"))
+	title := strings.TrimSpace(c.FormValue("link_title"))
+	image := strings.TrimSpace(c.FormValue("link_image"))
+	if url != "" && title == "" && image == "" {
+		if pv, ferr := linkpreview.Fetch(ctx, url); ferr == nil {
+			title, image = pv.Title, pv.ImageURL
+		}
+	}
+	if err := s.planner.SetLink(ctx, id, url, title, image); err != nil {
 		return err
 	}
 	return s.redirect(c, returnTo)
+}
+
+// handleMealLinkAction fetches/refreshes or removes a meal's link preview and
+// re-renders the edit modal with the result (FR13.1–FR13.3).
+func (s *Server) handleMealLinkAction(c echo.Context, id uuid.UUID, action, returnTo string) error {
+	ctx := c.Request().Context()
+	url := strings.TrimSpace(c.FormValue("link_url"))
+	title := strings.TrimSpace(c.FormValue("link_title"))
+	image := strings.TrimSpace(c.FormValue("link_image"))
+	var linkErr string
+
+	if action == "remove-link" {
+		url, title, image = "", "", ""
+	} else if url == "" {
+		linkErr = "Enter a URL first."
+	} else if pv, ferr := linkpreview.Fetch(ctx, url); ferr != nil {
+		linkErr = "Couldn’t fetch a preview: " + ferr.Error() + " You can enter a title and image manually below."
+	} else {
+		title, image = pv.Title, pv.ImageURL
+		if title == "" && image == "" {
+			linkErr = "No preview data found on that page — enter a title and image manually below."
+		}
+	}
+
+	if err := s.planner.SetLink(ctx, id, url, title, image); err != nil {
+		return err
+	}
+	m, err := s.planner.Get(ctx, id)
+	if err != nil {
+		return echo.ErrNotFound
+	}
+	d, err := s.editMealData(c, m, returnTo, "")
+	if err != nil {
+		return err
+	}
+	d.LinkError = linkErr
+	return s.render(c, pages.EditMeal(d))
 }
 
 func (s *Server) handleDeleteMeal(c echo.Context) error {

@@ -51,3 +51,9 @@ WHERE series_id = $1 AND plan_date >= $2;
 
 -- name: DeleteSeries :exec
 DELETE FROM meal_series WHERE id = $1;
+
+-- name: UpdateMealLink :exec
+-- FR13: set/clear the external link and its preview on a single meal occurrence.
+UPDATE meal_plan
+SET link_url = $2, link_title = $3, link_image_url = $4
+WHERE id = $1;

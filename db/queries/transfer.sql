@@ -91,11 +91,14 @@ ON CONFLICT (id) DO UPDATE SET
 RETURNING (xmax = 0) AS inserted;
 
 -- name: ImportMealPlan :one
-INSERT INTO meal_plan (id, plan_date, plan_time, food_id, servings, series_id)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO meal_plan (id, plan_date, plan_time, food_id, servings, series_id,
+    link_url, link_title, link_image_url)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (id) DO UPDATE SET
     plan_date = excluded.plan_date, plan_time = excluded.plan_time,
-    food_id = excluded.food_id, servings = excluded.servings, series_id = excluded.series_id
+    food_id = excluded.food_id, servings = excluded.servings, series_id = excluded.series_id,
+    link_url = excluded.link_url, link_title = excluded.link_title,
+    link_image_url = excluded.link_image_url
 RETURNING (xmax = 0) AS inserted;
 
 -- name: ImportGroceryList :one

@@ -99,6 +99,7 @@ func (s *Service) Export(ctx context.Context) (*Archive, error) {
 		arc.MealPlans = append(arc.MealPlans, MealPlan{
 			ID: m.ID, PlanDate: m.PlanDate, PlanTime: m.PlanTime,
 			FoodID: m.FoodID, Servings: m.Servings, SeriesID: m.SeriesID,
+			LinkURL: m.LinkUrl, LinkTitle: m.LinkTitle, LinkImageURL: m.LinkImageUrl,
 		})
 	}
 
@@ -285,6 +286,7 @@ func (s *Service) Import(ctx context.Context, arc *Archive, sections map[string]
 			ins, err := q.ImportMealPlan(ctx, db.ImportMealPlanParams{
 				ID: m.ID, PlanDate: m.PlanDate, PlanTime: m.PlanTime,
 				FoodID: m.FoodID, Servings: m.Servings, SeriesID: series,
+				LinkUrl: m.LinkURL, LinkTitle: m.LinkTitle, LinkImageUrl: m.LinkImageURL,
 			})
 			if err != nil {
 				return nil, err

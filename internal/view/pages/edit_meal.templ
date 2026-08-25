@@ -77,6 +77,7 @@ templ EditMeal(d EditMealData) {
 							}
 						</div>
 					</div>
+					@mealLinkSection(d)
 				</div>
 			</div>
 			<div class="modal-foot" style="justify-content: space-between;">
@@ -88,4 +89,57 @@ templ EditMeal(d EditMealData) {
 			</div>
 		</form>
 	}
+}
+
+// mealLinkSection renders the optional external link with its fetched or manual
+// preview, plus fetch/refresh and remove controls (FR13).
+templ mealLinkSection(d EditMealData) {
+	<div style="border-top: 1px solid var(--border); padding-top: 12px;">
+		@FieldLabel("Link (optional)")
+		if d.LinkError != "" {
+			<div style="color: var(--danger); background: var(--danger-tint); border-radius: var(--radius-sm); padding: 8px 10px; font-size: 12px; margin-bottom: 8px;">
+				{ d.LinkError }
+			</div>
+		}
+		<div class="flex" style="gap: 6px;">
+			<input class="input input-sm" type="url" name="link_url" value={ d.LinkURL } placeholder="https://…"/>
+			<button type="submit" name="action" value="refresh-link" class="btn btn-secondary btn-sm" title="Fetch preview">
+				@icons.Icon("refresh", 13)
+				Preview
+			</button>
+		</div>
+		if d.LinkURL != "" {
+			<div class="card" style="margin-top: 8px; padding: 0; overflow: hidden;">
+				if d.LinkImageURL != "" {
+					<img src={ templ.URL(d.LinkImageURL) } alt="" style="width: 100%; max-height: 140px; object-fit: cover; display: block;"/>
+				}
+				<div style="padding: 8px 10px;">
+					<a href={ templ.URL(d.LinkURL) } target="_blank" rel="noopener noreferrer" style="font-weight: 600; font-size: 13px;">
+						if d.LinkTitle != "" {
+							{ d.LinkTitle }
+						} else {
+							{ d.LinkURL }
+						}
+					</a>
+					<div class="overline" style="font-size: 10px; color: var(--fg-4); margin-top: 2px; word-break: break-all;">{ d.LinkURL }</div>
+				</div>
+			</div>
+			<div class="flex" style="gap: 8px; margin-top: 8px;">
+				<div class="flex-1">
+					@FieldLabel("Preview title")
+					<input class="input input-sm" name="link_title" value={ d.LinkTitle } placeholder="Title"/>
+				</div>
+				<div class="flex-1">
+					@FieldLabel("Preview image URL")
+					<input class="input input-sm" type="url" name="link_image" value={ d.LinkImageURL } placeholder="https://…"/>
+				</div>
+			</div>
+			<div style="margin-top: 6px;">
+				<button type="submit" name="action" value="remove-link" class="btn btn-secondary btn-xs">
+					@icons.Icon("x", 11)
+					Remove link
+				</button>
+			</div>
+		}
+	</div>
 }

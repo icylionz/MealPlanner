@@ -90,12 +90,15 @@ type MealSeries struct {
 }
 
 type MealPlan struct {
-	ID       uuid.UUID  `json:"id"`
-	PlanDate time.Time  `json:"plan_date"`
-	PlanTime string     `json:"plan_time"`
-	FoodID   uuid.UUID  `json:"food_id"`
-	Servings int32      `json:"servings"`
-	SeriesID *uuid.UUID `json:"series_id,omitempty"`
+	ID           uuid.UUID  `json:"id"`
+	PlanDate     time.Time  `json:"plan_date"`
+	PlanTime     string     `json:"plan_time"`
+	FoodID       uuid.UUID  `json:"food_id"`
+	Servings     int32      `json:"servings"`
+	SeriesID     *uuid.UUID `json:"series_id,omitempty"`
+	LinkURL      string     `json:"link_url,omitempty"`
+	LinkTitle    string     `json:"link_title,omitempty"`
+	LinkImageURL string     `json:"link_image_url,omitempty"`
 }
 
 type GroceryList struct {

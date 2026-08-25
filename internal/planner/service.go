@@ -22,13 +22,19 @@ var timeRe = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
 
 // Meal is one scheduled meal.
 type Meal struct {
-	ID       uuid.UUID
-	Date     string // YYYY-MM-DD
-	Time     string // HH:MM
-	FoodID   uuid.UUID
-	Servings int
-	SeriesID *uuid.UUID // set when this meal belongs to a recurring series
+	ID           uuid.UUID
+	Date         string // YYYY-MM-DD
+	Time         string // HH:MM
+	FoodID       uuid.UUID
+	Servings     int
+	SeriesID     *uuid.UUID // set when this meal belongs to a recurring series
+	LinkURL      string     // optional external link (FR13)
+	LinkTitle    string     // preview title (fetched or manual)
+	LinkImageURL string     // preview image URL
 }
+
+// HasLink reports whether the meal carries an external link.
+func (m Meal) HasLink() bool { return m.LinkURL != "" }
 
 // IsRecurring reports whether the meal is part of a recurring series.
 func (m Meal) IsRecurring() bool { return m.SeriesID != nil }
@@ -335,11 +341,22 @@ func (s *Service) GetSeries(ctx context.Context, id uuid.UUID) (*Series, error) 
 
 func fromRow(m db.MealPlan) Meal {
 	return Meal{
-		ID:       m.ID,
-		Date:     m.PlanDate.Format(DateFormat),
-		Time:     m.PlanTime,
-		FoodID:   m.FoodID,
-		Servings: int(m.Servings),
-		SeriesID: m.SeriesID,
+		ID:           m.ID,
+		Date:         m.PlanDate.Format(DateFormat),
+		Time:         m.PlanTime,
+		FoodID:       m.FoodID,
+		Servings:     int(m.Servings),
+		SeriesID:     m.SeriesID,
+		LinkURL:      m.LinkUrl,
+		LinkTitle:    m.LinkTitle,
+		LinkImageURL: m.LinkImageUrl,
 	}
+}
+
+// SetLink stores (or clears, when url is empty) the external link and its
+// preview on a single meal occurrence (FR13).
+func (s *Service) SetLink(ctx context.Context, id uuid.UUID, url, title, imageURL string) error {
+	return s.q.UpdateMealLink(ctx, db.UpdateMealLinkParams{
+		ID: id, LinkUrl: url, LinkTitle: title, LinkImageUrl: imageURL,
+	})
 }
