@@ -1,0 +1,91 @@
+package pages
+
+import (
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/icons"
+	"mealplanner/internal/view/layout"
+)
+
+// EditMeal renders the edit-meal modal page, offering series scope choices for
+// recurring meals (FR6).
+templ EditMeal(d EditMealData) {
+	@layout.ModalPage("Edit meal", "Edit meal — Backbone Plate", d.Active, d.Member, d.ReturnTo) {
+		<form method="post" action={ templ.URL(view.Href(ctx, "/meals/"+d.MealID+"/edit")) }>
+			<input type="hidden" name="return" value={ d.ReturnTo }/>
+			<div class="modal-body">
+				<div class="flex flex-col" style="gap: 14px;">
+					if d.Recurring {
+						<div style="border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px;">
+							@FieldLabel("Apply changes to")
+							if d.Series != nil {
+								<div class="overline" style="font-size: 10px; color: var(--fg-4); margin-bottom: 8px;">
+									{ SeriesSummary(d.Series) }
+								</div>
+							}
+							<div class="flex flex-col" style="gap: 6px; font-size: 13px;">
+								<label class="flex items-center" style="gap: 8px;">
+									<input type="radio" name="scope" value="one" checked/> This occurrence
+								</label>
+								<label class="flex items-center" style="gap: 8px;">
+									<input type="radio" name="scope" value="future"/> This and future occurrences
+								</label>
+								<label class="flex items-center" style="gap: 8px;">
+									<input type="radio" name="scope" value="all"/> All occurrences
+								</label>
+							</div>
+						</div>
+					}
+					<div class="flex" style="gap: 10px;">
+						<div class="flex-1">
+							@FieldLabel("Date")
+							<input class="input" type="date" name="date" value={ d.Date }/>
+						</div>
+						<div class="flex-1">
+							@FieldLabel("Time (24h)")
+							<input class="input" type="time" name="time" value={ d.Time }/>
+						</div>
+					</div>
+					<div>
+						@FieldLabel("Servings")
+						<input class="input" type="number" name="servings" min="1" value={ view.Itoa(d.Servings) } style="max-width: 110px;"/>
+					</div>
+					<div>
+						@FieldLabel("Food")
+						<div class="flex" style="gap: 6px;">
+							<input class="input input-sm" type="search" name="q" value={ d.Search } placeholder="Search foods…"/>
+							<button type="submit" formmethod="get" formaction={ templ.URL(view.Href(ctx, "/meals/"+d.MealID+"/edit")) } class="btn btn-secondary btn-sm">
+								@icons.Icon("search", 13)
+							</button>
+						</div>
+						<div class="pick-list" style="margin-top: 6px; max-height: 200px;">
+							for _, r := range d.Foods {
+								<label class="pick-row" style="padding: 10px 12px;">
+									<input type="radio" name="food" value={ r.ID.String() } checked?={ d.Selected == r.ID.String() } required/>
+									<span class="pick-check">
+										@icons.Icon("check", 14)
+									</span>
+									<div class="flex-1 min-w-0">
+										<div class="pick-name" style="font-size: 14px;">{ r.Name }</div>
+										<div style="margin-top: 3px;">
+											@RecipeTags(r.Tags, 3)
+										</div>
+									</div>
+								</label>
+							}
+							if len(d.Foods) == 0 {
+								<div style="padding: 14px 12px; font-size: 13px; color: var(--fg-3); text-align: center;">No foods match.</div>
+							}
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="modal-foot" style="justify-content: space-between;">
+				<button type="submit" formaction={ templ.URL(view.Href(ctx, "/meals/"+d.MealID+"/delete")) } class="btn btn-danger btn-sm">Delete</button>
+				<div class="flex" style="gap: 8px;">
+					<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, d.ReturnTo)) }>Cancel</a>
+					<button type="submit" class="btn btn-sm">Save</button>
+				</div>
+			</div>
+		</form>
+	}
+}

@@ -151,7 +151,14 @@ templ planDayList(d PlanData) {
 						<div class="meal-time" style="padding: 12px 14px; min-width: 64px; font-size: 14px;">{ m.Meal.Time }</div>
 						<a class="meal-link" style="padding: 12px 14px; gap: 10px;" href={ templ.URL(view.Href(ctx, "/foods/"+m.Meal.FoodID.String())) }>
 							<div class="flex-1 min-w-0">
-								<div class="meal-name" style="font-size: 14px;">{ m.Food.Name }</div>
+								<div class="flex items-center" style="gap: 5px;">
+									<div class="meal-name" style="font-size: 14px;">{ m.Food.Name }</div>
+									if m.Meal.IsRecurring() {
+										<span title="Recurring" style="color: var(--fg-4); flex: none;">
+											@icons.Icon("refresh", 12)
+										</span>
+									}
+								</div>
 								<div style="margin-top: 4px;">
 									@RecipeTags(m.Food.Tags, 3)
 								</div>
@@ -160,6 +167,9 @@ templ planDayList(d PlanData) {
 							<span class="flex-none" style="color: var(--fg-4);">
 								@icons.Icon("chevron-right", 14)
 							</span>
+						</a>
+						<a class="row-del" style="padding: 12px;" href={ templ.URL(view.Href(ctx, "/meals/"+m.Meal.ID.String()+"/edit?return="+planHref(d.SelectedDate, d.Layout))) } title="Edit meal">
+							@icons.Icon("pencil", 13)
 						</a>
 						<form method="post" action={ templ.URL(view.Href(ctx, "/meals/"+m.Meal.ID.String()+"/delete?return="+planHref(d.SelectedDate, d.Layout))) } style="display: contents;">
 							<button type="submit" class="row-del" style="padding: 12px;" title="Remove from plan">

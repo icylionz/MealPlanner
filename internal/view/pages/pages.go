@@ -2,6 +2,8 @@
 package pages
 
 import (
+	"strings"
+
 	"mealplanner/internal/foods"
 	"mealplanner/internal/grocery"
 	"mealplanner/internal/households"
@@ -277,4 +279,63 @@ type AddMealData struct {
 	SelectedFood *foods.Food
 	ReturnTo     string
 	Active       string // nav section the modal was opened from
+}
+
+// EditMealData feeds the edit-meal modal page.
+type EditMealData struct {
+	Member       *households.Member
+	MealID       string
+	Date         string
+	Time         string
+	Servings     int
+	Search       string
+	Foods        []foods.Food
+	Selected     string
+	SelectedFood *foods.Food
+	ReturnTo     string
+	Active       string
+	Recurring    bool            // meal belongs to a series -> offer scope choice
+	Series       *planner.Series // recurrence rule for display (may be nil)
+}
+
+// WeekdayLabels are the single-letter column headers, Sunday-first (0..6).
+var weekdayLabels = []string{"S", "M", "T", "W", "T", "F", "S"}
+
+// WeekdayName returns the abbreviated name for a weekday int (0=Sun..6=Sat).
+func WeekdayName(n int) string {
+	names := []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
+	if n < 0 || n > 6 {
+		return ""
+	}
+	return names[n]
+}
+
+// WeekdayLabel returns the single-letter label for a weekday int.
+func WeekdayLabel(n int) string {
+	if n < 0 || n > 6 {
+		return ""
+	}
+	return weekdayLabels[n]
+}
+
+// SeriesSummary renders a human-readable recurrence description.
+func SeriesSummary(s *planner.Series) string {
+	if s == nil {
+		return ""
+	}
+	var b string
+	if s.Freq == "weekly" {
+		if len(s.Weekdays) == 0 {
+			b = "Weekly"
+		} else {
+			days := make([]string, len(s.Weekdays))
+			for i, w := range s.Weekdays {
+				days[i] = WeekdayName(int(w))
+			}
+			b = "Weekly on " + strings.Join(days, ", ")
+		}
+	} else {
+		b = "Daily"
+	}
+	return b + " until " + s.Until
 }

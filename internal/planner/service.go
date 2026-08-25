@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,6 +27,53 @@ type Meal struct {
 	Time     string // HH:MM
 	FoodID   uuid.UUID
 	Servings int
+	SeriesID *uuid.UUID // set when this meal belongs to a recurring series
+}
+
+// IsRecurring reports whether the meal is part of a recurring series.
+func (m Meal) IsRecurring() bool { return m.SeriesID != nil }
+
+// Scope selects which occurrences a series edit or delete affects.
+type Scope string
+
+const (
+	ScopeOne    Scope = "one"    // this occurrence only
+	ScopeFuture Scope = "future" // this and later occurrences
+	ScopeAll    Scope = "all"    // every occurrence in the series
+)
+
+// ParseScope maps a form value to a Scope, defaulting to this occurrence.
+func ParseScope(s string) Scope {
+	switch Scope(s) {
+	case ScopeFuture:
+		return ScopeFuture
+	case ScopeAll:
+		return ScopeAll
+	default:
+		return ScopeOne
+	}
+}
+
+// Recurrence describes a simple recurrence rule for a scheduled meal.
+type Recurrence struct {
+	Freq     string       // "daily" or "weekly"
+	Weekdays []time.Weekday // used when Freq == "weekly"; empty => start's weekday
+	Until    string       // YYYY-MM-DD inclusive end; empty => start + defaultHorizonWeeks
+}
+
+// defaultHorizonWeeks bounds an open-ended recurrence.
+const defaultHorizonWeeks = 12
+
+// maxHorizonDays caps how far a series may materialize occurrences.
+const maxHorizonDays = 366
+
+// Series holds a recurrence rule for display on the edit screen.
+type Series struct {
+	ID       uuid.UUID
+	Freq     string
+	Weekdays []time.Weekday
+	Start    string
+	Until    string
 }
 
 // Service owns meal plan use cases.
@@ -107,9 +156,181 @@ func (s *Service) Add(ctx context.Context, date, timeOfDay string, foodID uuid.U
 	return err
 }
 
-// Delete removes a scheduled meal.
-func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
-	return s.q.DeleteMeal(ctx, id)
+// AddRecurring creates a recurring series and materializes its occurrences
+// as concrete meal_plan rows carrying the series id.
+func (s *Service) AddRecurring(ctx context.Context, startDate, timeOfDay string, foodID uuid.UUID, servings int, r Recurrence) error {
+	start, err := time.Parse(DateFormat, startDate)
+	if err != nil {
+		return errors.New("invalid date")
+	}
+	if !timeRe.MatchString(timeOfDay) {
+		return errors.New("invalid time")
+	}
+	if servings < 1 {
+		servings = 1
+	}
+	if r.Freq != "daily" && r.Freq != "weekly" {
+		return errors.New("invalid recurrence")
+	}
+
+	until := start.AddDate(0, 0, defaultHorizonWeeks*7)
+	if r.Until != "" {
+		u, err := time.Parse(DateFormat, r.Until)
+		if err != nil {
+			return errors.New("invalid until date")
+		}
+		until = u
+	}
+	if until.Before(start) {
+		return errors.New("until is before start")
+	}
+	if max := start.AddDate(0, 0, maxHorizonDays); until.After(max) {
+		until = max
+	}
+
+	// Weekly with no chosen days defaults to the start date's weekday.
+	weekdays := r.Weekdays
+	byweekday := encodeWeekdays(weekdays)
+	if r.Freq == "weekly" && len(weekdays) == 0 {
+		weekdays = []time.Weekday{start.Weekday()}
+		byweekday = encodeWeekdays(weekdays)
+	}
+
+	dates := occurrences(start, until, r.Freq, weekdays)
+	if len(dates) == 0 {
+		return errors.New("recurrence produces no dates")
+	}
+
+	series, err := s.q.CreateSeries(ctx, db.CreateSeriesParams{
+		FoodID: foodID, PlanTime: timeOfDay, Servings: int32(servings),
+		Freq: r.Freq, Byweekday: byweekday, StartDate: start, UntilDate: until,
+	})
+	if err != nil {
+		return err
+	}
+	sid := series.ID
+	for _, d := range dates {
+		if _, err := s.q.CreateMeal(ctx, db.CreateMealParams{
+			PlanDate: d, PlanTime: timeOfDay, FoodID: foodID, Servings: int32(servings), SeriesID: &sid,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// occurrences lists dates in [start, until] matching the recurrence.
+func occurrences(start, until time.Time, freq string, weekdays []time.Weekday) []time.Time {
+	want := map[time.Weekday]bool{}
+	for _, w := range weekdays {
+		want[w] = true
+	}
+	var out []time.Time
+	for d := start; !d.After(until); d = d.AddDate(0, 0, 1) {
+		if freq == "weekly" && !want[d.Weekday()] {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
+func encodeWeekdays(ws []time.Weekday) string {
+	if len(ws) == 0 {
+		return ""
+	}
+	parts := make([]string, len(ws))
+	for i, w := range ws {
+		parts[i] = strconv.Itoa(int(w))
+	}
+	return strings.Join(parts, ",")
+}
+
+func decodeWeekdays(s string) []time.Weekday {
+	if s == "" {
+		return nil
+	}
+	var out []time.Weekday
+	for _, p := range strings.Split(s, ",") {
+		if n, err := strconv.Atoi(p); err == nil && n >= 0 && n <= 6 {
+			out = append(out, time.Weekday(n))
+		}
+	}
+	return out
+}
+
+// Update edits a meal. For non-series meals scope is ignored. For series meals
+// scope selects this occurrence, this and future, or all occurrences.
+func (s *Service) Update(ctx context.Context, id uuid.UUID, date, timeOfDay string, foodID uuid.UUID, servings int, scope Scope) error {
+	d, err := time.Parse(DateFormat, date)
+	if err != nil {
+		return errors.New("invalid date")
+	}
+	if !timeRe.MatchString(timeOfDay) {
+		return errors.New("invalid time")
+	}
+	if servings < 1 {
+		servings = 1
+	}
+	m, err := s.q.GetMeal(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if m.SeriesID == nil || scope == ScopeOne {
+		// A single-occurrence edit detaches it so series-wide edits skip it.
+		if err := s.q.UpdateMeal(ctx, db.UpdateMealParams{
+			ID: id, PlanDate: d, PlanTime: timeOfDay, FoodID: foodID, Servings: int32(servings),
+		}); err != nil {
+			return err
+		}
+		if m.SeriesID != nil {
+			return s.q.DetachMeal(ctx, id)
+		}
+		return nil
+	}
+
+	// Series-wide edits change time/food/servings but not per-occurrence dates.
+	from := m.PlanDate
+	if scope == ScopeAll {
+		from = time.Time{} // all rows
+	}
+	return s.q.UpdateSeriesMealsFrom(ctx, db.UpdateSeriesMealsFromParams{
+		SeriesID: m.SeriesID, PlanDate: from, PlanTime: timeOfDay, FoodID: foodID, Servings: int32(servings),
+	})
+}
+
+// Delete removes a scheduled meal. For series meals scope selects this
+// occurrence, this and future, or all occurrences.
+func (s *Service) Delete(ctx context.Context, id uuid.UUID, scope Scope) error {
+	m, err := s.q.GetMeal(ctx, id)
+	if err != nil {
+		return err
+	}
+	if m.SeriesID == nil || scope == ScopeOne {
+		return s.q.DeleteMeal(ctx, id)
+	}
+	if scope == ScopeAll {
+		return s.q.DeleteSeries(ctx, *m.SeriesID) // cascade removes occurrences
+	}
+	return s.q.DeleteSeriesMealsFrom(ctx, db.DeleteSeriesMealsFromParams{
+		SeriesID: m.SeriesID, PlanDate: m.PlanDate,
+	})
+}
+
+// GetSeries returns a recurrence rule for display.
+func (s *Service) GetSeries(ctx context.Context, id uuid.UUID) (*Series, error) {
+	row, err := s.q.GetSeries(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &Series{
+		ID:       row.ID,
+		Freq:     row.Freq,
+		Weekdays: decodeWeekdays(row.Byweekday),
+		Start:    row.StartDate.Format(DateFormat),
+		Until:    row.UntilDate.Format(DateFormat),
+	}, nil
 }
 
 func fromRow(m db.MealPlan) Meal {
@@ -119,5 +340,6 @@ func fromRow(m db.MealPlan) Meal {
 		Time:     m.PlanTime,
 		FoodID:   m.FoodID,
 		Servings: int(m.Servings),
+		SeriesID: m.SeriesID,
 	}
 }

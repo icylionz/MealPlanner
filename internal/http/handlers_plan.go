@@ -236,7 +236,103 @@ func (s *Server) handleAddMeal(c echo.Context) error {
 	if err != nil {
 		servings = 2
 	}
-	if err := s.planner.Add(c.Request().Context(), c.FormValue("date"), c.FormValue("time"), foodID, servings); err != nil {
+	date, timeOfDay := c.FormValue("date"), c.FormValue("time")
+
+	if c.FormValue("repeat") == "on" {
+		rec := planner.Recurrence{
+			Freq:     c.FormValue("freq"),
+			Weekdays: parseWeekdays(c.Request().Form["weekday"]),
+			Until:    c.FormValue("until"),
+		}
+		if err := s.planner.AddRecurring(c.Request().Context(), date, timeOfDay, foodID, servings, rec); err != nil {
+			return err
+		}
+		return s.redirect(c, returnTo)
+	}
+
+	if err := s.planner.Add(c.Request().Context(), date, timeOfDay, foodID, servings); err != nil {
+		return err
+	}
+	return s.redirect(c, returnTo)
+}
+
+// parseWeekdays converts submitted weekday values (0=Sun..6=Sat) to time.Weekday.
+func parseWeekdays(vals []string) []time.Weekday {
+	var out []time.Weekday
+	for _, v := range vals {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 6 {
+			out = append(out, time.Weekday(n))
+		}
+	}
+	return out
+}
+
+func (s *Server) handleEditMealForm(c echo.Context) error {
+	ctx := c.Request().Context()
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return echo.ErrNotFound
+	}
+	m, err := s.planner.Get(ctx, id)
+	if err != nil {
+		return echo.ErrNotFound
+	}
+	returnTo := safeReturn(c.QueryParam("return"), "/today")
+
+	all, err := s.foods.List(ctx)
+	if err != nil {
+		return err
+	}
+	search := c.QueryParam("q")
+	var filtered []foods.Food
+	var selectedFood *foods.Food
+	for _, r := range all {
+		if search == "" || strings.Contains(strings.ToLower(r.Name), strings.ToLower(search)) {
+			filtered = append(filtered, r)
+		}
+		if r.ID == m.FoodID {
+			rc := r
+			selectedFood = &rc
+		}
+	}
+
+	active := "today"
+	if strings.HasPrefix(returnTo, "/plan") {
+		active = "plan"
+	} else if strings.HasPrefix(returnTo, "/foods") {
+		active = "foods"
+	}
+
+	var series *planner.Series
+	if m.SeriesID != nil {
+		series, _ = s.planner.GetSeries(ctx, *m.SeriesID)
+	}
+
+	return s.render(c, pages.EditMeal(pages.EditMealData{
+		Member: s.member(c), MealID: m.ID.String(),
+		Date: m.Date, Time: m.Time, Servings: m.Servings,
+		Search: search, Foods: filtered, Selected: m.FoodID.String(),
+		SelectedFood: selectedFood, ReturnTo: returnTo, Active: active,
+		Recurring: m.SeriesID != nil, Series: series,
+	}))
+}
+
+func (s *Server) handleEditMeal(c echo.Context) error {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return echo.ErrNotFound
+	}
+	returnTo := safeReturn(c.FormValue("return"), "/today")
+	foodID, err := uuid.Parse(c.FormValue("food"))
+	if err != nil {
+		return s.redirect(c, returnTo)
+	}
+	servings, err := strconv.Atoi(c.FormValue("servings"))
+	if err != nil {
+		servings = 2
+	}
+	scope := planner.ParseScope(c.FormValue("scope"))
+	if err := s.planner.Update(c.Request().Context(), id, c.FormValue("date"), c.FormValue("time"), foodID, servings, scope); err != nil {
 		return err
 	}
 	return s.redirect(c, returnTo)
@@ -247,8 +343,13 @@ func (s *Server) handleDeleteMeal(c echo.Context) error {
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	if err := s.planner.Delete(c.Request().Context(), id); err != nil {
+	scope := planner.ParseScope(c.FormValue("scope"))
+	if err := s.planner.Delete(c.Request().Context(), id, scope); err != nil {
 		return err
 	}
-	return s.redirect(c, safeReturn(c.QueryParam("return"), "/today"))
+	returnTo := c.FormValue("return")
+	if returnTo == "" {
+		returnTo = c.QueryParam("return")
+	}
+	return s.redirect(c, safeReturn(returnTo, "/today"))
 }

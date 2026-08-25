@@ -36,7 +36,14 @@ templ todayMealRow(m MealVM) {
 		<div class="meal-time">{ m.Meal.Time }</div>
 		<a class="meal-link" href={ templ.URL(view.Href(ctx, "/foods/"+m.Meal.FoodID.String())) }>
 			<div class="flex-1 min-w-0">
-				<div class="meal-name">{ m.Food.Name }</div>
+				<div class="flex items-center" style="gap: 5px;">
+					<div class="meal-name">{ m.Food.Name }</div>
+					if m.Meal.IsRecurring() {
+						<span title="Recurring" style="color: var(--fg-4); flex: none;">
+							@icons.Icon("refresh", 12)
+						</span>
+					}
+				</div>
 				<div style="margin-top: 5px;">
 					@RecipeTags(m.Food.Tags, 3)
 				</div>
@@ -58,6 +65,9 @@ templ todayMealRow(m MealVM) {
 		if m.IsNext {
 			<div class="next-badge">Next</div>
 		}
+		<a class="row-del" href={ templ.URL(view.Href(ctx, "/meals/"+m.Meal.ID.String()+"/edit?return=/today")) } title="Edit meal">
+			@icons.Icon("pencil", 14)
+		</a>
 		<form method="post" action={ templ.URL(view.Href(ctx, "/meals/"+m.Meal.ID.String()+"/delete?return=/today")) } style="display: contents;">
 			<button type="submit" class="row-del" title="Remove from plan">
 				@icons.Icon("trash-2", 14)
