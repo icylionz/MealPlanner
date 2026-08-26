@@ -57,7 +57,9 @@ func (s *Server) handleToday(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	all, err := s.foods.List(ctx, s.household(c))
+	// Include soft-deleted foods so a meal whose food was removed still renders
+	// its name (G1).
+	all, err := s.foods.ListWithDeleted(ctx, s.household(c))
 	if err != nil {
 		return err
 	}
@@ -116,7 +118,9 @@ func (s *Server) handlePlan(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	all, err := s.foods.List(ctx, s.household(c))
+	// Include soft-deleted foods so meals referencing a removed food still render
+	// their name (G1).
+	all, err := s.foods.ListWithDeleted(ctx, s.household(c))
 	if err != nil {
 		return err
 	}

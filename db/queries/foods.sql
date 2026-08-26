@@ -1,8 +1,13 @@
 -- name: ListFoods :many
+SELECT * FROM foods WHERE household_id = $1 AND deleted_at IS NULL ORDER BY lower(name);
+
+-- name: ListFoodsWithDeleted :many
+-- Includes soft-deleted foods so historical references (past meals, prep
+-- sessions, generated grocery lines) can still resolve a name (G1).
 SELECT * FROM foods WHERE household_id = $1 ORDER BY lower(name);
 
 -- name: GetFood :one
-SELECT * FROM foods WHERE id = $1 AND household_id = $2;
+SELECT * FROM foods WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL;
 
 -- name: CreateFood :one
 INSERT INTO foods (household_id, name, description, prep_time_min, cook_time_min, servings, default_unit, density_g_per_ml, density_source)
@@ -17,10 +22,13 @@ UPDATE foods
 SET name = $2, description = $3, prep_time_min = $4, cook_time_min = $5,
     servings = $6, default_unit = $7, density_g_per_ml = $8, density_source = $9,
     version = version + 1, updated_at = now()
-WHERE id = $1 AND household_id = $11 AND version = $10;
+WHERE id = $1 AND household_id = $11 AND version = $10 AND deleted_at IS NULL;
 
 -- name: DeleteFood :exec
-DELETE FROM foods WHERE id = $1 AND household_id = $2;
+-- Soft delete (G1): flip deleted_at instead of removing the row so old meals,
+-- prep sessions, and grocery lines still resolve the food's name.
+UPDATE foods SET deleted_at = now(), updated_at = now()
+WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL;
 
 -- name: ListAllTags :many
 SELECT DISTINCT ft.tag FROM food_tags ft
@@ -57,7 +65,11 @@ INSERT INTO food_components (parent_food_id, child_food_id, amount, unit, sort_o
 VALUES ($1, $2, $3, $4, $5);
 
 -- name: CountComponentUses :one
-SELECT count(*) FROM food_components WHERE child_food_id = $1;
+-- Only live parent recipes block deletion; a soft-deleted recipe no longer
+-- pins its components (G1).
+SELECT count(*) FROM food_components fc
+JOIN foods f ON f.id = fc.parent_food_id
+WHERE fc.child_food_id = $1 AND f.deleted_at IS NULL;
 
 -- name: ListFoodSteps :many
 SELECT * FROM food_steps WHERE food_id = $1 ORDER BY step_number;

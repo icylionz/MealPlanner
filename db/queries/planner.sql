@@ -1,15 +1,15 @@
 -- name: ListMealsBetween :many
 SELECT * FROM meal_plan
-WHERE household_id = $1 AND plan_date >= $2 AND plan_date <= $3
+WHERE household_id = $1 AND plan_date >= $2 AND plan_date <= $3 AND deleted_at IS NULL
 ORDER BY plan_date, plan_time;
 
 -- name: ListMealDatesBetween :many
 SELECT DISTINCT plan_date FROM meal_plan
-WHERE household_id = $1 AND plan_date >= $2 AND plan_date <= $3
+WHERE household_id = $1 AND plan_date >= $2 AND plan_date <= $3 AND deleted_at IS NULL
 ORDER BY plan_date;
 
 -- name: GetMeal :one
-SELECT * FROM meal_plan WHERE id = $1 AND household_id = $2;
+SELECT * FROM meal_plan WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL;
 
 -- name: CreateMeal :one
 INSERT INTO meal_plan (household_id, plan_date, plan_time, food_id, servings, series_id)
@@ -19,13 +19,14 @@ RETURNING *;
 -- name: UpdateMeal :exec
 UPDATE meal_plan
 SET plan_date = $2, plan_time = $3, food_id = $4, servings = $5
-WHERE id = $1 AND household_id = $6;
+WHERE id = $1 AND household_id = $6 AND deleted_at IS NULL;
 
 -- name: DetachMeal :exec
-UPDATE meal_plan SET series_id = NULL WHERE id = $1 AND household_id = $2;
+UPDATE meal_plan SET series_id = NULL WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL;
 
 -- name: DeleteMeal :exec
-DELETE FROM meal_plan WHERE id = $1 AND household_id = $2;
+-- Soft delete (G1): keep the occurrence as history instead of removing it.
+UPDATE meal_plan SET deleted_at = now() WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL;
 
 -- name: CreateSeries :one
 INSERT INTO meal_series (household_id, food_id, plan_time, servings, freq, byweekday, start_date, until_date)
@@ -37,17 +38,25 @@ SELECT * FROM meal_series WHERE id = $1 AND household_id = $2;
 
 -- name: ListSeriesMeals :many
 SELECT * FROM meal_plan
-WHERE series_id = $1 AND plan_date >= $2
+WHERE series_id = $1 AND plan_date >= $2 AND deleted_at IS NULL
 ORDER BY plan_date, plan_time;
 
 -- name: UpdateSeriesMealsFrom :exec
 UPDATE meal_plan
 SET plan_time = $3, food_id = $4, servings = $5
-WHERE series_id = $1 AND plan_date >= $2;
+WHERE series_id = $1 AND plan_date >= $2 AND deleted_at IS NULL;
 
 -- name: DeleteSeriesMealsFrom :exec
-DELETE FROM meal_plan
-WHERE series_id = $1 AND plan_date >= $2;
+-- Soft delete this-and-future occurrences of a series (G1).
+UPDATE meal_plan SET deleted_at = now()
+WHERE series_id = $1 AND plan_date >= $2 AND deleted_at IS NULL;
+
+-- name: DeleteSeriesMeals :exec
+-- Soft delete every occurrence of a series (scope=all, G1). The meal_series rule
+-- row is left in place; a hard DELETE there would cascade-remove the occurrences
+-- and defeat the soft-delete history.
+UPDATE meal_plan SET deleted_at = now()
+WHERE series_id = $1 AND household_id = $2 AND deleted_at IS NULL;
 
 -- name: DeleteSeries :exec
 DELETE FROM meal_series WHERE id = $1 AND household_id = $2;
@@ -56,4 +65,4 @@ DELETE FROM meal_series WHERE id = $1 AND household_id = $2;
 -- FR13: set/clear the external link and its preview on a single meal occurrence.
 UPDATE meal_plan
 SET link_url = $2, link_title = $3, link_image_url = $4
-WHERE id = $1 AND household_id = $5;
+WHERE id = $1 AND household_id = $5 AND deleted_at IS NULL;

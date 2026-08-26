@@ -174,7 +174,13 @@ func (s *Server) genState(c echo.Context) (pages.GroceryGenData, map[uuid.UUID]f
 	if err != nil {
 		return d, nil, err
 	}
-	idx := foods.Index(all)
+	// Index includes soft-deleted foods so meals over an old plan still resolve
+	// and expand; the food picker (d.Foods below) stays live-only (G1).
+	withDeleted, err := s.foods.ListWithDeleted(ctx, s.household(c))
+	if err != nil {
+		return d, nil, err
+	}
+	idx := foods.Index(withDeleted)
 
 	// Planned meals picker (sorted by date+time, filtered).
 	meals, err := s.planner.ListBetween(ctx, s.household(c), "0001-01-01", "9999-12-31")

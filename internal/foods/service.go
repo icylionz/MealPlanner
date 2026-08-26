@@ -95,12 +95,29 @@ func NewService(pool *pgxpool.Pool) *Service {
 	return &Service{pool: pool, q: db.New(pool)}
 }
 
-// List returns all foods with tags, components, and steps' presence loaded.
+// List returns the live foods (soft-deleted excluded) with tags and components
+// loaded. Use this for the food library and any picker that assigns a food.
 func (s *Service) List(ctx context.Context, householdID uuid.UUID) ([]Food, error) {
 	rows, err := s.q.ListFoods(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
+	return s.assemble(ctx, householdID, rows)
+}
+
+// ListWithDeleted returns every food including soft-deleted ones, so historical
+// references (past meals, prep sessions, grocery generation over old plans) can
+// still resolve a name (G1). Do not use it for pickers that assign new foods.
+func (s *Service) ListWithDeleted(ctx context.Context, householdID uuid.UUID) ([]Food, error) {
+	rows, err := s.q.ListFoodsWithDeleted(ctx, householdID)
+	if err != nil {
+		return nil, err
+	}
+	return s.assemble(ctx, householdID, rows)
+}
+
+// assemble hydrates raw food rows with their tags and components.
+func (s *Service) assemble(ctx context.Context, householdID uuid.UUID, rows []db.Food) ([]Food, error) {
 	tags, err := s.q.ListTagsForFoods(ctx, householdID)
 	if err != nil {
 		return nil, err

@@ -24,7 +24,14 @@ func (s *Server) prepData(c echo.Context) (pages.PrepData, error) {
 	if err != nil {
 		return pages.PrepData{}, err
 	}
-	idx := foods.Index(all)
+	// Picker (d.Foods below) uses live foods only; the display/aggregate index
+	// includes soft-deleted foods so a session meal whose food was removed still
+	// renders its name (G1).
+	withDeleted, err := s.foods.ListWithDeleted(ctx, hh)
+	if err != nil {
+		return pages.PrepData{}, err
+	}
+	idx := foods.Index(withDeleted)
 
 	d := pages.PrepData{
 		Member:     s.member(c),

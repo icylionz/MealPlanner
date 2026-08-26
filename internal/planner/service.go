@@ -317,7 +317,10 @@ func (s *Service) Delete(ctx context.Context, householdID, id uuid.UUID, scope S
 		return s.q.DeleteMeal(ctx, db.DeleteMealParams{ID: id, HouseholdID: householdID})
 	}
 	if scope == ScopeAll {
-		return s.q.DeleteSeries(ctx, db.DeleteSeriesParams{ID: *m.SeriesID, HouseholdID: householdID}) // cascade removes occurrences
+		// Soft-delete every occurrence; the meal_series rule row is left in place
+		// because a hard DELETE there would cascade-remove the occurrences and
+		// defeat the soft-delete history (G1).
+		return s.q.DeleteSeriesMeals(ctx, db.DeleteSeriesMealsParams{SeriesID: m.SeriesID, HouseholdID: householdID})
 	}
 	return s.q.DeleteSeriesMealsFrom(ctx, db.DeleteSeriesMealsFromParams{
 		SeriesID: m.SeriesID, PlanDate: m.PlanDate,
