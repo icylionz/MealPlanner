@@ -41,7 +41,8 @@ var tabItems = []navEntry{
 
 var allNavItems = append(tabItems,
 	navEntry{"data", "upload", "Data", "/data"},
-	navEntry{"household", "users", "Household", "/household"})
+	navEntry{"household", "users", "Household", "/household"},
+	navEntry{"settings", "settings", "Settings", "/settings"})
 
 // Shell renders the app chrome: sidebar on desktop, top bar + bottom tabs on
 // mobile (CSS media queries switch between them).
@@ -183,9 +184,23 @@ templ PageHeaderBack(backHref string, backLabel string, title string) {
 
 // ModalPage renders a standalone page styled as the prototype's modal card.
 templ ModalPage(title string, pageTitle string, active string, member *households.Member, closeHref string) {
+	@modalPage("", title, pageTitle, active, member, closeHref) {
+		{ children... }
+	}
+}
+
+// ModalPageWide is ModalPage with a wider card, for data-grid modals (e.g.
+// import reconcile) whose rows need room for several columns.
+templ ModalPageWide(title string, pageTitle string, active string, member *households.Member, closeHref string) {
+	@modalPage("modal-card--wide", title, pageTitle, active, member, closeHref) {
+		{ children... }
+	}
+}
+
+templ modalPage(cardClass string, title string, pageTitle string, active string, member *households.Member, closeHref string) {
 	@Shell(pageTitle, active, member) {
 		<div class="modal-screen">
-			<div class="modal-card">
+			<div class={ "modal-card", cardClass }>
 				<div class="modal-head">
 					<span class="modal-title">{ title }</span>
 					<a href={ templ.URL(view.Href(ctx, closeHref)) } class="modal-close">

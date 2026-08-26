@@ -190,10 +190,19 @@ func (s *Server) fillEditorLookups(c echo.Context, d *pages.FoodEditData) error 
 		return err
 	}
 	d.AllFoods = all
+	tagSet := map[string]bool{}
 	byID := map[string]string{}
 	for _, r := range all {
 		byID[r.ID.String()] = r.Name
+		for _, t := range r.Tags {
+			tagSet[t] = true
+		}
 	}
+	d.AllTags = make([]string, 0, len(tagSet))
+	for t := range tagSet {
+		d.AllTags = append(d.AllTags, t)
+	}
+	sort.Strings(d.AllTags)
 	for i := range d.Components {
 		d.Components[i].FoodName = byID[d.Components[i].FoodID]
 	}

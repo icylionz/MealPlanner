@@ -11,7 +11,7 @@ import (
 // be created as a new one) before the recipe can be saved. The whole form posts
 // back with an `action`, so it works without JavaScript.
 templ ImportReconcile(d ImportReconcileData) {
-	@layout.ModalPage("Reconcile import", "Reconcile import — Backbone Plate", "foods", d.Member, "/import") {
+	@layout.ModalPageWide("Reconcile import", "Reconcile import — Backbone Plate", "foods", d.Member, "/import") {
 		<form method="post" action={ templ.URL(view.Href(ctx, "/import/reconcile")) }>
 			<input type="hidden" name="imp_name" value={ d.Name }/>
 			<input type="hidden" name="imp_desc" value={ d.Description }/>
@@ -62,17 +62,22 @@ templ ImportReconcile(d ImportReconcileData) {
 }
 
 templ importLineRow(d ImportReconcileData, i int, line ImportLine) {
-	<div class="flex items-center" style="gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface);">
+	<div class="recon-row">
 		<input type="hidden" name="line_name" value={ line.Name }/>
-		<div style="flex: 1.4; min-width: 0;">
-			<div style="font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{ line.Name }</div>
+		<div class="recon-name">
+			<div class="recon-name-text">{ line.Name }</div>
 			if !line.Matched() {
 				<div class="overline" style="font-size: 9px; color: var(--danger); letter-spacing: .05em;">unmatched</div>
 			}
 		</div>
-		<input class="input input-sm" type="number" step="any" min="0" name="line_amount" value={ line.Amount } style="width: 64px;"/>
-		<input class="input input-sm" name="line_unit" value={ line.Unit } style="width: 60px;"/>
-		<select class="select input-sm" name="line_food" style="flex: 1; min-width: 0;">
+		<input class="input input-sm recon-amount" type="number" step="any" min="0" name="line_amount" value={ line.Amount }/>
+		<input class="input input-sm recon-unit" name="line_unit" value={ line.Unit }/>
+		<select
+			class="select input-sm recon-food"
+			name="line_food"
+			data-search-select="1"
+			data-search-select-placeholder="Search foods…"
+		>
 			<option value="" selected?={ line.FoodID == "" }>— unmatched —</option>
 			for _, f := range d.AllFoods {
 				<option value={ f.ID.String() } selected?={ line.FoodID == f.ID.String() }>{ f.Name }</option>

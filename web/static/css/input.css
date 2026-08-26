@@ -339,6 +339,9 @@
     width: 480px; max-width: 100%; max-height: calc(100dvh - 48px);
     display: flex; flex-direction: column;
   }
+  /* Wider variant for data-grid modals (e.g. import reconcile) that need room
+     for a multi-column row per line. */
+  .modal-card--wide { width: 720px; }
   .modal-head {
     display: flex; align-items: center; justify-content: space-between;
     padding: 18px 24px 14px; border-bottom: 1px solid var(--line); flex-shrink: 0;
@@ -386,17 +389,23 @@
   }
   .unit-name-sm { font-size: 11px; }
   summary.unit-name { border-bottom: 1px dotted var(--fg-4); padding-bottom: 1px; }
+  /* Caret marks the summary as a dropdown trigger, matching the search-select look. */
+  summary.unit-name::after {
+    content: "\25be"; margin-left: 3px; font-size: .85em; color: var(--fg-4);
+    border-bottom: none;
+  }
+  /* Panel + options mirror .ss-menu / .ss-option so every dropdown reads as one system. */
   .unit-menu {
-    position: absolute; top: calc(100% + 6px); left: 0; z-index: 400;
+    position: absolute; top: calc(100% + 4px); left: 0; z-index: 400;
     background: var(--paper); border: 1px solid var(--line);
     border-radius: var(--radius); box-shadow: var(--shadow-pop);
-    min-width: 150px; overflow: hidden;
+    min-width: 150px; padding: 4px;
   }
-  .unit-menu-label { padding: 6px 12px 4px; font-family: var(--font-mono); font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--fg-3); }
+  .unit-menu-label { padding: 6px 10px 4px; font-family: var(--font-mono); font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--fg-3); }
   .unit-menu-item {
     display: flex; justify-content: space-between; align-items: center;
     width: 100%; border: none; background: transparent; color: inherit;
-    padding: 8px 12px; cursor: pointer; gap: 16px;
+    padding: 8px 10px; border-radius: var(--radius-sm); cursor: pointer; gap: 16px;
   }
   .unit-menu-item:hover { background: var(--surface); color: inherit; }
   .unit-menu-item .u { font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--fg-3); }
@@ -495,6 +504,35 @@
     display: flex; align-items: center; gap: 6px; background: var(--surface);
     padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--line);
   }
+  @media (max-width: 679px) {
+    /* On narrow screens the food picker takes the full first line; amount, unit
+       and the remove button wrap onto a second line. */
+    .ing-edit-row { flex-wrap: wrap; }
+    .ing-edit-row > :first-child { flex: 1 1 100% !important; }
+  }
+  /* ── Import reconcile rows ─────────────────────────────────── */
+  .recon-row {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding: 8px 10px; border: 1px solid var(--line);
+    border-radius: var(--radius-sm); background: var(--surface);
+  }
+  .recon-name { flex: 1 1 150px; min-width: 0; }
+  .recon-name-text {
+    font-size: 13px; font-weight: 600; color: var(--ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .recon-amount { width: 64px; flex: 0 0 auto; }
+  .recon-unit { width: 60px; flex: 0 0 auto; }
+  .recon-food { flex: 1 1 180px; min-width: 0; }
+  /* When JS enhances the food <select>, it hides it and inserts a sibling
+     .ss-root; carry the flex sizing over so the search input fills the column. */
+  .recon-row > .ss-root { flex: 1 1 180px; min-width: 0; }
+  @media (max-width: 559px) {
+    /* Ingredient name gets its own line so the controls have room below. */
+    .recon-name { flex-basis: 100%; }
+    .recon-food,
+    .recon-row > .ss-root { flex-basis: 100%; }
+  }
   .subrecipe-pick {
     width: 100%; text-align: left; padding: 6px 10px; border: 1px solid var(--accent-tint-2);
     border-radius: var(--radius-sm); background: var(--accent-tint); color: var(--accent-strong);
@@ -550,6 +588,10 @@
   .auth-hint { font-size: 11px; font-weight: 400; color: var(--fg-4); }
   .auth-error {
     background: var(--danger-tint); color: var(--danger); font-size: 13px;
+    padding: 9px 12px; border-radius: var(--radius-sm); margin-bottom: 16px;
+  }
+  .settings-ok {
+    background: var(--success-tint); color: var(--success); font-size: 13px;
     padding: 9px 12px; border-radius: var(--radius-sm); margin-bottom: 16px;
   }
   .auth-alt { margin-top: 18px; font-size: 13px; color: var(--fg-3); text-align: center; }

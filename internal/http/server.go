@@ -118,6 +118,10 @@ func (s *Server) Router() *echo.Echo {
 	g.GET("/data/export", s.handleDataExport)
 	g.POST("/data/import", s.handleDataImport)
 
+	g.GET("/settings", s.handleSettings)
+	g.POST("/settings/profile", s.handleSettingsProfile)
+	g.POST("/settings/password", s.handleSettingsPassword)
+
 	g.GET("/household", s.handleHousehold)
 	g.POST("/household/members", s.handleHouseholdAdd)
 	g.POST("/household/remove", s.handleHouseholdRemove)

@@ -117,6 +117,57 @@ func (s *Service) Register(ctx context.Context, name, email, password string) (*
 	return &Account{ID: acc.ID, Name: acc.Name, Email: acc.Email}, nil
 }
 
+// UpdateProfile changes an account's display name and email. Email uniqueness is
+// enforced case-insensitively against other accounts.
+func (s *Service) UpdateProfile(ctx context.Context, accountID uuid.UUID, name, email string) (*Account, error) {
+	name = strings.TrimSpace(name)
+	email = strings.ToLower(strings.TrimSpace(email))
+	switch {
+	case name == "":
+		return nil, errors.New("name is required")
+	case !strings.Contains(email, "@") || strings.Contains(email, " "):
+		return nil, errors.New("a valid email is required")
+	}
+
+	if existing, err := s.q.GetAccountByEmail(ctx, email); err == nil {
+		if existing.ID != accountID {
+			return nil, errors.New("that email is already registered")
+		}
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+
+	acc, err := s.q.UpdateAccountProfile(ctx, db.UpdateAccountProfileParams{
+		ID: accountID, Name: name, Email: email,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &Account{ID: acc.ID, Name: acc.Name, Email: acc.Email}, nil
+}
+
+// ChangePassword verifies the current password then stores a new one. It returns
+// ErrInvalidCredentials when the current password does not match.
+func (s *Service) ChangePassword(ctx context.Context, accountID uuid.UUID, current, next string) error {
+	acc, err := s.q.GetAccount(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	if bcrypt.CompareHashAndPassword([]byte(acc.PasswordHash), []byte(current)) != nil {
+		return ErrInvalidCredentials
+	}
+	if len(next) < minPasswordLen {
+		return errors.New("password must be at least 8 characters")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(next), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return s.q.UpdateAccountPassword(ctx, db.UpdateAccountPasswordParams{
+		ID: accountID, PasswordHash: string(hash),
+	})
+}
+
 // Authenticate verifies an email/password pair and returns the account. It
 // returns ErrInvalidCredentials for any mismatch.
 func (s *Service) Authenticate(ctx context.Context, email, password string) (*Account, error) {

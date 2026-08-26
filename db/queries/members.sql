@@ -11,6 +11,13 @@ SELECT * FROM accounts WHERE id = $1;
 -- name: GetAccountByEmail :one
 SELECT * FROM accounts WHERE lower(email) = lower($1);
 
+-- name: UpdateAccountProfile :one
+UPDATE accounts SET name = $2, email = $3 WHERE id = $1
+RETURNING *;
+
+-- name: UpdateAccountPassword :exec
+UPDATE accounts SET password_hash = $2 WHERE id = $1;
+
 -- Households.
 
 -- name: CreateHousehold :one

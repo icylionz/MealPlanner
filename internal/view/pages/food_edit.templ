@@ -1,6 +1,8 @@
 package pages
 
 import (
+	"slices"
+
 	"mealplanner/internal/view"
 	"mealplanner/internal/view/icons"
 	"mealplanner/internal/view/layout"
@@ -73,7 +75,12 @@ templ FoodEdit(d FoodEditData) {
 					</div>
 					<div class="flex-1">
 						@FieldLabel("Default unit")
-						<select class="select input-sm" name="default_unit">
+						<select
+							class="select input-sm"
+							name="default_unit"
+							data-search-select="1"
+							data-search-select-placeholder="Unit…"
+						>
 							for _, u := range d.Units {
 								<option value={ u } selected?={ d.DefaultUnit == u }>{ u }</option>
 							}
@@ -108,7 +115,22 @@ templ FoodEdit(d FoodEditData) {
 						}
 					</div>
 					<div class="flex" style="gap: 6px;">
-						<input class="input input-sm" name="tag_input" placeholder="Add tag…" style="max-width: 180px;"/>
+						<div style="max-width: 180px; flex: 1;">
+							<select
+								class="select input-sm"
+								name="tag_input"
+								data-search-select="1"
+								data-search-select-allow-custom="1"
+								data-search-select-placeholder="Add tag…"
+							>
+								<option value="" selected></option>
+								for _, t := range d.AllTags {
+									if !slices.Contains(d.Tags, t) {
+										<option value={ t }>{ t }</option>
+									}
+								}
+							</select>
+						</div>
 						<button type="submit" name="action" value="add-tag" class="btn btn-secondary btn-xs">Add</button>
 					</div>
 				</div>
@@ -170,11 +192,18 @@ templ componentEditRow(d FoodEditData, i int, comp ComponentForm) {
 			</select>
 		</div>
 		<input class="input input-sm" type="number" step="any" min="0" name="comp_amount" value={ comp.Amount } style="width: 72px;"/>
-		<select class="select input-sm" name="comp_unit" style="width: 80px;">
-			for _, u := range d.Units {
-				<option value={ u } selected?={ comp.Unit == u }>{ u }</option>
-			}
-		</select>
+		<div style="width: 80px;">
+			<select
+				class="select input-sm"
+				name="comp_unit"
+				data-search-select="1"
+				data-search-select-placeholder="Unit…"
+			>
+				for _, u := range d.Units {
+					<option value={ u } selected?={ comp.Unit == u }>{ u }</option>
+				}
+			</select>
+		</div>
 		<button type="submit" name="action" value={ "remove-component:" + view.Itoa(i) } class="icon-btn icon-btn-danger" style="padding: 4px;" title="Remove component">
 			@icons.Icon("trash-2", 14)
 		</button>

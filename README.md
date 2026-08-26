@@ -42,7 +42,24 @@ go build -o bin/server ./cmd/server
 The data model is unified around a single `foods` table: every ingredient is a
 food that is either *atomic* (no components) or a *recipe* (one or more
 components, each referencing another food). The `0001`/`0002` migrations define
-and seed this model. If you are upgrading a database created before the unified
+and seed this model with a small demo catalog (a handful of ingredients plus
+example recipes).
+
+To stock the catalog with real raw ingredients, run the CoFID seeder. It fetches
+the live UK *Composition of Foods Integrated Dataset* (McCance and Widdowson,
+Public Health England) and loads its raw-ingredient set (~790 whole foods —
+vegetables, fruit, grains, meat, fish, dairy, eggs, nuts, fats, herbs/spices and
+plain sweeteners; drinks, alcohol, snacks/confectionery and condiments are
+excluded) into the seeded "Starter Template" household, so every household
+created afterwards clones the enriched catalog. It is idempotent (foods already present by name are
+skipped) and keeps the large ingredient list out of the repo — nothing is
+committed but the ~200-line fetch/parse program in `internal/cofid`.
+
+```sh
+go run ./cmd/seed-foods                 # fetch live gov.uk dataset, seed template
+go run ./cmd/seed-foods --file cofid.xlsx   # seed from a local workbook copy
+go run ./cmd/seed-foods --dry-run           # report counts, write nothing
+``` If you are upgrading a database created before the unified
 model, wipe it first (the migrations were rewritten in place, so they will not
 re-run on an already-migrated DB):
 

@@ -175,6 +175,7 @@ type FoodEditData struct {
 	Components    []ComponentForm
 	Steps         []string
 	AllFoods      []foods.Food // options for the component search-select
+	AllTags       []string     // existing tags, for the tag search-select suggestions
 	Error         string
 	Conflict      *FoodConflict // set when a save was rejected as stale (FR16)
 	Units         []string
@@ -289,6 +290,17 @@ type OnboardingData struct {
 	Account    *households.Account
 	Households []households.Household // existing memberships to activate
 	Error      string
+}
+
+// SettingsData feeds the account settings screen. ProfileError/PasswordError
+// carry per-form validation messages; Saved marks a successful profile save.
+type SettingsData struct {
+	Member        *households.Member
+	Account       *households.Account
+	ProfileError  string
+	ProfileSaved  bool
+	PasswordError string
+	PasswordSaved bool
 }
 
 // ImportLine is one parsed ingredient line awaiting reconciliation to a food.
