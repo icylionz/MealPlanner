@@ -2,6 +2,7 @@ package pages
 
 import (
 	"slices"
+	"strings"
 
 	"mealplanner/internal/view"
 	"mealplanner/internal/view/icons"
@@ -102,6 +103,25 @@ templ FoodEdit(d FoodEditData) {
 					</p>
 				</div>
 				<div style="margin-bottom: 20px;">
+					@FieldLabel("Aliases")
+					<p style="font-size: 12px; color: var(--fg-3); margin: 0 0 8px;">Synonyms help searches and imports find this canonical food.</p>
+					<div class="flex flex-wrap" style="gap: 6px; margin-bottom: 8px;">
+						for i, alias := range d.Aliases {
+							<span class="tag" style="gap: 5px; padding: 4px 8px;">
+								<input type="hidden" name="aliases" value={ alias }/>
+								{ alias }
+								<button type="submit" name="action" value={ "remove-alias:" + view.Itoa(i) } class="icon-btn" style="padding: 0;" title="Remove alias">
+									@icons.Icon("x", 10)
+								</button>
+							</span>
+						}
+					</div>
+					<div class="flex" style="gap: 6px; max-width: 360px;">
+						<input class="input input-sm" name="alias_input" placeholder="e.g. chickpeas"/>
+						<button type="submit" name="action" value="add-alias" class="btn btn-secondary btn-xs">Add</button>
+					</div>
+				</div>
+				<div style="margin-bottom: 20px;">
 					@FieldLabel("Tags")
 					<div class="flex flex-wrap" style="gap: 6px; margin-bottom: 8px;">
 						for _, t := range d.Tags {
@@ -186,7 +206,7 @@ templ componentEditRow(d FoodEditData, i int, comp ComponentForm) {
 				<option value="" selected?={ comp.FoodID == "" }>Pick food…</option>
 				for _, f := range d.AllFoods {
 					if f.ID.String() != d.FoodID {
-						<option value={ f.ID.String() } selected?={ comp.FoodID == f.ID.String() }>{ f.Name }</option>
+						<option value={ f.ID.String() } data-search-terms={ strings.Join(f.Aliases, " ") } selected?={ comp.FoodID == f.ID.String() }>{ f.Name }</option>
 					}
 				}
 			</select>
@@ -204,6 +224,7 @@ templ componentEditRow(d FoodEditData, i int, comp ComponentForm) {
 				}
 			</select>
 		</div>
+		<input class="input input-sm" name="comp_variant" value={ comp.Variant } placeholder="Variant / form" style="width: 120px;"/>
 		<button type="submit" name="action" value={ "remove-component:" + view.Itoa(i) } class="icon-btn icon-btn-danger" style="padding: 4px;" title="Remove component">
 			@icons.Icon("trash-2", 14)
 		</button>

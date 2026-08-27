@@ -138,6 +138,11 @@ templ groceryItemRow(listID string, item grocery.Item, owner bool) {
 				<span style="display: block; font-size: 11px; color: var(--danger); font-weight: 600;">{ item.Note }</span>
 			}
 		</span>
+		if item.SourceType == "generated" {
+			<a href={ templ.URL(view.Href(ctx, "/grocery/items/"+item.ID.String())) } class="icon-btn" title="Why this is here">
+				@icons.Icon("layers", 13)
+			</a>
+		}
 		if owner {
 			@UnitTagForm(item.Amount, item.Unit, true, ConvertOptionsForDensity(item.Amount, item.Unit, item.Density), "/grocery/items/"+item.ID.String()+"/convert?list="+listID)
 			<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/items/"+item.ID.String()+"/delete?list="+listID)) } style="display: contents;">

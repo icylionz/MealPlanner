@@ -9,8 +9,10 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"mealplanner/internal/database/db"
@@ -27,6 +29,10 @@ var ErrInUse = errors.New("food is used as a component by other foods")
 // the editor loaded it (optimistic lock, FR16).
 var ErrConflict = errors.New("food was changed by someone else since you opened it")
 
+// ErrInvalidComponent is returned when a component is deleted or does not
+// belong to the household saving the recipe.
+var ErrInvalidComponent = errors.New("food component does not belong to this household")
+
 // Component is one component line: a reference to another food with a quantity.
 type Component struct {
 	ID            uuid.UUID
@@ -35,24 +41,28 @@ type Component struct {
 	ChildIsRecipe bool   // whether the child food is itself a recipe (read-only)
 	Amount        float64
 	Unit          string
+	Variant       string // form/preparation on this usage, not a canonical food
 }
 
 // Food is the full aggregate used by views and services. A food with no
 // components is atomic (a raw ingredient); one with components is a recipe.
 type Food struct {
-	ID            uuid.UUID
-	Name          string
-	Description   string
-	PrepTime      int
-	CookTime      int
-	Servings      int
-	DefaultUnit   string
-	Density       float64 // grams per millilitre; 0 means unset
-	DensitySource string  // "starter", "custom", or "none"
-	Version       int     // optimistic-lock version (FR16)
-	Tags          []string
-	Components    []Component
-	Steps         []string
+	ID                   uuid.UUID
+	Name                 string
+	Description          string
+	PrepTime             int
+	CookTime             int
+	Servings             int
+	DefaultUnit          string
+	Density              float64 // grams per millilitre; 0 means unset
+	DensitySource        string  // "starter", "custom", or "none"
+	Version              int     // optimistic-lock version (FR16)
+	SourceURL            string
+	SourceLastImportedAt *time.Time
+	Aliases              []string
+	Tags                 []string
+	Components           []Component
+	Steps                []string
 }
 
 // HasDensity reports whether a usable density is set on the food.
@@ -61,12 +71,46 @@ func (f Food) HasDensity() bool { return f.Density > 0 }
 // IsRecipe reports whether the food has components (is a recipe, not atomic).
 func (f Food) IsRecipe() bool { return len(f.Components) > 0 }
 
+// Matches reports whether a picker/search query occurs in the canonical name or
+// any alias. Empty queries match every food.
+func (f Food) Matches(query string) bool {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return true
+	}
+	if strings.Contains(strings.ToLower(f.Name), q) {
+		return true
+	}
+	for _, alias := range f.Aliases {
+		if strings.Contains(strings.ToLower(alias), q) {
+			return true
+		}
+	}
+	return false
+}
+
 // LeafIngredient is a scaled atomic food produced by traversal.
 type LeafIngredient struct {
-	FoodID uuid.UUID
-	Name   string
-	Amount float64
-	Unit   string
+	FoodID  uuid.UUID
+	Name    string
+	Variant string
+	Amount  float64
+	Unit    string
+	Density float64
+	Sources []IngredientSource
+}
+
+// IngredientSource identifies the exact component line behind one unaggregated
+// leaf quantity. RecipeID is the root recipe selected for generation; the
+// component ID can belong to a nested component recipe.
+type IngredientSource struct {
+	MealID      *uuid.UUID
+	RecipeID    uuid.UUID
+	ComponentID uuid.UUID
+	Variant     string
+	LineRecipe  string
+	Amount      float64
+	Unit        string
 }
 
 // Form carries food editor input.
@@ -80,8 +124,13 @@ type Form struct {
 	Density     float64 // grams per millilitre; 0 = fall back to the starter set
 	Version     int     // expected version for the optimistic-lock check (FR16)
 	Tags        []string
+	Aliases     []string
 	Components  []Component
 	Steps       []string
+	// Source fields are nil for ordinary edits so existing import metadata is
+	// preserved. URL import/re-import sets the URL and the database timestamps
+	// the successful save.
+	SourceURL *string
 }
 
 // Service owns food use cases.
@@ -126,6 +175,10 @@ func (s *Service) assemble(ctx context.Context, householdID uuid.UUID, rows []db
 	if err != nil {
 		return nil, err
 	}
+	aliases, err := s.q.ListAliasesForFoods(ctx, householdID)
+	if err != nil {
+		return nil, err
+	}
 
 	names := map[uuid.UUID]string{}
 	for _, r := range rows {
@@ -140,11 +193,16 @@ func (s *Service) assemble(ctx context.Context, householdID uuid.UUID, rows []db
 	for _, t := range tags {
 		tagsBy[t.FoodID] = append(tagsBy[t.FoodID], t.Tag)
 	}
+	aliasesBy := map[uuid.UUID][]string{}
+	for _, alias := range aliases {
+		aliasesBy[alias.FoodID] = append(aliasesBy[alias.FoodID], alias.Alias)
+	}
 	compsBy := map[uuid.UUID][]Component{}
 	for _, c := range comps {
 		compsBy[c.ParentFoodID] = append(compsBy[c.ParentFoodID], Component{
 			ID: c.ID, ChildFoodID: c.ChildFoodID, Name: names[c.ChildFoodID],
 			ChildIsRecipe: hasComps[c.ChildFoodID], Amount: c.Amount, Unit: c.Unit,
+			Variant: c.VariantText,
 		})
 	}
 
@@ -154,8 +212,9 @@ func (s *Service) assemble(ctx context.Context, householdID uuid.UUID, rows []db
 			ID: r.ID, Name: r.Name, Description: r.Description,
 			PrepTime: int(r.PrepTimeMin), CookTime: int(r.CookTimeMin), Servings: int(r.Servings),
 			DefaultUnit: r.DefaultUnit, Density: r.DensityGPerMl, DensitySource: r.DensitySource,
-			Version: int(r.Version),
-			Tags:    tagsBy[r.ID], Components: compsBy[r.ID],
+			Version: int(r.Version), SourceURL: stringValue(r.SourceUrl),
+			SourceLastImportedAt: timestampPtr(r.SourceLastImportedAt),
+			Aliases:              aliasesBy[r.ID], Tags: tagsBy[r.ID], Components: compsBy[r.ID],
 		})
 	}
 	return out, nil
@@ -180,16 +239,26 @@ func (s *Service) Get(ctx context.Context, householdID, id uuid.UUID) (*Food, er
 	if err != nil {
 		return nil, err
 	}
+	aliases, err := s.q.ListAliasesForFoods(ctx, householdID)
+	if err != nil {
+		return nil, err
+	}
 
 	food := &Food{
 		ID: r.ID, Name: r.Name, Description: r.Description,
 		PrepTime: int(r.PrepTimeMin), CookTime: int(r.CookTimeMin), Servings: int(r.Servings),
 		DefaultUnit: r.DefaultUnit, Density: r.DensityGPerMl, DensitySource: r.DensitySource,
-		Version: int(r.Version),
+		Version: int(r.Version), SourceURL: stringValue(r.SourceUrl),
+		SourceLastImportedAt: timestampPtr(r.SourceLastImportedAt),
 	}
 	for _, t := range tags {
 		if t.FoodID == id {
 			food.Tags = append(food.Tags, t.Tag)
+		}
+	}
+	for _, alias := range aliases {
+		if alias.FoodID == id {
+			food.Aliases = append(food.Aliases, alias.Alias)
 		}
 	}
 	// Resolve child names and recipe-ness for display.
@@ -209,6 +278,7 @@ func (s *Service) Get(ctx context.Context, householdID, id uuid.UUID) (*Food, er
 		food.Components = append(food.Components, Component{
 			ID: c.ID, ChildFoodID: c.ChildFoodID, Name: childNames[c.ChildFoodID],
 			ChildIsRecipe: hasComps[c.ChildFoodID], Amount: c.Amount, Unit: c.Unit,
+			Variant: c.VariantText,
 		})
 	}
 	for _, st := range steps {
@@ -240,6 +310,20 @@ func byPtr(id uuid.UUID) *uuid.UUID {
 	return &id
 }
 
+func stringValue(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
+}
+
+func timestampPtr(v pgtype.Timestamptz) *time.Time {
+	if !v.Valid {
+		return nil
+	}
+	return &v.Time
+}
+
 // Save creates or updates a food with its tags, components, and steps in one
 // transaction. It rejects component graphs that would contain a cycle. actor is
 // the account performing the write, recorded in created_by/updated_by (G2).
@@ -269,6 +353,11 @@ func (s *Service) Save(ctx context.Context, householdID, actor uuid.UUID, id *uu
 	}
 	defer tx.Rollback(ctx)
 	q := s.q.WithTx(tx)
+	// A household-scoped transaction lock makes the graph snapshot used below
+	// stable against concurrent recipe saves until this transaction commits.
+	if err := q.LockFoodGraph(ctx, householdID); err != nil {
+		return uuid.Nil, err
+	}
 
 	var foodID uuid.UUID
 	if id == nil {
@@ -301,8 +390,26 @@ func (s *Service) Save(ctx context.Context, householdID, actor uuid.UUID, id *uu
 			return uuid.Nil, ErrConflict
 		}
 	}
+	validFoods, err := q.ListFoods(ctx, householdID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	validIDs := make(map[uuid.UUID]struct{}, len(validFoods))
+	for _, food := range validFoods {
+		validIDs[food.ID] = struct{}{}
+	}
+	if err := validateComponentIDs(form.Components, validIDs); err != nil {
+		return uuid.Nil, err
+	}
+	if form.SourceURL != nil {
+		if err := q.MarkFoodImported(ctx, db.MarkFoodImportedParams{
+			ID: foodID, SourceUrl: form.SourceURL, HouseholdID: householdID,
+		}); err != nil {
+			return uuid.Nil, err
+		}
+	}
 
-	if err := s.checkNoCycle(ctx, householdID, foodID, form.Components); err != nil {
+	if err := checkNoCycle(ctx, q, householdID, foodID, form.Components); err != nil {
 		return uuid.Nil, err
 	}
 
@@ -311,6 +418,17 @@ func (s *Service) Save(ctx context.Context, householdID, actor uuid.UUID, id *uu
 	}
 	for _, t := range dedupeTags(form.Tags) {
 		if err := q.AddFoodTag(ctx, db.AddFoodTagParams{FoodID: foodID, Tag: t}); err != nil {
+			return uuid.Nil, err
+		}
+	}
+
+	if err := q.DeleteFoodAliases(ctx, foodID); err != nil {
+		return uuid.Nil, err
+	}
+	for _, alias := range dedupeAliases(form.Aliases, form.Name) {
+		if err := q.AddFoodAlias(ctx, db.AddFoodAliasParams{
+			FoodID: foodID, Alias: alias, CreatedBy: byPtr(actor),
+		}); err != nil {
 			return uuid.Nil, err
 		}
 	}
@@ -328,7 +446,7 @@ func (s *Service) Save(ctx context.Context, householdID, actor uuid.UUID, id *uu
 		}
 		if err := q.AddFoodComponent(ctx, db.AddFoodComponentParams{
 			ParentFoodID: foodID, ChildFoodID: c.ChildFoodID, Amount: c.Amount, Unit: c.Unit,
-			SortOrder: int32(order),
+			VariantText: strings.TrimSpace(c.Variant), SortOrder: int32(order),
 		}); err != nil {
 			return uuid.Nil, err
 		}
@@ -357,6 +475,18 @@ func (s *Service) Save(ctx context.Context, householdID, actor uuid.UUID, id *uu
 	return foodID, nil
 }
 
+func validateComponentIDs(comps []Component, valid map[uuid.UUID]struct{}) error {
+	for _, component := range comps {
+		if component.ChildFoodID == uuid.Nil {
+			continue
+		}
+		if _, ok := valid[component.ChildFoodID]; !ok {
+			return ErrInvalidComponent
+		}
+	}
+	return nil
+}
+
 // Delete removes a food unless another food uses it as a component. actor is
 // recorded as updated_by on the soft delete (G2).
 func (s *Service) Delete(ctx context.Context, householdID, actor, id uuid.UUID) error {
@@ -372,11 +502,15 @@ func (s *Service) Delete(ctx context.Context, householdID, actor, id uuid.UUID) 
 
 // checkNoCycle verifies that the food's new component references cannot reach
 // the food itself through the existing component graph.
-func (s *Service) checkNoCycle(ctx context.Context, householdID, foodID uuid.UUID, comps []Component) error {
-	all, err := s.q.ListComponentsForFoods(ctx, householdID)
+func checkNoCycle(ctx context.Context, q *db.Queries, householdID, foodID uuid.UUID, comps []Component) error {
+	all, err := q.ListComponentsForFoods(ctx, householdID)
 	if err != nil {
 		return err
 	}
+	return validateNoCycle(foodID, comps, all)
+}
+
+func validateNoCycle(foodID uuid.UUID, comps []Component, all []db.FoodComponent) error {
 	graph := map[uuid.UUID][]uuid.UUID{}
 	for _, c := range all {
 		if c.ParentFoodID != foodID {
@@ -455,12 +589,13 @@ func DensityByName(list []Food) map[string]float64 {
 }
 
 // LeafIngredients walks the component graph from a food and returns the scaled
-// atomic foods (leaves), mirroring the prototype's getLeafIngredients.
+// atomic foods (leaves), mirroring the prototype's getLeafIngredients. Variants
+// on nested recipe usages are composed outer-to-inner with each leaf variant.
 func LeafIngredients(idx map[uuid.UUID]Food, foodID uuid.UUID, scale float64) []LeafIngredient {
-	return leafIngredients(idx, foodID, scale, map[uuid.UUID]bool{})
+	return leafIngredients(idx, foodID, foodID, scale, "", map[uuid.UUID]bool{})
 }
 
-func leafIngredients(idx map[uuid.UUID]Food, foodID uuid.UUID, scale float64, visited map[uuid.UUID]bool) []LeafIngredient {
+func leafIngredients(idx map[uuid.UUID]Food, recipeID, foodID uuid.UUID, scale float64, inheritedVariant string, visited map[uuid.UUID]bool) []LeafIngredient {
 	if visited[foodID] {
 		return nil
 	}
@@ -486,10 +621,20 @@ func leafIngredients(idx map[uuid.UUID]Food, foodID uuid.UUID, scale float64, vi
 				servings = 1
 			}
 			childScale := c.Amount / servings * scale
-			out = append(out, leafIngredients(idx, child.ID, childScale, visited)...)
+			out = append(out, leafIngredients(idx, recipeID, child.ID, childScale, composeVariants(inheritedVariant, c.Variant), visited)...)
 		} else {
+			amount := c.Amount * scale
+			variant := composeVariants(inheritedVariant, c.Variant)
+			lineRecipe := ""
+			if foodID != recipeID {
+				lineRecipe = food.Name
+			}
 			out = append(out, LeafIngredient{
-				FoodID: child.ID, Name: child.Name, Amount: c.Amount * scale, Unit: c.Unit,
+				FoodID: child.ID, Name: child.Name, Variant: variant, Amount: amount, Unit: c.Unit,
+				Sources: []IngredientSource{{
+					RecipeID: recipeID, ComponentID: c.ID, Variant: variant,
+					LineRecipe: lineRecipe, Amount: amount, Unit: c.Unit,
+				}},
 			})
 		}
 	}
@@ -506,42 +651,50 @@ func Aggregate(leaves []LeafIngredient, densities map[uuid.UUID]float64) []LeafI
 		ing   LeafIngredient
 		order int
 	}
-	m := map[string]*slot{}
+	m := map[string][]*slot{}
+	var slots []*slot
 	var order int
 	for _, ing := range leaves {
-		key := ing.FoodID.String()
+		ing.Variant = cleanVariant(ing.Variant)
+		key := ing.FoodID.String() + "\x00" + normalizeVariant(ing.Variant)
 		t := units.TypeOf(ing.Unit)
-		existing, ok := m[key]
 		density := densities[ing.FoodID]
-		switch {
-		case !ok:
-			m[key] = &slot{ing: ing, order: order}
+		ing.Density = density
+		var existing *slot
+		for _, candidate := range m[key] {
+			candidateType := units.TypeOf(candidate.ing.Unit)
+			if candidate.ing.Unit == ing.Unit || (candidateType == t && t != units.Count) {
+				existing = candidate
+				break
+			}
+			if _, ok := units.ConvertDensity(ing.Amount, ing.Unit, candidate.ing.Unit, density); ok &&
+				t != units.Count && candidateType != units.Count {
+				existing = candidate
+				break
+			}
+		}
+		if existing == nil {
+			created := &slot{ing: ing, order: order}
+			m[key] = append(m[key], created)
+			slots = append(slots, created)
 			order++
+			continue
+		}
+		switch {
 		case existing.ing.Unit == ing.Unit:
 			existing.ing.Amount += ing.Amount
 		case units.TypeOf(existing.ing.Unit) == t && t != units.Count:
 			combined := units.ToBase(existing.ing.Amount, existing.ing.Unit) + units.ToBase(ing.Amount, ing.Unit)
 			existing.ing.Amount = units.FromBase(combined, existing.ing.Unit)
 		default:
-			// Different dimensions: merge across mass<->volume when density is known.
-			if conv, ok := units.ConvertDensity(ing.Amount, ing.Unit, existing.ing.Unit, density); ok && t != units.Count && units.TypeOf(existing.ing.Unit) != units.Count {
-				existing.ing.Amount += conv
-				continue
-			}
-			alt := key + "__" + ing.Unit
-			if a, ok := m[alt]; ok {
-				a.ing.Amount += ing.Amount
-			} else {
-				m[alt] = &slot{ing: ing, order: order}
-				order++
-			}
+			converted, _ := units.ConvertDensity(ing.Amount, ing.Unit, existing.ing.Unit, density)
+			existing.ing.Amount += converted
 		}
+		existing.ing.Sources = append(existing.ing.Sources, ing.Sources...)
 	}
 
-	slots := make([]*slot, 0, len(m))
-	for _, s := range m {
+	for _, s := range slots {
 		s.ing.Amount = units.Round3(s.ing.Amount)
-		slots = append(slots, s)
 	}
 	sort.Slice(slots, func(i, j int) bool { return slots[i].order < slots[j].order })
 	out := make([]LeafIngredient, len(slots))
@@ -549,6 +702,43 @@ func Aggregate(leaves []LeafIngredient, densities map[uuid.UUID]float64) []LeafI
 		out[i] = s.ing
 	}
 	return out
+}
+
+// IngredientDisplayName renders a usage-line variant without changing the
+// canonical food identity.
+func IngredientDisplayName(name, variant string) string {
+	variant = cleanVariant(variant)
+	if variant == "" {
+		return name
+	}
+	return name + ", " + variant
+}
+
+func cleanVariant(variant string) string {
+	return strings.Join(strings.Fields(variant), " ")
+}
+
+// composeVariants carries recipe-usage forms down to each atomic ingredient.
+// Qualifiers are normalized and kept in deterministic outer-to-inner order.
+func composeVariants(inherited, current string) string {
+	inherited = cleanVariant(inherited)
+	current = cleanVariant(current)
+	if inherited == "" {
+		return current
+	}
+	if current == "" {
+		return inherited
+	}
+	return inherited + ", " + current
+}
+
+func normalizeVariant(variant string) string {
+	return strings.ToLower(cleanVariant(variant))
+}
+
+// NormalizeVariant returns the stable comparison form used for aggregation.
+func NormalizeVariant(variant string) string {
+	return normalizeVariant(variant)
 }
 
 func dedupeTags(tags []string) []string {
@@ -561,6 +751,21 @@ func dedupeTags(tags []string) []string {
 		}
 		seen[t] = true
 		out = append(out, t)
+	}
+	return out
+}
+
+func dedupeAliases(aliases []string, canonical string) []string {
+	seen := map[string]bool{strings.ToLower(strings.TrimSpace(canonical)): true}
+	var out []string
+	for _, alias := range aliases {
+		alias = strings.TrimSpace(alias)
+		key := strings.ToLower(alias)
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, alias)
 	}
 	return out
 }

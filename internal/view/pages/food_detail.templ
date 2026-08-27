@@ -63,6 +63,34 @@ templ FoodDetail(d FoodDetailData) {
 			if d.Food.Description != "" {
 				<p style="font-size: 14px; color: var(--fg-2); line-height: 1.6; margin: 0 0 20px;">{ d.Food.Description }</p>
 			}
+			if len(d.Food.Aliases) > 0 {
+				<div class="flex items-center flex-wrap" style="gap: 6px; margin-bottom: 20px;">
+					<span class="overline" style="margin-right: 2px;">Also known as</span>
+					for _, alias := range d.Food.Aliases {
+						@layout.Tag(alias)
+					}
+				</div>
+			}
+			if d.Food.SourceURL != "" {
+				<div class="card flex items-center" style="gap: 10px; padding: 12px 14px; margin-bottom: 20px;">
+					<div class="flex-1 min-w-0">
+						<div class="overline" style="margin-bottom: 3px;">Imported source</div>
+						if view.IsExternalURL(d.Food.SourceURL) {
+							<a href={ d.Food.SourceURL } rel="noopener noreferrer" style="font-size: 13px; color: var(--accent); overflow-wrap: anywhere;">{ d.Food.SourceURL }</a>
+						} else {
+							<div style="font-size: 13px; color: var(--fg-3); overflow-wrap: anywhere;">{ d.Food.SourceURL }</div>
+						}
+						if d.Food.SourceLastImportedAt != nil {
+							<div style="font-size: 11px; color: var(--fg-4); margin-top: 3px;">Last imported { d.Food.SourceLastImportedAt.UTC().Format("2 Jan 2006 15:04 UTC") }</div>
+						}
+					</div>
+					if d.Member.IsOwner() && view.IsExternalURL(d.Food.SourceURL) {
+						<form method="post" action={ templ.URL(view.Href(ctx, "/foods/"+d.Food.ID.String()+"/reimport")) }>
+							<button class="btn btn-secondary btn-sm" type="submit">Re-import</button>
+						</form>
+					}
+				</div>
+			}
 			if d.Food.IsRecipe() {
 				<div style="margin-bottom: 22px;">
 					<div class="overline" style="letter-spacing: .08em; margin-bottom: 8px;">Scale</div>
@@ -124,7 +152,12 @@ templ ingredientNode(d FoodDetailData, n IngNode) {
 				<span class="chev" style="color: var(--accent); display: flex;">
 					@icons.Icon("chevron-right", 13)
 				</span>
-				<span class="flex-1" style="font-weight: 600; font-size: 14px; color: var(--accent-strong);">{ n.SubFood.Name }</span>
+				<span class="flex-1" style="font-weight: 600; font-size: 14px; color: var(--accent-strong);">
+					{ n.SubFood.Name }
+					if n.Component.Variant != "" {
+						<span style="font-weight: 400; color: var(--fg-3);">, { n.Component.Variant }</span>
+					}
+				</span>
 				<span style="font-size: 12px; color: var(--fg-3);">{ FormatAmount(n.Amount) } { n.Component.Unit }</span>
 				<a href={ templ.URL(view.Href(ctx, "/foods/"+n.SubFood.ID.String())) } class="icon-btn" title="View food">
 					@icons.Icon("link", 12)
@@ -136,7 +169,12 @@ templ ingredientNode(d FoodDetailData, n IngNode) {
 	} else {
 		<div class={ "ing-row", templ.KV("ing-sub", n.Depth > 0) } style={ ingIndent(n.Depth) }>
 			<span class="ing-dot"></span>
-			<a href={ templ.URL(view.Href(ctx, "/foods/"+n.Component.ChildFoodID.String())) } class="flex-1" style="font-size: 14px; color: var(--ink);">{ n.Component.Name }</a>
+			<a href={ templ.URL(view.Href(ctx, "/foods/"+n.Component.ChildFoodID.String())) } class="flex-1" style="font-size: 14px; color: var(--ink);">
+				{ n.Component.Name }
+				if n.Component.Variant != "" {
+					<span style="color: var(--fg-3);">, { n.Component.Variant }</span>
+				}
+			</a>
 			@UnitTagLinks(n.Amount, n.Unit, false, ConvertOptionsFor(n.Amount, n.Unit), func(u string) string {
 				return withParam(d.BaseURL, n.ConvertKey, u)
 			})

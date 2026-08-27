@@ -36,17 +36,17 @@ func (s *Server) handleDataExport(c echo.Context) error {
 // renders the run report (FR15.2–FR15.5).
 func (s *Server) handleDataImport(c echo.Context) error {
 	member := s.member(c)
-	fail := func(msg string) error {
-		return s.render(c, pages.Data(pages.DataData{Member: member, Error: msg, Selected: formSections(c)}))
+	fail := func(status int, msg string) error {
+		return s.renderStatus(c, status, pages.Data(pages.DataData{Member: member, Error: msg, Selected: formSections(c)}))
 	}
 
 	fh, err := c.FormFile("file")
 	if err != nil {
-		return fail("Choose a JSON backup file to import.")
+		return fail(http.StatusBadRequest, "Choose a JSON backup file to import.")
 	}
 	f, err := fh.Open()
 	if err != nil {
-		return fail("Couldn’t open the uploaded file.")
+		return fail(http.StatusBadRequest, "Couldn’t open the uploaded file.")
 	}
 	defer f.Close()
 
@@ -54,17 +54,20 @@ func (s *Server) handleDataImport(c echo.Context) error {
 	dec := json.NewDecoder(f)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&arc); err != nil {
-		return fail("That file isn’t a valid Backbone Plate export: " + err.Error())
+		return fail(http.StatusBadRequest, "That file isn’t a valid Backbone Plate export: "+err.Error())
+	}
+	if err := arc.ValidateURLs(); err != nil {
+		return fail(http.StatusUnprocessableEntity, "That archive contains an invalid URL: "+err.Error())
 	}
 
 	selected := formSections(c)
 	if !anySelected(selected) {
-		return fail("Pick at least one section to import.")
+		return fail(http.StatusUnprocessableEntity, "Pick at least one section to import.")
 	}
 
 	report, err := s.transfer.Import(c.Request().Context(), s.household(c), &arc, selected)
 	if err != nil {
-		return fail(err.Error())
+		return fail(http.StatusUnprocessableEntity, err.Error())
 	}
 	return s.render(c, pages.Data(pages.DataData{Member: member, Report: report, Selected: selected}))
 }

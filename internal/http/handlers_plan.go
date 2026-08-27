@@ -215,7 +215,7 @@ func (s *Server) handleAddMealForm(c echo.Context) error {
 	var filtered []foods.Food
 	var selectedFood *foods.Food
 	for _, r := range all {
-		if search == "" || strings.Contains(strings.ToLower(r.Name), strings.ToLower(search)) {
+		if r.Matches(search) {
 			filtered = append(filtered, r)
 		}
 		if r.ID.String() == selected {
@@ -332,7 +332,7 @@ func (s *Server) editMealData(c echo.Context, m *planner.Meal, returnTo, search 
 	var filtered []foods.Food
 	var selectedFood *foods.Food
 	for _, r := range all {
-		if search == "" || strings.Contains(strings.ToLower(r.Name), strings.ToLower(search)) {
+		if r.Matches(search) {
 			filtered = append(filtered, r)
 		}
 		if r.ID == m.FoodID {

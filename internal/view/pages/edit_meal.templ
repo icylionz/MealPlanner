@@ -136,17 +136,21 @@ templ mealLinkSection(d EditMealData) {
 		</div>
 		if d.LinkURL != "" {
 			<div class="card" style="margin-top: 8px; padding: 0; overflow: hidden;">
-				if d.LinkImageURL != "" {
-					<img src={ templ.URL(d.LinkImageURL) } alt="" style="width: 100%; max-height: 140px; object-fit: cover; display: block;"/>
+				if view.IsExternalURL(d.LinkImageURL) {
+					<img src={ d.LinkImageURL } alt="" style="width: 100%; max-height: 140px; object-fit: cover; display: block;"/>
 				}
 				<div style="padding: 8px 10px;">
-					<a href={ templ.URL(d.LinkURL) } target="_blank" rel="noopener noreferrer" style="font-weight: 600; font-size: 13px;">
-						if d.LinkTitle != "" {
-							{ d.LinkTitle }
-						} else {
-							{ d.LinkURL }
-						}
-					</a>
+					if view.IsExternalURL(d.LinkURL) {
+						<a href={ d.LinkURL } target="_blank" rel="noopener noreferrer" style="font-weight: 600; font-size: 13px;">
+							if d.LinkTitle != "" {
+								{ d.LinkTitle }
+							} else {
+								{ d.LinkURL }
+							}
+						</a>
+					} else {
+						<div style="font-weight: 600; font-size: 13px; color: var(--fg-3);">{ d.LinkTitle }</div>
+					}
 					<div class="overline" style="font-size: 10px; color: var(--fg-4); margin-top: 2px; word-break: break-all;">{ d.LinkURL }</div>
 				</div>
 			</div>

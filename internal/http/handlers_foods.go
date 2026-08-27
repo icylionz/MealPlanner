@@ -31,7 +31,7 @@ func (s *Server) handleFoods(c echo.Context) error {
 		for _, t := range r.Tags {
 			tagSet[t] = true
 		}
-		if search != "" && !strings.Contains(strings.ToLower(r.Name), strings.ToLower(search)) {
+		if !r.Matches(search) {
 			continue
 		}
 		if tag != "" && tag != "all" && !contains(r.Tags, tag) {
@@ -92,8 +92,17 @@ func (s *Server) handleFoodDetail(c echo.Context) error {
 		Food:    *food,
 		Scale:   scale,
 		Tree:    tree,
-		BaseURL: c.Request().URL.RequestURI(),
+		BaseURL: foodDetailBaseURL(c.Request().URL.RequestURI(), s.cfg.BasePath),
 	}))
+}
+
+// foodDetailBaseURL returns an app-absolute URL because the template applies
+// BASE_PATH when it builds scale and unit-conversion links.
+func foodDetailBaseURL(requestURI, basePath string) string {
+	if basePath != "" && (requestURI == basePath || strings.HasPrefix(requestURI, basePath+"/") || strings.HasPrefix(requestURI, basePath+"?")) {
+		return strings.TrimPrefix(requestURI, basePath)
+	}
+	return requestURI
 }
 
 // buildIngTree resolves component lines into display nodes, applying scale,
@@ -158,6 +167,7 @@ func (s *Server) editorData(c echo.Context, isNew bool, foodID string) (pages.Fo
 		DefaultUnit: c.FormValue("default_unit"),
 		Density:     c.FormValue("density"),
 		Version:     c.FormValue("version"),
+		Aliases:     f["aliases"],
 		Tags:        f["tags"],
 		Steps:       f["steps"],
 		Units:       units.EditorUnits,
@@ -171,6 +181,7 @@ func (s *Server) editorData(c echo.Context, isNew bool, foodID string) (pages.Fo
 	foodIDs := f["comp_foodid"]
 	amounts := f["comp_amount"]
 	unitsF := f["comp_unit"]
+	variants := f["comp_variant"]
 	for i := range foodIDs {
 		row := pages.ComponentForm{FoodID: foodIDs[i], Amount: "0", Unit: "g"}
 		if i < len(amounts) {
@@ -178,6 +189,9 @@ func (s *Server) editorData(c echo.Context, isNew bool, foodID string) (pages.Fo
 		}
 		if i < len(unitsF) {
 			row.Unit = unitsF[i]
+		}
+		if i < len(variants) {
+			row.Variant = variants[i]
 		}
 		d.Components = append(d.Components, row)
 	}
@@ -246,6 +260,7 @@ func (s *Server) handleFoodEdit(c echo.Context) error {
 		DefaultUnit:   r.DefaultUnit,
 		DensitySource: r.DensitySource,
 		Version:       strconv.Itoa(r.Version),
+		Aliases:       r.Aliases,
 		Tags:          r.Tags,
 		Steps:         r.Steps,
 		Units:         units.EditorUnits,
@@ -257,9 +272,10 @@ func (s *Server) handleFoodEdit(c echo.Context) error {
 	}
 	for _, comp := range r.Components {
 		d.Components = append(d.Components, pages.ComponentForm{
-			FoodID: comp.ChildFoodID.String(),
-			Amount: units.Format(comp.Amount),
-			Unit:   comp.Unit,
+			FoodID:  comp.ChildFoodID.String(),
+			Amount:  units.Format(comp.Amount),
+			Unit:    comp.Unit,
+			Variant: comp.Variant,
 		})
 	}
 	if err := s.fillEditorLookups(c, &d); err != nil {
@@ -312,7 +328,7 @@ func (s *Server) handleFoodEditPost(c echo.Context) error {
 				d.Error = "This food was changed by someone else since you opened it. Review the current version below, then save again to overwrite it."
 				break
 			}
-			if errors.Is(err, foods.ErrCycle) || err.Error() == "food needs a name" {
+			if errors.Is(err, foods.ErrCycle) || errors.Is(err, foods.ErrInvalidComponent) || err.Error() == "food needs a name" {
 				d.Error = err.Error()
 				break
 			}
@@ -350,6 +366,16 @@ func (s *Server) handleFoodEditPost(c echo.Context) error {
 			}
 		}
 		d.Tags = kept
+
+	case action == "add-alias":
+		if alias := strings.TrimSpace(c.FormValue("alias_input")); alias != "" && !containsFold(d.Aliases, alias) {
+			d.Aliases = append(d.Aliases, alias)
+		}
+
+	case strings.HasPrefix(action, "remove-alias:"):
+		if i, err := strconv.Atoi(action[len("remove-alias:"):]); err == nil && i >= 0 && i < len(d.Aliases) {
+			d.Aliases = append(d.Aliases[:i], d.Aliases[i+1:]...)
+		}
 	}
 
 	if err := s.fillEditorLookups(c, &d); err != nil {
@@ -386,6 +412,7 @@ func editorToForm(d pages.FoodEditData) (foods.Form, error) {
 		DefaultUnit: d.DefaultUnit,
 		Density:     density,
 		Version:     atoiDefault(d.Version, 0),
+		Aliases:     d.Aliases,
 		Tags:        d.Tags,
 		Steps:       d.Steps,
 	}
@@ -397,9 +424,19 @@ func editorToForm(d pages.FoodEditData) (foods.Form, error) {
 		amount, _ := strconv.ParseFloat(row.Amount, 64)
 		form.Components = append(form.Components, foods.Component{
 			ChildFoodID: id, Amount: amount, Unit: row.Unit,
+			Variant: strings.TrimSpace(row.Variant),
 		})
 	}
 	return form, nil
+}
+
+func containsFold(list []string, value string) bool {
+	for _, item := range list {
+		if strings.EqualFold(strings.TrimSpace(item), strings.TrimSpace(value)) {
+			return true
+		}
+	}
+	return false
 }
 
 func atoiDefault(s string, def int) int {

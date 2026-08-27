@@ -10,10 +10,10 @@ import (
 // handleOnboarding shows the create-or-join screen, listing any households the
 // account already belongs to so it can pick one to activate.
 func (s *Server) handleOnboarding(c echo.Context) error {
-	return s.renderOnboarding(c, "")
+	return s.renderOnboarding(c, "", "")
 }
 
-func (s *Server) renderOnboarding(c echo.Context, errMsg string) error {
+func (s *Server) renderOnboarding(c echo.Context, errMsg, inviteCode string) error {
 	acc := s.account(c)
 	hhs, err := s.households.ListForAccount(c.Request().Context(), acc.ID)
 	if err != nil {
@@ -22,6 +22,7 @@ func (s *Server) renderOnboarding(c echo.Context, errMsg string) error {
 	return s.render(c, pages.Onboarding(pages.OnboardingData{
 		Account:    acc,
 		Households: hhs,
+		InviteCode: inviteCode,
 		Error:      errMsg,
 	}))
 }
@@ -32,7 +33,7 @@ func (s *Server) handleCreateHousehold(c echo.Context) error {
 	acc := s.account(c)
 	hh, err := s.households.CreateHousehold(ctx, acc.ID, c.FormValue("name"))
 	if err != nil {
-		return s.renderOnboarding(c, err.Error())
+		return s.renderOnboarding(c, err.Error(), "")
 	}
 	return s.activateAndGo(c, hh.ID)
 }
@@ -41,9 +42,10 @@ func (s *Server) handleCreateHousehold(c echo.Context) error {
 func (s *Server) handleJoinHousehold(c echo.Context) error {
 	ctx := c.Request().Context()
 	acc := s.account(c)
-	hh, err := s.households.JoinByInvite(ctx, acc.ID, c.FormValue("invite_code"))
+	code := c.FormValue("invite_code")
+	hh, err := s.households.JoinByInvite(ctx, acc.ID, code)
 	if err != nil {
-		return s.renderOnboarding(c, err.Error())
+		return s.renderOnboarding(c, err.Error(), code)
 	}
 	return s.activateAndGo(c, hh.ID)
 }

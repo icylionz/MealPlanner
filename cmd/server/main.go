@@ -5,6 +5,7 @@ import (
 	"context"
 	"log"
 
+	"mealplanner/internal/auth"
 	"mealplanner/internal/config"
 	"mealplanner/internal/foods"
 	"mealplanner/internal/grocery"
@@ -32,9 +33,17 @@ func main() {
 	}
 	defer pool.Close()
 
+	householdService := households.NewService(pool)
+	loginService := auth.NewService(householdService, auth.Config{
+		Threshold:     cfg.LoginThrottleThreshold,
+		Window:        cfg.LoginThrottleWindow,
+		BlockDuration: cfg.LoginThrottleBlockDuration,
+		MaxBuckets:    auth.DefaultMaxBuckets,
+	})
 	srv := httpserver.New(
 		cfg,
-		households.NewService(pool),
+		householdService,
+		loginService,
 		foods.NewService(pool),
 		planner.NewService(pool),
 		grocery.NewService(pool),

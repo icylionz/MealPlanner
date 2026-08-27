@@ -161,6 +161,7 @@ type ComponentForm struct {
 	FoodName string
 	Amount   string
 	Unit     string
+	Variant  string
 }
 
 // FoodEditData feeds the food editor (also the New Food flow).
@@ -178,6 +179,7 @@ type FoodEditData struct {
 	Density       string // g/ml, blank = unset (falls back to starter set)
 	DensitySource string // "starter", "custom", or "none" (display hint)
 	Version       string // optimistic-lock version, posted back as a hidden field (FR16)
+	Aliases       []string
 	Tags          []string
 	Components    []ComponentForm
 	Steps         []string
@@ -206,6 +208,12 @@ type GroceryData struct {
 	Lists    []grocery.List
 	Active   *grocery.List
 	Renaming bool
+}
+
+// GroceryItemDetailData feeds the household-scoped generation provenance page.
+type GroceryItemDetailData struct {
+	Member *households.Member
+	Detail grocery.ItemDetail
 }
 
 // GenPreviewItem is one previewed generated ingredient.
@@ -286,6 +294,7 @@ type PrepPrintData struct {
 type HouseholdData struct {
 	Member     *households.Member
 	Household  *households.Household
+	Invite     *households.Invite
 	Members    []households.Member
 	Households []households.Household // all households this account belongs to (switcher)
 	ShowInvite bool
@@ -296,6 +305,7 @@ type HouseholdData struct {
 type OnboardingData struct {
 	Account    *households.Account
 	Households []households.Household // existing memberships to activate
+	InviteCode string                 // submitted value, retained after a join error
 	Error      string
 }
 
@@ -312,10 +322,11 @@ type SettingsData struct {
 
 // ImportLine is one parsed ingredient line awaiting reconciliation to a food.
 type ImportLine struct {
-	Name   string // parsed free-text name
-	Amount string
-	Unit   string
-	FoodID string // selected food id, "" when unmatched
+	Name    string // parsed free-text name
+	Amount  string
+	Unit    string
+	Variant string // usage form/preparation; never creates a canonical food
+	FoodID  string // selected food id, "" when unmatched
 }
 
 // Matched reports whether the line has been mapped to a food.
@@ -324,18 +335,34 @@ func (l ImportLine) Matched() bool { return l.FoodID != "" }
 // ImportReconcileData feeds the import reconcile screen: an imported recipe
 // whose ingredient lines are being mapped to existing foods before saving.
 type ImportReconcileData struct {
-	Member      *households.Member
+	Member         *households.Member
+	Name           string
+	Description    string
+	Prep           string
+	Cook           string
+	Servings       string
+	DefaultUnit    string
+	TargetFoodID   string // set for re-import so commit updates instead of creates
+	Version        string // version used by the original re-import attempt
+	ReapplyVersion string // current version offered only after an explicit conflict
+	SourceURL      string // display only; authenticated by SourceState on postback
+	SourceState    string
+	Tags           []string
+	Aliases        []string
+	Steps          []string
+	Lines          []ImportLine
+	AllFoods       []foods.Food
+	Conflict       *ImportConflict
+	Error          string
+}
+
+// ImportConflict keeps the current saved state separate from the fetched values
+// still present in ImportReconcileData.
+type ImportConflict struct {
+	Version     int
 	Name        string
 	Description string
-	Prep        string
-	Cook        string
-	Servings    string
-	DefaultUnit string
-	Tags        []string
-	Steps       []string
-	Lines       []ImportLine
-	AllFoods    []foods.Food
-	Error       string
+	SourceURL   string
 }
 
 // AddMealData feeds the add-meal modal page.

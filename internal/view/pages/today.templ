@@ -67,8 +67,8 @@ templ todayMealRow(m MealVM, owner bool) {
 				</div>
 				if m.Meal.HasLink() {
 					<div class="flex items-center min-w-0" style="gap: 4px; margin-top: 5px; color: var(--fg-3); font-size: 12px;">
-						if m.Meal.LinkImageURL != "" {
-							<img src={ templ.URL(m.Meal.LinkImageURL) } alt="" style="width: 16px; height: 16px; border-radius: 3px; object-fit: cover; flex: none;"/>
+						if view.IsExternalURL(m.Meal.LinkImageURL) {
+							<img src={ m.Meal.LinkImageURL } alt="" style="width: 16px; height: 16px; border-radius: 3px; object-fit: cover; flex: none;"/>
 						} else {
 							@icons.Icon("link", 11)
 						}

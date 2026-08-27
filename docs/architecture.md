@@ -75,6 +75,7 @@ At minimum, support:
 - `SESSION_COOKIE_NAME`
 - `SESSION_SECRET`
 - `APP_ENV`
+- `TRUSTED_PROXY_CIDRS` (optional, comma-separated CIDRs)
 
 ### Base Path Rules
 
@@ -84,7 +85,10 @@ At minimum, support:
 - Generated links, redirects, form actions, HTMX endpoints, and asset URLs must honor it.
 - An empty `BASE_PATH` means root deployment.
 
-Host and scheme should be inferred from the incoming request and trusted forwarded headers. A separate public URL setting is not required by default.
+Host and scheme should be inferred from the incoming request. Forwarded client
+addresses are honored only when the direct peer is covered by
+`TRUSTED_PROXY_CIDRS`; direct-peer extraction is the default. A separate public
+URL setting is not required by default.
 
 ## Delivery and Deployment
 

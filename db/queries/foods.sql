@@ -9,10 +9,25 @@ SELECT * FROM foods WHERE household_id = $1 ORDER BY lower(name);
 -- name: GetFood :one
 SELECT * FROM foods WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL;
 
+-- name: LockFoodGraph :exec
+-- Serialize component-graph mutations within a household for this transaction.
+-- Hash collisions only cause harmless extra serialization between households.
+SELECT pg_advisory_xact_lock(hashtextextended(sqlc.arg(household_id)::uuid::text, 0));
+
 -- name: CreateFood :one
 INSERT INTO foods (household_id, name, description, prep_time_min, cook_time_min, servings, default_unit, density_g_per_ml, density_source, created_by, updated_by)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
 RETURNING *;
+
+-- name: SetFoodSourceMetadata :exec
+UPDATE foods
+SET source_url = $2, source_last_imported_at = $3
+WHERE id = $1;
+
+-- name: MarkFoodImported :exec
+UPDATE foods
+SET source_url = $2, source_last_imported_at = now()
+WHERE id = $1 AND household_id = $3;
 
 -- name: UpdateFood :execrows
 -- Optimistic lock (FR16): only writes when the caller's expected_version still
@@ -48,6 +63,20 @@ DELETE FROM food_tags WHERE food_id = $1;
 -- name: AddFoodTag :exec
 INSERT INTO food_tags (food_id, tag) VALUES ($1, $2) ON CONFLICT DO NOTHING;
 
+-- name: ListAliasesForFoods :many
+SELECT fa.* FROM food_aliases fa
+JOIN foods f ON f.id = fa.food_id
+WHERE f.household_id = $1
+ORDER BY fa.food_id, lower(fa.alias), fa.id;
+
+-- name: DeleteFoodAliases :exec
+DELETE FROM food_aliases WHERE food_id = $1;
+
+-- name: AddFoodAlias :exec
+INSERT INTO food_aliases (food_id, alias, created_by)
+VALUES ($1, $2, $3)
+ON CONFLICT (food_id, lower(alias)) DO NOTHING;
+
 -- name: ListComponentsForFoods :many
 SELECT fc.* FROM food_components fc
 JOIN foods f ON f.id = fc.parent_food_id
@@ -58,11 +87,20 @@ ORDER BY fc.parent_food_id, fc.sort_order;
 SELECT * FROM food_components WHERE parent_food_id = $1 ORDER BY sort_order;
 
 -- name: DeleteFoodComponents :exec
-DELETE FROM food_components WHERE parent_food_id = $1;
+-- Archive imports also replace component sets through this query. Acquiring the
+-- same transaction lock here makes those replacements cooperate with Save
+-- without coupling the transfer service to food-service internals.
+WITH graph_lock AS (
+    SELECT pg_advisory_xact_lock(hashtextextended(f.household_id::text, 0))
+    FROM foods f
+    WHERE f.id = $1
+)
+DELETE FROM food_components
+WHERE parent_food_id = $1 AND EXISTS (SELECT 1 FROM graph_lock);
 
 -- name: AddFoodComponent :exec
-INSERT INTO food_components (parent_food_id, child_food_id, amount, unit, sort_order)
-VALUES ($1, $2, $3, $4, $5);
+INSERT INTO food_components (parent_food_id, child_food_id, amount, unit, variant_text, sort_order)
+VALUES ($1, $2, $3, $4, $5, $6);
 
 -- name: CountComponentUses :one
 -- Only live parent recipes block deletion; a soft-deleted recipe no longer

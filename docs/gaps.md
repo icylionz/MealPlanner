@@ -53,26 +53,26 @@ PRD FR5 AC3–AC5, ScheduledMeal/ScheduledMealRecipe entities.
 PRD FR12 AC1–AC2/AC6, GroceryItemSource.
 Grocery stays live-editable lists (immutable-snapshot model dropped by decision);
 no source table today.
-- [ ] Add `grocery_item_sources` (item → meal/recipe/ingredient-line, `quantity_contributed`, `unit_contributed`).
-- [ ] Item detail UI shows "why this is here" (contributing meals/recipes).
-- [ ] Link `grocery_items.ingredient_id` (food UUID) + `source_type` (generated/adhoc).
+- [x] Add `grocery_item_sources` (item → meal/recipe/ingredient-line, contributed quantity/unit, plus variant and line-recipe display snapshots that survive component replacement).
+- [x] Item detail UI shows "why this is here" (contributing meals/recipes).
+- [x] Link `grocery_items.ingredient_id` (food UUID) + `source_type` (generated/adhoc); generated items retain usage variant identity and aggregate compatible units by food + normalized variant.
 
 ## G6. Ingredient aliases, variants, source URL
 PRD FR7.4, FR9.2, FR9.3, FR14 AC3.
-- [ ] Add `food_aliases` (food → alias); picker search matches canonical + aliases.
-- [ ] Store variant/form as an attribute on a component/usage line, not a new food.
-- [ ] Add `source_url` + `source_last_imported_at` to `foods`; URL import stores them; support re-import review (FR14 AC4).
+- [x] Add `food_aliases` (food → alias); picker search matches canonical + aliases.
+- [x] Store variant/form as an attribute on a component/usage line, not a new food; propagate it through leaf traversal and render it in grocery, prep, and print output.
+- [x] Add `source_url` + `source_last_imported_at` to `foods`; URL import stores them; support re-import review (FR14 AC4).
 
 ## G7. Invite lifecycle
 PRD FR2 AC3/AC4, Invite entity.
 `households.invite_code` is a single perpetual code.
-- [ ] New `invites` table: `code`, `expires_at`, `revoked_at`, `max_uses`, `use_count`, `created_by`.
-- [ ] Join checks expiry/revocation/uses; expired or revoked → clear error.
-- [ ] Owner can revoke/regenerate; keep the simple share-code UX.
+- [x] New `invites` table: `code`, `expires_at`, `revoked_at`, `max_uses`, `use_count`, `created_by`.
+- [x] Join checks expiry/revocation/uses; expired or revoked → clear error.
+- [x] Owner can revoke/regenerate; keep the simple share-code UX.
 
 ## G8. Login throttling
 PRD FR1 AC4, NFR5.2.
-- [ ] Throttle repeated failed logins per IP/account (in-memory or DB-backed counter); slow/block past a threshold for a window.
+- [x] Throttle repeated failed logins per IP/account (in-memory or DB-backed counter); slow/block past a threshold for a window.
 
 ## G9. PWA installability
 PRD 3.1, §7.

@@ -76,7 +76,11 @@ psql "$DATABASE_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 ```
 
 Configuration comes from `.env` (see `internal/config`): `PORT`, `BASE_PATH`,
-`DATABASE_URL`, `SESSION_COOKIE_NAME`, `SESSION_SECRET`, `APP_ENV`.
+`DATABASE_URL`, `SESSION_COOKIE_NAME`, `SESSION_SECRET`, `APP_ENV`,
+`LOGIN_THROTTLE_THRESHOLD`, `LOGIN_THROTTLE_WINDOW`,
+`LOGIN_THROTTLE_BLOCK_DURATION`, and `TRUSTED_PROXY_CIDRS`. The last setting is
+a comma-separated list of proxy CIDRs allowed to supply `X-Forwarded-For`; when
+empty, client identity always comes from the direct socket peer.
 
 ## Deployment
 

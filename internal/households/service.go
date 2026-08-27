@@ -9,6 +9,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -23,7 +25,10 @@ import (
 // SessionTTL is how long a session stays valid.
 const SessionTTL = 180 * 24 * time.Hour
 
-const minPasswordLen = 8
+const (
+	minPasswordLen = 8
+	inviteTTL      = 7 * 24 * time.Hour
+)
 
 // templateHouseholdID is the seeded starter household new households clone.
 var templateHouseholdID = uuid.MustParse("00000000-0000-0000-0000-0000000000ff")
@@ -31,8 +36,20 @@ var templateHouseholdID = uuid.MustParse("00000000-0000-0000-0000-0000000000ff")
 // ErrInvalidCredentials is returned when an email/password pair does not match.
 var ErrInvalidCredentials = errors.New("invalid email or password")
 
-// ErrInviteNotFound is returned when an invite code matches no household.
-var ErrInviteNotFound = errors.New("no household found for that invite code")
+// dummyPasswordHash ensures an unknown account performs the same bcrypt work as
+// a known account with a bad password.
+var dummyPasswordHash, _ = bcrypt.GenerateFromPassword([]byte("mealplanner-dummy-password"), bcrypt.DefaultCost)
+
+var (
+	// ErrInviteInvalid is returned when an invite code does not exist.
+	ErrInviteInvalid = errors.New("that invite code is invalid")
+	// ErrInviteExpired is returned when an invite is past its expiry time.
+	ErrInviteExpired = errors.New("that invite code has expired")
+	// ErrInviteRevoked is returned when an owner has revoked an invite.
+	ErrInviteRevoked = errors.New("that invite code has been revoked")
+	// ErrInviteExhausted is returned when an invite has reached its use limit.
+	ErrInviteExhausted = errors.New("that invite code has reached its use limit")
+)
 
 // Prototype avatar palette, assigned round-robin within a household.
 var memberColors = []string{"#22386A", "#1E8E5A", "#B57415", "#CE3B36", "#6B4EBF"}
@@ -47,12 +64,23 @@ type Account struct {
 // Household is a tenant. Role/Initials/Color are populated relative to a given
 // account when the household is listed for that account.
 type Household struct {
-	ID         uuid.UUID
-	Name       string
-	InviteCode string
-	Role       string
-	Initials   string
-	Color      string
+	ID       uuid.UUID
+	Name     string
+	Role     string
+	Initials string
+	Color    string
+}
+
+// Invite is a share code and its lifecycle state.
+type Invite struct {
+	ID        uuid.UUID
+	Code      string
+	ExpiresAt time.Time
+	RevokedAt *time.Time
+	MaxUses   *int32
+	UseCount  int32
+	CreatedBy *uuid.UUID
+	CreatedAt time.Time
 }
 
 // Member is a household membership joined with its account identity, for the
@@ -81,13 +109,14 @@ type SessionContext struct {
 
 // Service owns account, household and session use cases.
 type Service struct {
-	pool *pgxpool.Pool
-	q    *db.Queries
+	pool   *pgxpool.Pool
+	q      *db.Queries
+	random io.Reader
 }
 
 // NewService constructs the households service.
 func NewService(pool *pgxpool.Pool) *Service {
-	return &Service{pool: pool, q: db.New(pool)}
+	return &Service{pool: pool, q: db.New(pool), random: rand.Reader}
 }
 
 // Register creates a login account. It does not create or join a household —
@@ -180,15 +209,23 @@ func (s *Service) Authenticate(ctx context.Context, email, password string) (*Ac
 	email = strings.ToLower(strings.TrimSpace(email))
 	acc, err := s.q.GetAccountByEmail(ctx, email)
 	if errors.Is(err, pgx.ErrNoRows) {
+		_ = passwordMatches("", password)
 		return nil, ErrInvalidCredentials
 	}
 	if err != nil {
 		return nil, err
 	}
-	if bcrypt.CompareHashAndPassword([]byte(acc.PasswordHash), []byte(password)) != nil {
+	if !passwordMatches(acc.PasswordHash, password) {
 		return nil, ErrInvalidCredentials
 	}
 	return &Account{ID: acc.ID, Name: acc.Name, Email: acc.Email}, nil
+}
+
+func passwordMatches(passwordHash, password string) bool {
+	if passwordHash == "" {
+		passwordHash = string(dummyPasswordHash)
+	}
+	return bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)) == nil
 }
 
 // StartSession mints a session token for an account with an optional active
@@ -259,7 +296,7 @@ func (s *Service) ListForAccount(ctx context.Context, accountID uuid.UUID) ([]Ho
 	out := make([]Household, 0, len(rows))
 	for _, h := range rows {
 		out = append(out, Household{
-			ID: h.ID, Name: h.Name, InviteCode: h.InviteCode,
+			ID: h.ID, Name: h.Name,
 			Role: h.Role, Initials: h.Initials, Color: h.Color,
 		})
 	}
@@ -272,7 +309,20 @@ func (s *Service) GetHousehold(ctx context.Context, id uuid.UUID) (*Household, e
 	if err != nil {
 		return nil, err
 	}
-	return &Household{ID: h.ID, Name: h.Name, InviteCode: h.InviteCode}, nil
+	return &Household{ID: h.ID, Name: h.Name}, nil
+}
+
+// GetLatestInvite returns the household's most recently created invite. It may
+// be expired or revoked so the owner can see why no code is currently usable.
+func (s *Service) GetLatestInvite(ctx context.Context, householdID uuid.UUID) (*Invite, error) {
+	row, err := s.q.GetLatestInviteForHousehold(ctx, householdID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return inviteFromRow(row), nil
 }
 
 // GetMembership returns an account's membership in a household, or nil if none.
@@ -329,11 +379,7 @@ func (s *Service) CreateHousehold(ctx context.Context, accountID uuid.UUID, name
 	defer tx.Rollback(ctx)
 	qtx := db.New(tx)
 
-	code, err := s.uniqueInviteCode(ctx, qtx)
-	if err != nil {
-		return nil, err
-	}
-	hh, err := qtx.CreateHousehold(ctx, db.CreateHouseholdParams{Name: name, InviteCode: code})
+	hh, err := qtx.CreateHousehold(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -343,29 +389,59 @@ func (s *Service) CreateHousehold(ctx context.Context, accountID uuid.UUID, name
 	}); err != nil {
 		return nil, err
 	}
+	if _, err := s.createInvite(ctx, qtx, hh.ID, accountID); err != nil {
+		return nil, err
+	}
 	if err := cloneTemplateFoods(ctx, qtx, hh.ID); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	return &Household{ID: hh.ID, Name: hh.Name, InviteCode: hh.InviteCode, Role: "owner"}, nil
+	return &Household{ID: hh.ID, Name: hh.Name, Role: "owner"}, nil
 }
 
-// JoinByInvite adds the account to the household with the given invite code.
+// JoinByInvite validates and consumes an invite under a row lock, then adds the
+// membership and increments use_count in the same transaction.
 func (s *Service) JoinByInvite(ctx context.Context, accountID uuid.UUID, code string) (*Household, error) {
-	code = strings.TrimSpace(code)
-	hh, err := s.q.GetHouseholdByInvite(ctx, code)
+	code = normalizeInviteCode(code)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	qtx := db.New(tx)
+
+	row, err := qtx.GetInviteByCodeForUpdate(ctx, code)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrInviteNotFound
+		return nil, ErrInviteInvalid
 	}
 	if err != nil {
 		return nil, err
 	}
-	if err := s.addMembership(ctx, s.q, hh.ID, accountID); err != nil {
+	invite := inviteFromRow(row)
+	if err := invite.validationError(time.Now()); err != nil {
 		return nil, err
 	}
-	return &Household{ID: hh.ID, Name: hh.Name, InviteCode: hh.InviteCode}, nil
+	hh, err := qtx.GetHousehold(ctx, row.HouseholdID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := qtx.GetMembership(ctx, db.GetMembershipParams{HouseholdID: hh.ID, AccountID: accountID}); err == nil {
+		return nil, errors.New("you are already a member of that household")
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+	if err := s.addMembership(ctx, qtx, hh.ID, accountID); err != nil {
+		return nil, err
+	}
+	if err := qtx.IncrementInviteUse(ctx, row.ID); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return &Household{ID: hh.ID, Name: hh.Name}, nil
 }
 
 // AddMemberByEmail adds an existing account (looked up by email) to a household.
@@ -434,16 +510,46 @@ func (s *Service) TransferOwnership(ctx context.Context, householdID, fromAccoun
 	return tx.Commit(ctx)
 }
 
-// RegenerateInvite issues a fresh invite code for a household and returns it.
-func (s *Service) RegenerateInvite(ctx context.Context, householdID uuid.UUID) (string, error) {
-	code, err := s.uniqueInviteCode(ctx, s.q)
+// RevokeInvite revokes the household's current invite, if any.
+func (s *Service) RevokeInvite(ctx context.Context, householdID uuid.UUID) error {
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return "", err
+		return err
 	}
-	if err := s.q.RegenerateInviteCode(ctx, db.RegenerateInviteCodeParams{ID: householdID, InviteCode: code}); err != nil {
-		return "", err
+	defer tx.Rollback(ctx)
+	qtx := db.New(tx)
+	if _, err := qtx.LockHousehold(ctx, householdID); err != nil {
+		return err
 	}
-	return code, nil
+	if err := qtx.RevokeActiveInvites(ctx, householdID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// RegenerateInvite revokes the current invite and creates a fresh one in a
+// transaction so a household never has two active codes.
+func (s *Service) RegenerateInvite(ctx context.Context, householdID, createdBy uuid.UUID) (*Invite, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	qtx := db.New(tx)
+	if _, err := qtx.LockHousehold(ctx, householdID); err != nil {
+		return nil, err
+	}
+	if err := qtx.RevokeActiveInvites(ctx, householdID); err != nil {
+		return nil, err
+	}
+	invite, err := s.createInvite(ctx, qtx, householdID, createdBy)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return invite, nil
 }
 
 // addMembership inserts a member row with round-robin colour, idempotently.
@@ -463,21 +569,76 @@ func (s *Service) addMembership(ctx context.Context, q *db.Queries, householdID,
 	return err
 }
 
+// createInvite creates a short-lived, unlimited-use invite. max_uses remains
+// nullable in the schema so limited-use invites can be introduced without a
+// migration or changes to acceptance semantics.
+func (s *Service) createInvite(ctx context.Context, q *db.Queries, householdID, createdBy uuid.UUID) (*Invite, error) {
+	code, err := s.uniqueInviteCode(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	row, err := q.CreateInvite(ctx, db.CreateInviteParams{
+		HouseholdID: householdID,
+		Code:        code,
+		ExpiresAt:   time.Now().Add(inviteTTL),
+		CreatedBy:   &createdBy,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return inviteFromRow(row), nil
+}
+
 // uniqueInviteCode returns a short human-friendly code not already in use.
 func (s *Service) uniqueInviteCode(ctx context.Context, q *db.Queries) (string, error) {
 	for i := 0; i < 10; i++ {
-		code := randomInviteCode()
-		if _, err := q.GetHouseholdByInvite(ctx, code); errors.Is(err, pgx.ErrNoRows) {
-			return code, nil
-		} else if err != nil {
+		code, err := randomInviteCode(s.random)
+		if err != nil {
+			return "", fmt.Errorf("generate invite code: %w", err)
+		}
+		exists, err := q.InviteCodeExists(ctx, code)
+		if err != nil {
 			return "", err
+		}
+		if !exists {
+			return code, nil
 		}
 	}
 	return "", errors.New("could not generate a unique invite code")
 }
 
+func inviteFromRow(row db.Invite) *Invite {
+	invite := &Invite{
+		ID: row.ID, Code: row.Code, ExpiresAt: row.ExpiresAt,
+		MaxUses: row.MaxUses, UseCount: row.UseCount, CreatedBy: row.CreatedBy,
+		CreatedAt: row.CreatedAt,
+	}
+	if row.RevokedAt.Valid {
+		revokedAt := row.RevokedAt.Time
+		invite.RevokedAt = &revokedAt
+	}
+	return invite
+}
+
+func (i Invite) validationError(now time.Time) error {
+	switch {
+	case i.RevokedAt != nil:
+		return ErrInviteRevoked
+	case !now.Before(i.ExpiresAt):
+		return ErrInviteExpired
+	case i.MaxUses != nil && i.UseCount >= *i.MaxUses:
+		return ErrInviteExhausted
+	default:
+		return nil
+	}
+}
+
+// IsUsable reports whether the invite currently permits a join.
+func (i Invite) IsUsable() bool { return i.validationError(time.Now()) == nil }
+
 // cloneTemplateFoods copies the template household's food catalog (foods, tags,
-// components, steps, densities) into a new household, remapping food ids.
+// components, steps, aliases, densities, and source metadata) into a new
+// household, remapping food ids.
 func cloneTemplateFoods(ctx context.Context, q *db.Queries, householdID uuid.UUID) error {
 	tmplFoods, err := q.ListFoods(ctx, templateHouseholdID)
 	if err != nil {
@@ -490,6 +651,14 @@ func cloneTemplateFoods(ctx context.Context, q *db.Queries, householdID uuid.UUI
 	tagsByFood := map[uuid.UUID][]string{}
 	for _, t := range tagRows {
 		tagsByFood[t.FoodID] = append(tagsByFood[t.FoodID], t.Tag)
+	}
+	aliasRows, err := q.ListAliasesForFoods(ctx, templateHouseholdID)
+	if err != nil {
+		return err
+	}
+	aliasesByFood := map[uuid.UUID][]string{}
+	for _, alias := range aliasRows {
+		aliasesByFood[alias.FoodID] = append(aliasesByFood[alias.FoodID], alias.Alias)
 	}
 
 	idMap := make(map[uuid.UUID]uuid.UUID, len(tmplFoods))
@@ -508,12 +677,25 @@ func cloneTemplateFoods(ctx context.Context, q *db.Queries, householdID uuid.UUI
 		if err != nil {
 			return err
 		}
+		if f.SourceUrl != nil {
+			if err := q.SetFoodSourceMetadata(ctx, db.SetFoodSourceMetadataParams{
+				ID: nf.ID, SourceUrl: f.SourceUrl,
+				SourceLastImportedAt: f.SourceLastImportedAt,
+			}); err != nil {
+				return err
+			}
+		}
 		idMap[f.ID] = nf.ID
 	}
 
 	for oldID, newID := range idMap {
 		for _, tag := range tagsByFood[oldID] {
 			if err := q.AddFoodTag(ctx, db.AddFoodTagParams{FoodID: newID, Tag: tag}); err != nil {
+				return err
+			}
+		}
+		for _, alias := range aliasesByFood[oldID] {
+			if err := q.AddFoodAlias(ctx, db.AddFoodAliasParams{FoodID: newID, Alias: alias}); err != nil {
 				return err
 			}
 		}
@@ -537,7 +719,8 @@ func cloneTemplateFoods(ctx context.Context, q *db.Queries, householdID uuid.UUI
 			}
 			if err := q.AddFoodComponent(ctx, db.AddFoodComponentParams{
 				ParentFoodID: newID, ChildFoodID: child,
-				Amount: c.Amount, Unit: c.Unit, SortOrder: c.SortOrder,
+				Amount: c.Amount, Unit: c.Unit, VariantText: c.VariantText,
+				SortOrder: c.SortOrder,
 			}); err != nil {
 				return err
 			}
@@ -546,14 +729,31 @@ func cloneTemplateFoods(ctx context.Context, q *db.Queries, householdID uuid.UUI
 	return nil
 }
 
-func randomInviteCode() string {
-	const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789" // no I, L, O, 0, 1
-	buf := make([]byte, 8)
-	_, _ = rand.Read(buf)
-	for i := range buf {
-		buf[i] = alphabet[int(buf[i])%len(alphabet)]
+func randomInviteCode(random io.Reader) (string, error) {
+	// Exactly 32 symbols makes each random byte's low five bits unbiased. Twenty
+	// symbols provide 100 bits of entropy; separators keep the code readable.
+	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	raw := make([]byte, 20)
+	if _, err := io.ReadFull(random, raw); err != nil {
+		return "", err
 	}
-	return string(buf)
+	code := make([]byte, 0, 23)
+	for i, b := range raw {
+		if i > 0 && i%5 == 0 {
+			code = append(code, '-')
+		}
+		code = append(code, alphabet[int(b&31)])
+	}
+	return string(code), nil
+}
+
+func normalizeInviteCode(code string) string {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	compact := strings.NewReplacer("-", "", " ", "").Replace(code)
+	if len(compact) != 20 {
+		return code
+	}
+	return compact[:5] + "-" + compact[5:10] + "-" + compact[10:15] + "-" + compact[15:]
 }
 
 func initialsOf(name string) string {

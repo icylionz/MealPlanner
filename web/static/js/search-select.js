@@ -40,7 +40,8 @@
 		var options = Array.prototype.filter.call(select.options, function (opt) {
 			if (String(opt.value || "").trim() === "") return false;
 			if (!query) return true;
-			return (opt.textContent || "").toLowerCase().indexOf(query) !== -1;
+			var terms = (opt.textContent || "") + " " + (opt.getAttribute("data-search-terms") || "");
+			return terms.toLowerCase().indexOf(query) !== -1;
 		});
 
 		var frag = document.createDocumentFragment();

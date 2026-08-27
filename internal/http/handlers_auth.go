@@ -2,10 +2,14 @@ package httpserver
 
 import (
 	"errors"
+	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
+	"mealplanner/internal/auth"
 	"mealplanner/internal/households"
 	"mealplanner/internal/view/pages"
 )
@@ -26,10 +30,18 @@ func (s *Server) handleLogin(c echo.Context) error {
 	email := c.FormValue("email")
 	password := c.FormValue("password")
 
-	acc, err := s.households.Authenticate(ctx, email, password)
+	acc, err := s.login.Login(ctx, email, password, c.RealIP())
 	if err != nil {
+		var blocked *auth.BlockedError
+		if errors.As(err, &blocked) {
+			seconds := max(1, int((blocked.RetryAfter+time.Second-1)/time.Second))
+			c.Response().Header().Set("Retry-After", strconv.Itoa(seconds))
+			return s.renderStatus(c, http.StatusTooManyRequests, pages.Login(pages.AuthData{
+				Email: email, Error: "Too many login attempts. Try again later.",
+			}))
+		}
 		if errors.Is(err, households.ErrInvalidCredentials) {
-			return s.render(c, pages.Login(pages.AuthData{Email: email, Error: err.Error()}))
+			return s.render(c, pages.Login(pages.AuthData{Email: email, Error: households.ErrInvalidCredentials.Error()}))
 		}
 		return err
 	}

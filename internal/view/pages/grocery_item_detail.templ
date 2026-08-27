@@ -1,0 +1,72 @@
+package pages
+
+import (
+	"mealplanner/internal/grocery"
+	"mealplanner/internal/view"
+	"mealplanner/internal/view/icons"
+	"mealplanner/internal/view/layout"
+)
+
+func sourceHasNestedRecipe(source grocery.ItemSource) bool {
+	if source.RecipeID != nil && source.LineRecipeID != nil {
+		return *source.RecipeID != *source.LineRecipeID
+	}
+	return source.LineRecipeName != ""
+}
+
+// GroceryItemDetail explains the generation history behind one item.
+templ GroceryItemDetail(d GroceryItemDetailData) {
+	@layout.ModalPage("Why this is here", d.Detail.Item.Name+" — Backbone Plate", "grocery", d.Member, "/grocery?list="+d.Detail.ListID.String()) {
+		<div class="modal-body">
+			<div class="flex items-center" style="gap: 10px; margin-bottom: 18px;">
+				<div class="flex-1 min-w-0">
+					<div style="font-family: var(--font-display); font-weight: 700; font-size: 20px; color: var(--ink);">{ d.Detail.Item.Name }</div>
+					<div class="overline" style="margin-top: 2px;">Generated grocery item</div>
+				</div>
+				@UnitTagStatic(d.Detail.Item.Amount, d.Detail.Item.Unit, true)
+			</div>
+			<div class="overline" style="margin-bottom: 8px;">Contributing meals and recipes</div>
+			if len(d.Detail.Sources) == 0 {
+				<div class="card" style="padding: 16px; font-size: 13px; color: var(--fg-3); text-align: center;">
+					No source details are available for this item.
+				</div>
+			} else {
+				<div class="flex flex-col" style="gap: 8px;">
+					for _, source := range d.Detail.Sources {
+						<div class="card" style="padding: 12px 14px;">
+							if source.MealID != nil {
+								<div class="flex items-center" style="gap: 7px; margin-bottom: 7px;">
+									<span style="display: flex; color: var(--accent);">@icons.Icon("calendar", 14)</span>
+									<span class="flex-1" style="font-size: 14px; font-weight: 700; color: var(--ink);">{ source.MealName }</span>
+									<span class="overline" style="font-size: 10px; white-space: nowrap;">{ view.DayLabelShort(source.MealDate) } · { source.MealTime }</span>
+								</div>
+							}
+							<div class="flex items-start" style="gap: 7px;">
+								<span style="display: flex; color: var(--fg-3); padding-top: 1px;">@icons.Icon("utensils", 13)</span>
+								<div class="flex-1 min-w-0">
+									<div style="font-size: 13px; font-weight: 600; color: var(--fg-2);">
+										if source.RecipeName != "" {
+											{ source.RecipeName }
+										} else {
+											Historical recipe
+										}
+									</div>
+									if sourceHasNestedRecipe(source) {
+										<div class="overline" style="font-size: 10px; margin-top: 2px;">via nested recipe { source.LineRecipeName }</div>
+									}
+									if source.Variant != "" {
+										<div class="overline" style="font-size: 10px; margin-top: 2px;">Form: { source.Variant }</div>
+									}
+								</div>
+								<span class="tnum" style="font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); white-space: nowrap;">{ FormatAmount(source.Amount) } { source.Unit }</span>
+							</div>
+						</div>
+					}
+				</div>
+			}
+		</div>
+		<div class="modal-foot">
+			<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/grocery?list="+d.Detail.ListID.String())) }>Back to list</a>
+		</div>
+	}
+}

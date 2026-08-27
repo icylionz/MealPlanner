@@ -1,6 +1,217 @@
 package foods
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"strings"
+	"testing"
+)
+
+type stubImportResolver map[string][]net.IPAddr
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func (r stubImportResolver) LookupIPAddr(_ context.Context, host string) ([]net.IPAddr, error) {
+	if ips, ok := r[host]; ok {
+		return ips, nil
+	}
+	return nil, errors.New("unexpected host: " + host)
+}
+
+func TestMatchLineUsesAliasAndExtractsVariant(t *testing.T) {
+	all := []Food{
+		{Name: "Garbanzo beans", Aliases: []string{"chickpeas"}},
+		{Name: "Butter"},
+		{Name: "Eggs"},
+	}
+	if got := MatchLine("chickpeas", all); got == nil || got.Name != "Garbanzo beans" {
+		t.Fatalf("alias match = %+v", got)
+	}
+	if got := UsageVariant("chickpeas", all[0]); got != "" {
+		t.Errorf("exact alias variant = %q, want empty", got)
+	}
+	if got := UsageVariant("butter, softened", all[1]); got != "softened" {
+		t.Errorf("butter variant = %q, want softened", got)
+	}
+	if got := UsageVariant("bananas, sliced", Food{Name: "Banana"}); got != "sliced" {
+		t.Errorf("banana variant = %q, want sliced", got)
+	}
+	if got := UsageVariant("3 large eggs", all[2]); got != "3 large" {
+		t.Errorf("egg variant = %q, want 3 large", got)
+	}
+}
+
+func TestMatchLinePrefersExactCanonicalRegardlessOfOrder(t *testing.T) {
+	canonical := Food{Name: "Chickpeas"}
+	alias := Food{Name: "Garbanzo beans", Aliases: []string{"Chickpeas"}}
+	for _, all := range [][]Food{{alias, canonical}, {canonical, alias}} {
+		got := MatchLine("chickpeas", all)
+		if got == nil || got.Name != "Chickpeas" {
+			t.Fatalf("exact canonical match = %+v", got)
+		}
+	}
+}
+
+func TestMatchLineLeavesAmbiguousAliasAndSubstringUnmatched(t *testing.T) {
+	if got := MatchLine("rocket", []Food{
+		{Name: "Arugula", Aliases: []string{"rocket"}},
+		{Name: "Wild arugula", Aliases: []string{"rocket"}},
+	}); got != nil {
+		t.Fatalf("ambiguous alias matched %+v", got)
+	}
+	if got := MatchLine("pepper", []Food{
+		{Name: "Black pepper"},
+		{Name: "Red pepper flakes"},
+	}); got != nil {
+		t.Fatalf("ambiguous substring matched %+v", got)
+	}
+	if got := MatchLine("rocket", []Food{
+		{Name: "Arugula", Aliases: []string{"rocket"}},
+		{Name: "Rocket salad"},
+	}); got != nil {
+		t.Fatalf("alias plus substring ambiguity matched %+v", got)
+	}
+	if got := MatchLine("black pep", []Food{{Name: "Black pepper"}, {Name: "Salt"}}); got == nil || got.Name != "Black pepper" {
+		t.Fatalf("unique substring match = %+v", got)
+	}
+}
+
+func TestImportDestinationRequiresPublicAddresses(t *testing.T) {
+	cases := []struct {
+		ip   string
+		want bool
+	}{
+		{"93.184.216.34", true},
+		{"2606:4700:4700::1111", true},
+		{"127.0.0.1", false},
+		{"10.0.0.1", false},
+		{"100.64.0.1", false},
+		{"169.254.169.254", false},
+		{"192.168.1.1", false},
+		{"::1", false},
+		{"fe80::1", false},
+		{"fc00::1", false},
+		{"::ffff:127.0.0.1", false},
+	}
+	for _, tc := range cases {
+		if got := isPublicImportIP(net.ParseIP(tc.ip)); got != tc.want {
+			t.Errorf("isPublicImportIP(%s) = %v, want %v", tc.ip, got, tc.want)
+		}
+	}
+}
+
+func TestImportClientRejectsPrivateResolutionBeforeDial(t *testing.T) {
+	resolver := stubImportResolver{"recipe.test": {{IP: net.ParseIP("10.0.0.8")}}}
+	dialed := false
+	client := newImportClient(resolver, func(context.Context, string, string) (net.Conn, error) {
+		dialed = true
+		return nil, errors.New("should not dial")
+	})
+	transport := client.Transport.(*http.Transport)
+	if _, err := transport.DialContext(context.Background(), "tcp", "recipe.test:80"); err == nil {
+		t.Fatal("private destination was accepted")
+	}
+	if dialed {
+		t.Fatal("dialer was called for a private destination")
+	}
+}
+
+func TestImportClientDialsValidatedAddressAndRevalidatesRedirect(t *testing.T) {
+	resolver := stubImportResolver{
+		"recipe.test":   {{IP: net.ParseIP("93.184.216.34")}},
+		"redirect.test": {{IP: net.ParseIP("169.254.169.254")}},
+	}
+	var dialAddress string
+	wantDialErr := errors.New("dial stopped")
+	client := newImportClient(resolver, func(_ context.Context, _, address string) (net.Conn, error) {
+		dialAddress = address
+		return nil, wantDialErr
+	})
+	transport := client.Transport.(*http.Transport)
+	if _, err := transport.DialContext(context.Background(), "tcp", "recipe.test:443"); !errors.Is(err, wantDialErr) {
+		t.Fatalf("public dial error = %v, want sentinel", err)
+	}
+	if dialAddress != "93.184.216.34:443" {
+		t.Fatalf("dial address = %q, want validated IP", dialAddress)
+	}
+	redirectURL, _ := url.Parse("http://redirect.test/recipe")
+	if err := client.CheckRedirect(&http.Request{URL: redirectURL}, nil); err == nil {
+		t.Fatal("redirect to private destination was accepted")
+	}
+	badPortURL, _ := url.Parse("https://recipe.test:8443/recipe")
+	if err := client.CheckRedirect(&http.Request{URL: badPortURL}, nil); err == nil {
+		t.Fatal("redirect to a non-web port was accepted")
+	}
+}
+
+func TestImportURLRestrictsDestinationPorts(t *testing.T) {
+	for _, raw := range []string{
+		"https://recipe.test:8080/soup",
+		"http://recipe.test:22/soup",
+		"https://user:pass@recipe.test/soup",
+	} {
+		if err := ValidateImportURL(raw); err == nil {
+			t.Errorf("ValidateImportURL(%q) accepted unsafe destination", raw)
+		}
+	}
+	for _, raw := range []string{
+		"http://recipe.test/soup",
+		"https://recipe.test/soup",
+		"http://recipe.test:80/soup",
+		"https://recipe.test:443/soup",
+	} {
+		if err := ValidateImportURL(raw); err != nil {
+			t.Errorf("ValidateImportURL(%q) = %v", raw, err)
+		}
+	}
+}
+
+func TestImportClientRejectsNonWebPortBeforeResolution(t *testing.T) {
+	client := newImportClient(stubImportResolver{}, func(context.Context, string, string) (net.Conn, error) {
+		t.Fatal("dialer called for blocked port")
+		return nil, nil
+	})
+	transport := client.Transport.(*http.Transport)
+	if _, err := transport.DialContext(context.Background(), "tcp", "recipe.test:8080"); err == nil {
+		t.Fatal("non-web destination port was accepted")
+	}
+}
+
+func TestImportFromURLRemainsTestableWithInjectedClient(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.String() != "https://recipe.test/soup" {
+			t.Fatalf("request URL = %q", req.URL)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`<script type="application/ld+json">{"@type":"Recipe","name":"Test Soup","recipeIngredient":["1 cup stock"]}</script>`)),
+		}, nil
+	})}
+	parsed, err := importFromURL(context.Background(), "https://recipe.test/soup", client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Name != "Test Soup" || len(parsed.Lines) != 1 {
+		t.Fatalf("parsed recipe = %+v", parsed)
+	}
+}
+
+func TestSplitUsage(t *testing.T) {
+	canonical, variant := SplitUsage("butter, softened and cubed")
+	if canonical != "butter" || variant != "softened and cubed" {
+		t.Fatalf("SplitUsage = %q, %q", canonical, variant)
+	}
+	canonical, variant = SplitUsage("all-purpose flour")
+	if canonical != "all-purpose flour" || variant != "" {
+		t.Fatalf("SplitUsage without form = %q, %q", canonical, variant)
+	}
+}
 
 func TestParseIngredient(t *testing.T) {
 	cases := []struct {

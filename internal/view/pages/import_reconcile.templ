@@ -1,30 +1,46 @@
 package pages
 
 import (
+	"strings"
+
 	"mealplanner/internal/view"
 	"mealplanner/internal/view/icons"
 	"mealplanner/internal/view/layout"
 )
+
+func reconcileTitle(d ImportReconcileData) string {
+	if d.TargetFoodID != "" {
+		return "Review re-import"
+	}
+	return "Reconcile import"
+}
+
+func reconcileBack(d ImportReconcileData) string {
+	if d.TargetFoodID != "" {
+		return "/foods/" + d.TargetFoodID
+	}
+	return "/import"
+}
+
+func reconcileAction(d ImportReconcileData) string {
+	if d.Conflict != nil {
+		return "reapply"
+	}
+	return "commit"
+}
 
 // ImportReconcile renders the import reconcile screen: the parsed recipe with a
 // food dropdown per ingredient line. Each line must map to an existing food (or
 // be created as a new one) before the recipe can be saved. The whole form posts
 // back with an `action`, so it works without JavaScript.
 templ ImportReconcile(d ImportReconcileData) {
-	@layout.ModalPageWide("Reconcile import", "Reconcile import — Backbone Plate", "foods", d.Member, "/import") {
+	@layout.ModalPageWide(reconcileTitle(d), reconcileTitle(d)+" — Backbone Plate", "foods", d.Member, reconcileBack(d)) {
 		<form method="post" action={ templ.URL(view.Href(ctx, "/import/reconcile")) }>
-			<input type="hidden" name="imp_name" value={ d.Name }/>
-			<input type="hidden" name="imp_desc" value={ d.Description }/>
-			<input type="hidden" name="imp_prep" value={ d.Prep }/>
-			<input type="hidden" name="imp_cook" value={ d.Cook }/>
-			<input type="hidden" name="imp_servings" value={ d.Servings }/>
+			<input type="hidden" name="target_food_id" value={ d.TargetFoodID }/>
+			<input type="hidden" name="version" value={ d.Version }/>
+			<input type="hidden" name="reapply_version" value={ d.ReapplyVersion }/>
+			<input type="hidden" name="source_state" value={ d.SourceState }/>
 			<input type="hidden" name="imp_default_unit" value={ d.DefaultUnit }/>
-			for _, t := range d.Tags {
-				<input type="hidden" name="imp_tags" value={ t }/>
-			}
-			for _, st := range d.Steps {
-				<input type="hidden" name="imp_steps" value={ st }/>
-			}
 			<div class="modal-body">
 				<div class="flex flex-col" style="gap: 14px;">
 					if d.Error != "" {
@@ -33,11 +49,88 @@ templ ImportReconcile(d ImportReconcileData) {
 							{ d.Error }
 						</div>
 					}
+					if d.Conflict != nil {
+						<div class="card" style="padding: 12px; border-color: var(--danger);">
+							<div class="overline" style="color: var(--danger); margin-bottom: 8px;">Current saved version</div>
+							<div style="font-size: 13px; color: var(--fg-2);"><strong>{ d.Conflict.Name }</strong> (version { view.Itoa(d.Conflict.Version) })</div>
+							if d.Conflict.Description != "" {
+								<div style="font-size: 12px; color: var(--fg-3); margin-top: 4px;">{ d.Conflict.Description }</div>
+							}
+							if d.Conflict.SourceURL != "" {
+								<div style="font-size: 11px; color: var(--fg-4); margin-top: 4px; overflow-wrap: anywhere;">Current source: { d.Conflict.SourceURL }</div>
+							}
+							<div class="overline" style="margin: 12px 0 6px;">Fetched attempt</div>
+							<div style="font-size: 13px; color: var(--fg-2);"><strong>{ d.Name }</strong> (started from version { d.Version })</div>
+							if d.Description != "" {
+								<div style="font-size: 12px; color: var(--fg-3); margin-top: 4px;">{ d.Description }</div>
+							}
+							if d.SourceURL != "" {
+								<div style="font-size: 11px; color: var(--fg-4); margin-top: 4px; overflow-wrap: anywhere;">Fetched source: { d.SourceURL }</div>
+							}
+							<div style="font-size: 12px; color: var(--fg-3); margin-top: 8px;">Reapply these fetched values explicitly to replace the current version.</div>
+						</div>
+					}
 					<div>
-						<div class="overline" style="margin-bottom: 4px;">Importing</div>
-						<div style="font-family: var(--font-display); font-weight: 700; font-size: 18px; color: var(--ink);">{ d.Name }</div>
-						<div class="overline" style="font-size: 10px; letter-spacing: .05em; margin-top: 2px;">
-							{ d.Prep } min prep · { d.Cook } min cook · serves { d.Servings } · { view.Itoa(len(d.Steps)) } steps
+						<div class="overline" style="margin-bottom: 4px;">
+							if d.TargetFoodID != "" {
+								Re-importing
+							} else {
+								Importing
+							}
+						</div>
+						if d.SourceURL != "" {
+							<div style="font-size: 11px; color: var(--fg-4); margin-top: 4px; overflow-wrap: anywhere;">Source: { d.SourceURL }</div>
+						}
+					</div>
+					<div>
+						@FieldLabel("Name")
+						<input class="input" name="imp_name" value={ d.Name } required/>
+					</div>
+					<div>
+						@FieldLabel("Description")
+						<textarea class="textarea" name="imp_desc" placeholder="Optional short description">{ d.Description }</textarea>
+					</div>
+					<div class="flex" style="gap: 10px;">
+						<div class="flex-1">
+							@FieldLabel("Prep time (min)")
+							<input class="input input-sm" type="number" min="0" name="imp_prep" value={ d.Prep } required/>
+						</div>
+						<div class="flex-1">
+							@FieldLabel("Cook time (min)")
+							<input class="input input-sm" type="number" min="0" name="imp_cook" value={ d.Cook } required/>
+						</div>
+						<div class="flex-1">
+							@FieldLabel("Servings / yield")
+							<input class="input input-sm" type="number" min="1" name="imp_servings" value={ d.Servings } required/>
+						</div>
+					</div>
+					<div class="flex" style="gap: 10px;">
+						<div class="flex-1">
+							@FieldLabel("Tags")
+							<div class="flex flex-col" style="gap: 6px;">
+								for _, tag := range d.Tags {
+									<input class="input input-sm" name="imp_tags" value={ tag } placeholder="Tag"/>
+								}
+								<input class="input input-sm" name="imp_tags" placeholder="Add tag"/>
+							</div>
+						</div>
+						<div class="flex-1">
+							@FieldLabel("Aliases")
+							<div class="flex flex-col" style="gap: 6px;">
+								for _, alias := range d.Aliases {
+									<input class="input input-sm" name="imp_aliases" value={ alias } placeholder="Alias"/>
+								}
+								<input class="input input-sm" name="imp_aliases" placeholder="Add alias"/>
+							</div>
+						</div>
+					</div>
+					<div>
+						@FieldLabel("Steps")
+						<div class="flex flex-col" style="gap: 6px;">
+							for i, step := range d.Steps {
+								<textarea class="textarea" name="imp_steps" placeholder={ "Step " + view.Itoa(i+1) } style="min-height: 56px; font-size: 13px;">{ step }</textarea>
+							}
+							<textarea class="textarea" name="imp_steps" placeholder="Add step" style="min-height: 56px; font-size: 13px;"></textarea>
 						</div>
 					</div>
 					<div>
@@ -51,10 +144,16 @@ templ ImportReconcile(d ImportReconcileData) {
 				</div>
 			</div>
 			<div class="modal-foot">
-				<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/import")) }>Back</a>
-				<button type="submit" name="action" value="commit" class="btn btn-sm">
+				<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, reconcileBack(d))) }>Back</a>
+				<button type="submit" name="action" value={ reconcileAction(d) } class="btn btn-sm">
 					@icons.Icon("check", 14)
-					Save recipe
+					if d.Conflict != nil {
+						Reapply fetched changes
+					} else if d.TargetFoodID != "" {
+						Apply changes
+					} else {
+						Save recipe
+					}
 				</button>
 			</div>
 		</form>
@@ -69,6 +168,7 @@ templ importLineRow(d ImportReconcileData, i int, line ImportLine) {
 			if !line.Matched() {
 				<div class="overline" style="font-size: 9px; color: var(--danger); letter-spacing: .05em;">unmatched</div>
 			}
+			<input class="input input-sm" name="line_variant" value={ line.Variant } placeholder="Variant / form" style="margin-top: 4px;"/>
 		</div>
 		<input class="input input-sm recon-amount" type="number" step="any" min="0" name="line_amount" value={ line.Amount }/>
 		<input class="input input-sm recon-unit" name="line_unit" value={ line.Unit }/>
@@ -80,7 +180,7 @@ templ importLineRow(d ImportReconcileData, i int, line ImportLine) {
 		>
 			<option value="" selected?={ line.FoodID == "" }>— unmatched —</option>
 			for _, f := range d.AllFoods {
-				<option value={ f.ID.String() } selected?={ line.FoodID == f.ID.String() }>{ f.Name }</option>
+				<option value={ f.ID.String() } data-search-terms={ strings.Join(f.Aliases, " ") } selected?={ line.FoodID == f.ID.String() }>{ f.Name }</option>
 			}
 		</select>
 		<button type="submit" name="action" value={ "create-line:" + view.Itoa(i) } class="btn btn-secondary btn-xs" title="Create this as a new food">

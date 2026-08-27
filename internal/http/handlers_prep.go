@@ -2,12 +2,12 @@ package httpserver
 
 import (
 	"strconv"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"mealplanner/internal/foods"
+	"mealplanner/internal/households"
 	"mealplanner/internal/prep"
 	"mealplanner/internal/view/pages"
 )
@@ -39,7 +39,7 @@ func (s *Server) prepData(c echo.Context) (pages.PrepData, error) {
 		FoodSearch: c.QueryParam("q"),
 	}
 	for _, r := range all {
-		if d.FoodSearch == "" || strings.Contains(strings.ToLower(r.Name), strings.ToLower(d.FoodSearch)) {
+		if r.Matches(d.FoodSearch) {
 			d.Foods = append(d.Foods, r)
 		}
 	}
@@ -67,7 +67,7 @@ func (s *Server) prepData(c echo.Context) (pages.PrepData, error) {
 			leaves = append(leaves, foods.LeafIngredients(idx, m.Food.ID, float64(m.Servings))...)
 		}
 		for _, ing := range foods.Aggregate(leaves, foods.DensityMap(idx)) {
-			d.Aggregate = append(d.Aggregate, pages.GenPreviewItem{Name: ing.Name, Amount: ing.Amount, Unit: ing.Unit})
+			d.Aggregate = append(d.Aggregate, pages.GenPreviewItem{Name: foods.IngredientDisplayName(ing.Name, ing.Variant), Amount: ing.Amount, Unit: ing.Unit})
 		}
 	}
 	return d, nil
@@ -82,7 +82,7 @@ func (s *Server) prepSessionVM(sess prep.Session, idx map[uuid.UUID]foods.Food) 
 		}
 		var breakdown []pages.GenPreviewItem
 		for _, ing := range foods.Aggregate(foods.LeafIngredients(idx, r.ID, float64(m.Servings)), foods.DensityMap(idx)) {
-			breakdown = append(breakdown, pages.GenPreviewItem{Name: ing.Name, Amount: ing.Amount, Unit: ing.Unit})
+			breakdown = append(breakdown, pages.GenPreviewItem{Name: foods.IngredientDisplayName(ing.Name, ing.Variant), Amount: ing.Amount, Unit: ing.Unit})
 		}
 		meals = append(meals, pages.PrepMealVM{Food: r, Servings: m.Servings, Breakdown: breakdown})
 	}
@@ -209,6 +209,13 @@ func (s *Server) renderHousehold(c echo.Context, errMsg string) error {
 	if err != nil {
 		return err
 	}
+	var invite *households.Invite
+	if s.member(c).IsOwner() {
+		invite, err = s.households.GetLatestInvite(ctx, hh)
+		if err != nil {
+			return err
+		}
+	}
 	all, err := s.households.ListForAccount(ctx, s.account(c).ID)
 	if err != nil {
 		return err
@@ -216,6 +223,7 @@ func (s *Server) renderHousehold(c echo.Context, errMsg string) error {
 	return s.render(c, pages.Household(pages.HouseholdData{
 		Member:     s.member(c),
 		Household:  household,
+		Invite:     invite,
 		Members:    members,
 		Households: all,
 		ShowInvite: c.QueryParam("invite") == "1",
@@ -265,7 +273,17 @@ func (s *Server) handleHouseholdRegenerateInvite(c echo.Context) error {
 	if !s.member(c).IsOwner() {
 		return echo.ErrForbidden
 	}
-	if _, err := s.households.RegenerateInvite(c.Request().Context(), s.household(c)); err != nil {
+	if _, err := s.households.RegenerateInvite(c.Request().Context(), s.household(c), s.actorID(c)); err != nil {
+		return err
+	}
+	return s.redirect(c, "/household")
+}
+
+func (s *Server) handleHouseholdRevokeInvite(c echo.Context) error {
+	if !s.member(c).IsOwner() {
+		return echo.ErrForbidden
+	}
+	if err := s.households.RevokeInvite(c.Request().Context(), s.household(c)); err != nil {
 		return err
 	}
 	return s.redirect(c, "/household")

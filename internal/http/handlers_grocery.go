@@ -1,11 +1,13 @@
 package httpserver
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 
 	"mealplanner/internal/foods"
@@ -29,10 +31,20 @@ func (s *Server) handleGrocery(c echo.Context) error {
 		return err
 	}
 	densities := foods.DensityByName(all)
+	foodsByID := foods.Index(all)
+	for id, food := range foodsByID {
+		if food.HasDensity() {
+			densities[id.String()] = food.Density
+		}
+	}
 	for i := range lists {
 		for j := range lists[i].Items {
 			it := &lists[i].Items[j]
-			it.Density = densities[strings.ToLower(strings.TrimSpace(it.Name))]
+			if it.IngredientID != nil {
+				it.Density = densities[it.IngredientID.String()]
+			} else {
+				it.Density = densities[strings.ToLower(strings.TrimSpace(it.Name))]
+			}
 		}
 	}
 
@@ -53,6 +65,23 @@ func (s *Server) handleGrocery(c echo.Context) error {
 		Lists:    lists,
 		Active:   active,
 		Renaming: c.QueryParam("rename") == "1",
+	}))
+}
+
+func (s *Server) handleGroceryItemDetail(c echo.Context) error {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return echo.ErrNotFound
+	}
+	detail, err := s.grocery.GetItemDetail(c.Request().Context(), s.household(c), id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return echo.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	return s.render(c, pages.GroceryItemDetail(pages.GroceryItemDetailData{
+		Member: s.member(c), Detail: *detail,
 	}))
 }
 
@@ -125,6 +154,11 @@ func (s *Server) handleGroceryConvert(c echo.Context) error {
 		return err
 	}
 	densities := foods.DensityByName(all)
+	for _, food := range all {
+		if food.HasDensity() {
+			densities[food.ID.String()] = food.Density
+		}
+	}
 	return s.groceryItemAction(c, func(id uuid.UUID) error {
 		return s.grocery.ConvertItem(ctx, s.household(c), s.actorID(c), id, c.FormValue("unit"), densities)
 	})
@@ -193,9 +227,7 @@ func (s *Server) genState(c echo.Context) (pages.GroceryGenData, map[uuid.UUID]f
 		if !ok {
 			continue
 		}
-		if d.MealSearch != "" &&
-			!strings.Contains(strings.ToLower(r.Name), strings.ToLower(d.MealSearch)) &&
-			!strings.Contains(m.Date, d.MealSearch) {
+		if !plannedMealMatches(m, idx, d.MealSearch) {
 			continue
 		}
 		d.Meals = append(d.Meals, pages.GenMealOption{
@@ -205,11 +237,29 @@ func (s *Server) genState(c echo.Context) (pages.GroceryGenData, map[uuid.UUID]f
 	}
 
 	for _, r := range all {
-		if d.FoodSearch == "" || strings.Contains(strings.ToLower(r.Name), strings.ToLower(d.FoodSearch)) {
+		if r.Matches(d.FoodSearch) {
 			d.Foods = append(d.Foods, r)
 		}
 	}
 	return d, idx, nil
+}
+
+// plannedMealMatches searches the date plus canonical names and aliases for
+// every recipe attached to the meal, including the primary recipe.
+func plannedMealMatches(meal planner.Meal, idx map[uuid.UUID]foods.Food, query string) bool {
+	query = strings.TrimSpace(query)
+	if query == "" || strings.Contains(meal.Date, query) {
+		return true
+	}
+	if primary, ok := idx[meal.FoodID]; ok && primary.Matches(query) {
+		return true
+	}
+	for _, recipe := range meal.Recipes {
+		if food, ok := idx[recipe.FoodID]; ok && food.Matches(query) {
+			return true
+		}
+	}
+	return false
 }
 
 // genLeaves computes the leaf ingredients for the selected generation source.
@@ -257,6 +307,12 @@ func mealLeaves(idx map[uuid.UUID]foods.Food, m planner.Meal) []foods.LeafIngred
 	for _, r := range m.Recipes {
 		leaves = append(leaves, foods.LeafIngredients(idx, r.FoodID, float64(r.ScaledServings(m.Servings)))...)
 	}
+	mealID := m.ID
+	for i := range leaves {
+		for j := range leaves[i].Sources {
+			leaves[i].Sources[j].MealID = &mealID
+		}
+	}
 	return leaves
 }
 
@@ -272,7 +328,7 @@ func (s *Server) handleGroceryGenerate(c echo.Context) error {
 		}
 		if ok {
 			for _, ing := range foods.Aggregate(leaves, foods.DensityMap(idx)) {
-				d.Preview = append(d.Preview, pages.GenPreviewItem{Name: ing.Name, Amount: ing.Amount, Unit: ing.Unit})
+				d.Preview = append(d.Preview, pages.GenPreviewItem{Name: foods.IngredientDisplayName(ing.Name, ing.Variant), Amount: ing.Amount, Unit: ing.Unit})
 			}
 			d.HasPreview = true
 		}

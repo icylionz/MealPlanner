@@ -21,17 +21,40 @@ UPDATE accounts SET password_hash = $2 WHERE id = $1;
 -- Households.
 
 -- name: CreateHousehold :one
-INSERT INTO households (name, invite_code) VALUES ($1, $2)
+INSERT INTO households (name) VALUES ($1)
 RETURNING *;
 
 -- name: GetHousehold :one
 SELECT * FROM households WHERE id = $1 AND is_template = false;
 
--- name: GetHouseholdByInvite :one
-SELECT * FROM households WHERE invite_code = $1 AND is_template = false;
+-- name: LockHousehold :one
+SELECT id FROM households WHERE id = $1 AND is_template = false FOR UPDATE;
 
--- name: RegenerateInviteCode :exec
-UPDATE households SET invite_code = $2 WHERE id = $1 AND is_template = false;
+-- Invite lifecycle.
+
+-- name: CreateInvite :one
+INSERT INTO invites (household_id, code, expires_at, max_uses, created_by)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING *;
+
+-- name: InviteCodeExists :one
+SELECT EXISTS (SELECT 1 FROM invites WHERE upper(code) = upper($1::text));
+
+-- name: GetInviteByCodeForUpdate :one
+SELECT * FROM invites WHERE upper(code) = upper($1::text) FOR UPDATE;
+
+-- name: GetLatestInviteForHousehold :one
+SELECT * FROM invites
+WHERE household_id = $1
+ORDER BY created_at DESC
+LIMIT 1;
+
+-- name: RevokeActiveInvites :exec
+UPDATE invites SET revoked_at = now()
+WHERE household_id = $1 AND revoked_at IS NULL;
+
+-- name: IncrementInviteUse :exec
+UPDATE invites SET use_count = use_count + 1 WHERE id = $1;
 
 -- Household membership (account <-> household join).
 
@@ -56,7 +79,7 @@ WHERE m.household_id = $1
 ORDER BY m.created_at;
 
 -- name: ListHouseholdsForAccount :many
-SELECT h.id, h.name, h.invite_code, h.created_at, m.role, m.initials, m.color
+SELECT h.id, h.name, h.created_at, m.role, m.initials, m.color
 FROM household_members m
 JOIN households h ON h.id = m.household_id
 WHERE m.account_id = $1 AND h.is_template = false

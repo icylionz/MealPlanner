@@ -39,7 +39,7 @@ templ Onboarding(d OnboardingData) {
 		<form method="post" action={ templ.URL(view.Href(ctx, "/households/join")) } class="auth-form">
 			<label class="auth-label">
 				Join with an invite code
-				<input class="input" type="text" name="invite_code" placeholder="e.g. K7QP2MZR" autocapitalize="characters" required/>
+				<input class="input" type="text" name="invite_code" value={ d.InviteCode } placeholder="e.g. K7QP2MZR" autocapitalize="characters" required/>
 			</label>
 			<button type="submit" class="btn btn-secondary" style="width: 100%; justify-content: center;">Join household</button>
 		</form>

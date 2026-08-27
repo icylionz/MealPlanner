@@ -2,7 +2,10 @@
 package httpserver
 
 import (
+	"context"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -13,6 +16,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
+	"mealplanner/internal/auth"
 	"mealplanner/internal/config"
 	"mealplanner/internal/foods"
 	"mealplanner/internal/grocery"
@@ -27,6 +31,7 @@ import (
 type Server struct {
 	cfg        *config.Config
 	households *households.Service
+	login      loginService
 	foods      *foods.Service
 	planner    *planner.Service
 	grocery    *grocery.Service
@@ -34,15 +39,20 @@ type Server struct {
 	transfer   *transfer.Service
 }
 
+type loginService interface {
+	Login(context.Context, string, string, string) (*households.Account, error)
+}
+
 // New constructs the HTTP server wrapper.
-func New(cfg *config.Config, hh *households.Service, fs *foods.Service, ps *planner.Service, gs *grocery.Service, pr *prep.Service, ts *transfer.Service) *Server {
-	return &Server{cfg: cfg, households: hh, foods: fs, planner: ps, grocery: gs, prep: pr, transfer: ts}
+func New(cfg *config.Config, hh *households.Service, login *auth.Service, fs *foods.Service, ps *planner.Service, gs *grocery.Service, pr *prep.Service, ts *transfer.Service) *Server {
+	return &Server{cfg: cfg, households: hh, login: login, foods: fs, planner: ps, grocery: gs, prep: pr, transfer: ts}
 }
 
 // Router builds the Echo instance with all routes mounted under BASE_PATH.
 func (s *Server) Router() *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
+	e.IPExtractor = clientIPExtractor(s.cfg.TrustedProxyCIDRs)
 	e.Use(middleware.Recover())
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
 		LogStatus: true, LogURI: true, LogMethod: true, LogLatency: true,
@@ -93,11 +103,13 @@ func (s *Server) Router() *echo.Echo {
 	g.GET("/foods/:id/edit", s.handleFoodEdit, s.requireOwner)
 	g.POST("/foods/:id/edit", s.handleFoodEditPost, s.requireOwner)
 	g.POST("/foods/:id/delete", s.handleFoodDelete, s.requireOwner)
+	g.POST("/foods/:id/reimport", s.handleFoodReimport, s.requireOwner)
 	g.GET("/import", s.handleImportForm, s.requireOwner)
 	g.POST("/import", s.handleImportPost, s.requireOwner)
 	g.POST("/import/reconcile", s.handleImportReconcile, s.requireOwner)
 
 	g.GET("/grocery", s.handleGrocery)
+	g.GET("/grocery/items/:id", s.handleGroceryItemDetail)
 	g.POST("/grocery/lists", s.handleGroceryNewList, s.requireOwner)
 	g.POST("/grocery/lists/:id/rename", s.handleGroceryRename, s.requireOwner)
 	g.POST("/grocery/lists/:id/delete", s.handleGroceryDeleteList, s.requireOwner)
@@ -131,8 +143,61 @@ func (s *Server) Router() *echo.Echo {
 	g.POST("/household/remove", s.handleHouseholdRemove)
 	g.POST("/household/transfer", s.handleHouseholdTransfer)
 	g.POST("/household/invite/regenerate", s.handleHouseholdRegenerateInvite)
+	g.POST("/household/invite/revoke", s.handleHouseholdRevokeInvite)
 
 	return e
+}
+
+// clientIPExtractor accepts X-Forwarded-For only when every hop between the
+// application and the selected client is in an explicitly trusted CIDR.
+func clientIPExtractor(trusted []netip.Prefix) echo.IPExtractor {
+	return func(r *http.Request) string {
+		peer, ok := remoteIP(r.RemoteAddr)
+		if !ok || len(trusted) == 0 || !ipInPrefixes(peer, trusted) {
+			if !ok {
+				return ""
+			}
+			return peer.String()
+		}
+
+		values := r.Header.Values(echo.HeaderXForwardedFor)
+		if len(values) == 0 {
+			return peer.String()
+		}
+		chain := strings.Split(strings.Join(values, ","), ",")
+		for i := len(chain) - 1; i >= 0; i-- {
+			addr, err := netip.ParseAddr(strings.Trim(strings.TrimSpace(chain[i]), "[]"))
+			if err != nil {
+				return peer.String()
+			}
+			addr = addr.Unmap().WithZone("")
+			if !ipInPrefixes(addr, trusted) || i == 0 {
+				return addr.String()
+			}
+		}
+		return peer.String()
+	}
+}
+
+func remoteIP(remoteAddr string) (netip.Addr, bool) {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	addr, err := netip.ParseAddr(strings.Trim(strings.TrimSpace(host), "[]"))
+	if err != nil {
+		return netip.Addr{}, false
+	}
+	return addr.Unmap().WithZone(""), true
+}
+
+func ipInPrefixes(addr netip.Addr, prefixes []netip.Prefix) bool {
+	for _, prefix := range prefixes {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 const (
@@ -330,12 +395,16 @@ func (s *Server) token(c echo.Context) string {
 // render writes a templ component with the base path and active household name
 // installed in context.
 func (s *Server) render(c echo.Context, comp templ.Component) error {
+	return s.renderStatus(c, http.StatusOK, comp)
+}
+
+func (s *Server) renderStatus(c echo.Context, status int, comp templ.Component) error {
 	ctx := view.WithBasePath(c.Request().Context(), s.cfg.BasePath)
 	if name, _ := c.Get(householdNameCtxKey).(string); name != "" {
 		ctx = view.WithActiveHousehold(ctx, name)
 	}
 	c.Response().Header().Set(echo.HeaderContentType, echo.MIMETextHTMLCharsetUTF8)
-	c.Response().WriteHeader(http.StatusOK)
+	c.Response().WriteHeader(status)
 	return comp.Render(ctx, c.Response().Writer)
 }
 

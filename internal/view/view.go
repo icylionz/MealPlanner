@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"mealplanner/internal/weburl"
 )
 
 type ctxKey int
@@ -36,6 +38,10 @@ func Href(ctx context.Context, path string) string {
 	bp, _ := ctx.Value(basePathKey).(string)
 	return bp + path
 }
+
+// IsExternalURL reports whether a stored URL is safe to place in an HTML URL
+// attribute. Templates still pass the string through templ's normal escaping.
+func IsExternalURL(raw string) bool { return weburl.IsHTTP(raw) }
 
 // DateFormat is the wire format for dates in URLs and forms.
 const DateFormat = "2006-01-02"

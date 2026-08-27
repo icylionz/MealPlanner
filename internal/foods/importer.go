@@ -8,13 +8,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"mealplanner/internal/units"
+	"mealplanner/internal/weburl"
 )
 
 // ErrNoRecipe is returned when an import source has no parseable recipe.
@@ -45,8 +49,137 @@ type Parsed struct {
 // hostile source cannot exhaust memory.
 const maxImportBytes = 4 << 20 // 4 MiB
 
-// importClient scrapes recipe pages with a bounded timeout.
-var importClient = &http.Client{Timeout: 15 * time.Second}
+type importResolver interface {
+	LookupIPAddr(context.Context, string) ([]net.IPAddr, error)
+}
+
+var blockedImportNetworks = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("10.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("127.0.0.0/8"),
+	netip.MustParsePrefix("169.254.0.0/16"),
+	netip.MustParsePrefix("172.16.0.0/12"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("192.88.99.0/24"),
+	netip.MustParsePrefix("192.168.0.0/16"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("224.0.0.0/4"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("::/128"),
+	netip.MustParsePrefix("::1/128"),
+	netip.MustParsePrefix("64:ff9b:1::/48"),
+	netip.MustParsePrefix("100::/64"),
+	netip.MustParsePrefix("2001::/23"),
+	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("2002::/16"),
+	netip.MustParsePrefix("fc00::/7"),
+	netip.MustParsePrefix("fe80::/10"),
+	netip.MustParsePrefix("fec0::/10"),
+	netip.MustParsePrefix("ff00::/8"),
+}
+
+// importClient scrapes recipe pages with a bounded timeout and resolves each
+// destination itself so redirects and DNS rebinding cannot reach internal hosts.
+var importClient = newImportClient(net.DefaultResolver, (&net.Dialer{Timeout: 10 * time.Second}).DialContext)
+
+func newImportClient(resolver importResolver, dial func(context.Context, string, string) (net.Conn, error)) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, fmt.Errorf("invalid destination: %w", err)
+		}
+		if port != "80" && port != "443" {
+			return nil, errors.New("URL destination port must be 80 or 443")
+		}
+		ips, err := resolvePublicImportHost(ctx, resolver, host)
+		if err != nil {
+			return nil, err
+		}
+		var lastErr error
+		for _, ip := range ips {
+			conn, err := dial(ctx, network, net.JoinHostPort(ip.String(), port))
+			if err == nil {
+				return conn, nil
+			}
+			lastErr = err
+		}
+		return nil, lastErr
+	}
+	client := &http.Client{Transport: transport, Timeout: 15 * time.Second}
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		if err := validateImportURL(req.URL); err != nil {
+			return err
+		}
+		_, err := resolvePublicImportHost(req.Context(), resolver, req.URL.Hostname())
+		return err
+	}
+	return client
+}
+
+func validateImportURL(u *url.URL) error {
+	if u == nil {
+		return errors.New("URL must be an absolute http:// or https:// URL")
+	}
+	parsed, err := weburl.ParseHTTP(u.String())
+	if err != nil {
+		return err
+	}
+	if port := parsed.Port(); port != "" && port != "80" && port != "443" {
+		return errors.New("URL destination port must be 80 or 443")
+	}
+	return nil
+}
+
+// ValidateImportURL validates a URL before an import request is attempted.
+func ValidateImportURL(raw string) error {
+	u, err := weburl.ParseHTTP(raw)
+	if err != nil {
+		return err
+	}
+	return validateImportURL(u)
+}
+
+func resolvePublicImportHost(ctx context.Context, resolver importResolver, host string) ([]net.IPAddr, error) {
+	ips, err := resolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("could not resolve destination: %w", err)
+	}
+	if len(ips) == 0 {
+		return nil, errors.New("destination did not resolve to an address")
+	}
+	for _, ip := range ips {
+		if !isPublicImportIP(ip.IP) {
+			return nil, errors.New("URL destination must resolve only to public addresses")
+		}
+	}
+	return ips, nil
+}
+
+func isPublicImportIP(ip net.IP) bool {
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return false
+	}
+	addr = addr.Unmap()
+	if !addr.IsGlobalUnicast() {
+		return false
+	}
+	for _, prefix := range blockedImportNetworks {
+		if prefix.Contains(addr) {
+			return false
+		}
+	}
+	return true
+}
 
 // ImportFromJSON parses a schema.org Recipe (or Paprika-style export) from a
 // raw JSON string.
@@ -68,17 +201,27 @@ func ImportFromJSON(raw string) (Parsed, error) {
 // ImportFromURL fetches a page and extracts the first schema.org Recipe from
 // its JSON-LD blocks.
 func ImportFromURL(ctx context.Context, rawURL string) (Parsed, error) {
+	return importFromURL(ctx, rawURL, importClient)
+}
+
+// importFromURL keeps parsing testable with an injected client. Production
+// callers use ImportFromURL, whose client enforces public-only destinations.
+func importFromURL(ctx context.Context, rawURL string, client *http.Client) (Parsed, error) {
 	rawURL = strings.TrimSpace(rawURL)
-	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
-		return Parsed{}, errors.New("URL must start with http:// or https://")
+	u, err := weburl.ParseHTTP(rawURL)
+	if err != nil {
+		return Parsed{}, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err := validateImportURL(u); err != nil {
+		return Parsed{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return Parsed{}, err
 	}
 	req.Header.Set("User-Agent", "BackbonePlate/1.0 (recipe importer)")
 	req.Header.Set("Accept", "text/html")
-	resp, err := importClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return Parsed{}, fmt.Errorf("could not fetch page: %w", err)
 	}
