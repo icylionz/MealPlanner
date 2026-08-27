@@ -18,12 +18,14 @@ func groceryHref(listID string) string {
 templ Grocery(d GroceryData) {
 	@layout.Shell("Grocery — Backbone Plate", "grocery", d.Member) {
 		@layout.PageHeader("Grocery", "Grocery lists") {
-			<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/lists")) }>
-				<button type="submit" class="btn btn-secondary btn-sm">
-					@icons.Icon("plus", 14)
-					New list
-				</button>
-			</form>
+			if d.Member.IsOwner() {
+				<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/lists")) }>
+					<button type="submit" class="btn btn-secondary btn-sm">
+						@icons.Icon("plus", 14)
+						New list
+					</button>
+				</form>
+			}
 		}
 		if len(d.Lists) > 1 {
 			<div class="date-strip" style="gap: 6px; padding: 8px 14px;">
@@ -48,12 +50,14 @@ templ Grocery(d GroceryData) {
 			<div class="flex-1 overflow-y-auto page-pad" style="padding: 20px 28px;">
 				if d.Active == nil {
 					@layout.Empty("cart", "No grocery lists", "Create a list or generate one from your meal plan.") {
-						<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/lists")) }>
-							<button type="submit" class="btn btn-sm">
-								@icons.Icon("plus", 14)
-								New list
-							</button>
-						</form>
+						if d.Member.IsOwner() {
+							<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/lists")) }>
+								<button type="submit" class="btn btn-sm">
+									@icons.Icon("plus", 14)
+									New list
+								</button>
+							</form>
+						}
 					}
 				} else {
 					@groceryListDetail(d, *d.Active, len(d.Lists))
@@ -65,7 +69,7 @@ templ Grocery(d GroceryData) {
 
 templ groceryListDetail(d GroceryData, l grocery.List, listCount int) {
 	<div class="flex items-center flex-wrap" style="gap: 10px; margin-bottom: 16px;">
-		if d.Renaming {
+		if d.Renaming && d.Member.IsOwner() {
 			<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/lists/"+l.ID.String()+"/rename")) } class="flex items-center flex-1" style="gap: 6px;">
 				<input class="input input-sm" name="name" value={ l.Name } autofocus style="max-width: 240px;"/>
 				<button type="submit" class="btn btn-xs">Save</button>
@@ -73,20 +77,22 @@ templ groceryListDetail(d GroceryData, l grocery.List, listCount int) {
 			</form>
 		} else {
 			<h2 style="font-family: var(--font-display); font-weight: 700; font-size: 22px; color: var(--ink); margin: 0;">{ l.Name }</h2>
-			<a href={ templ.URL(view.Href(ctx, groceryHref(l.ID.String())+"&rename=1")) } class="icon-btn" title="Rename list">
-				@icons.Icon("pencil", 13)
-			</a>
+			if d.Member.IsOwner() {
+				<a href={ templ.URL(view.Href(ctx, groceryHref(l.ID.String())+"&rename=1")) } class="icon-btn" title="Rename list">
+					@icons.Icon("pencil", 13)
+				</a>
+			}
 		}
 		<span class="tnum" style="font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); font-weight: 600; margin-left: 4px;">
 			{ view.Itoa(l.CheckedCount()) }/{ view.Itoa(len(l.Items)) } checked
 		</span>
 		<div class="flex" style="margin-left: auto; gap: 6px;">
-			if l.CheckedCount() > 0 {
+			if d.Member.IsOwner() && l.CheckedCount() > 0 {
 				<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/lists/"+l.ID.String()+"/clear-checked")) }>
 					<button type="submit" class="btn btn-ghost btn-xs">Clear checked</button>
 				</form>
 			}
-			if listCount > 1 {
+			if d.Member.IsOwner() && listCount > 1 {
 				<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/lists/"+l.ID.String()+"/delete")) }>
 					<button type="submit" class="btn btn-danger btn-xs">
 						@icons.Icon("trash-2", 12)
@@ -106,16 +112,18 @@ templ groceryListDetail(d GroceryData, l grocery.List, listCount int) {
 			<div style="padding: 14px 16px; font-size: 13px; color: var(--fg-4); text-align: center;">No items yet.</div>
 		}
 		for _, item := range l.Items {
-			@groceryItemRow(l.ID.String(), item)
+			@groceryItemRow(l.ID.String(), item, d.Member.IsOwner())
 		}
 	</div>
-	<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/grocery/generate?list="+l.ID.String())) }>
-		@icons.Icon("layers", 14)
-		Add ingredients
-	</a>
+	if d.Member.IsOwner() {
+		<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/grocery/generate?list="+l.ID.String())) }>
+			@icons.Icon("layers", 14)
+			Add ingredients
+		</a>
+	}
 }
 
-templ groceryItemRow(listID string, item grocery.Item) {
+templ groceryItemRow(listID string, item grocery.Item, owner bool) {
 	<div class={ "g-item", templ.KV("checked", item.Checked) }>
 		<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/items/"+item.ID.String()+"/toggle?list="+listID)) } style="display: contents;">
 			<button type="submit" class={ "g-check", templ.KV("checked", item.Checked) } title="Toggle">
@@ -130,11 +138,15 @@ templ groceryItemRow(listID string, item grocery.Item) {
 				<span style="display: block; font-size: 11px; color: var(--danger); font-weight: 600;">{ item.Note }</span>
 			}
 		</span>
-		@UnitTagForm(item.Amount, item.Unit, true, ConvertOptionsForDensity(item.Amount, item.Unit, item.Density), "/grocery/items/"+item.ID.String()+"/convert?list="+listID)
-		<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/items/"+item.ID.String()+"/delete?list="+listID)) } style="display: contents;">
-			<button type="submit" class="icon-btn icon-btn-danger" title="Delete item">
-				@icons.Icon("trash-2", 13)
-			</button>
-		</form>
+		if owner {
+			@UnitTagForm(item.Amount, item.Unit, true, ConvertOptionsForDensity(item.Amount, item.Unit, item.Density), "/grocery/items/"+item.ID.String()+"/convert?list="+listID)
+			<form method="post" action={ templ.URL(view.Href(ctx, "/grocery/items/"+item.ID.String()+"/delete?list="+listID)) } style="display: contents;">
+				<button type="submit" class="icon-btn icon-btn-danger" title="Delete item">
+					@icons.Icon("trash-2", 13)
+				</button>
+			</form>
+		} else {
+			@UnitTagStatic(item.Amount, item.Unit, true)
+		}
 	</div>
 }

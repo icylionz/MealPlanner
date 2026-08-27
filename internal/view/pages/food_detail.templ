@@ -25,14 +25,16 @@ func withParam(baseURL, key, value string) string {
 templ FoodDetail(d FoodDetailData) {
 	@layout.Shell(d.Food.Name+" — Backbone Plate", "foods", d.Member) {
 		@layout.PageHeaderBack("/foods", "Foods & recipes", d.Food.Name) {
-			<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/foods/"+d.Food.ID.String()+"/edit")) }>
-				@icons.Icon("pencil", 14)
-				Edit
-			</a>
-			<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/meals/new?food="+d.Food.ID.String()+"&return=/foods/"+d.Food.ID.String())) }>
-				@icons.Icon("calendar", 14)
-				Add to plan
-			</a>
+			if d.Member.IsOwner() {
+				<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/foods/"+d.Food.ID.String()+"/edit")) }>
+					@icons.Icon("pencil", 14)
+					Edit
+				</a>
+				<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/meals/new?food="+d.Food.ID.String()+"&return=/foods/"+d.Food.ID.String())) }>
+					@icons.Icon("calendar", 14)
+					Add to plan
+				</a>
+			}
 		}
 		<div class="page-pad flex-1" style="max-width: 760px;">
 			<div class="flex items-center flex-wrap" style="gap: 8px; margin-bottom: 14px;">

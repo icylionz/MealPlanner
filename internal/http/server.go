@@ -77,46 +77,50 @@ func (s *Server) Router() *echo.Echo {
 	g.GET("/today", s.handleToday)
 	g.GET("/plan", s.handlePlan)
 
-	g.GET("/meals/new", s.handleAddMealForm)
-	g.POST("/meals", s.handleAddMeal)
-	g.GET("/meals/:id/edit", s.handleEditMealForm)
-	g.POST("/meals/:id/edit", s.handleEditMeal)
-	g.POST("/meals/:id/delete", s.handleDeleteMeal)
+	// Editing household data (meals, foods, grocery lists, prep, imports) is
+	// owner-only (FR3 AC1/AC2). Members keep read access plus the grocery
+	// check/uncheck below.
+	g.GET("/meals/new", s.handleAddMealForm, s.requireOwner)
+	g.POST("/meals", s.handleAddMeal, s.requireOwner)
+	g.GET("/meals/:id/edit", s.handleEditMealForm, s.requireOwner)
+	g.POST("/meals/:id/edit", s.handleEditMeal, s.requireOwner)
+	g.POST("/meals/:id/delete", s.handleDeleteMeal, s.requireOwner)
 
 	g.GET("/foods", s.handleFoods)
-	g.GET("/foods/new", s.handleFoodNew)
-	g.POST("/foods/new", s.handleFoodEditPost)
+	g.GET("/foods/new", s.handleFoodNew, s.requireOwner)
+	g.POST("/foods/new", s.handleFoodEditPost, s.requireOwner)
 	g.GET("/foods/:id", s.handleFoodDetail)
-	g.GET("/foods/:id/edit", s.handleFoodEdit)
-	g.POST("/foods/:id/edit", s.handleFoodEditPost)
-	g.POST("/foods/:id/delete", s.handleFoodDelete)
-	g.GET("/import", s.handleImportForm)
-	g.POST("/import", s.handleImportPost)
-	g.POST("/import/reconcile", s.handleImportReconcile)
+	g.GET("/foods/:id/edit", s.handleFoodEdit, s.requireOwner)
+	g.POST("/foods/:id/edit", s.handleFoodEditPost, s.requireOwner)
+	g.POST("/foods/:id/delete", s.handleFoodDelete, s.requireOwner)
+	g.GET("/import", s.handleImportForm, s.requireOwner)
+	g.POST("/import", s.handleImportPost, s.requireOwner)
+	g.POST("/import/reconcile", s.handleImportReconcile, s.requireOwner)
 
 	g.GET("/grocery", s.handleGrocery)
-	g.POST("/grocery/lists", s.handleGroceryNewList)
-	g.POST("/grocery/lists/:id/rename", s.handleGroceryRename)
-	g.POST("/grocery/lists/:id/delete", s.handleGroceryDeleteList)
-	g.POST("/grocery/lists/:id/clear-checked", s.handleGroceryClearChecked)
+	g.POST("/grocery/lists", s.handleGroceryNewList, s.requireOwner)
+	g.POST("/grocery/lists/:id/rename", s.handleGroceryRename, s.requireOwner)
+	g.POST("/grocery/lists/:id/delete", s.handleGroceryDeleteList, s.requireOwner)
+	g.POST("/grocery/lists/:id/clear-checked", s.handleGroceryClearChecked, s.requireOwner)
+	// Members may check/uncheck items on a shared list (FR3 AC3).
 	g.POST("/grocery/items/:id/toggle", s.handleGroceryToggle)
-	g.POST("/grocery/items/:id/convert", s.handleGroceryConvert)
-	g.POST("/grocery/items/:id/delete", s.handleGroceryDeleteItem)
-	g.GET("/grocery/generate", s.handleGroceryGenerate)
-	g.POST("/grocery/generate", s.handleGroceryGenerateCommit)
+	g.POST("/grocery/items/:id/convert", s.handleGroceryConvert, s.requireOwner)
+	g.POST("/grocery/items/:id/delete", s.handleGroceryDeleteItem, s.requireOwner)
+	g.GET("/grocery/generate", s.handleGroceryGenerate, s.requireOwner)
+	g.POST("/grocery/generate", s.handleGroceryGenerateCommit, s.requireOwner)
 
 	g.GET("/prep", s.handlePrep)
-	g.POST("/prep/sessions", s.handlePrepNewSession)
-	g.POST("/prep/:id/update", s.handlePrepUpdate)
-	g.POST("/prep/:id/delete", s.handlePrepDelete)
-	g.POST("/prep/:id/meals", s.handlePrepAddMeal)
-	g.POST("/prep/:id/meals/:rid/remove", s.handlePrepRemoveMeal)
-	g.POST("/prep/:id/meals/:rid/servings", s.handlePrepServings)
+	g.POST("/prep/sessions", s.handlePrepNewSession, s.requireOwner)
+	g.POST("/prep/:id/update", s.handlePrepUpdate, s.requireOwner)
+	g.POST("/prep/:id/delete", s.handlePrepDelete, s.requireOwner)
+	g.POST("/prep/:id/meals", s.handlePrepAddMeal, s.requireOwner)
+	g.POST("/prep/:id/meals/:rid/remove", s.handlePrepRemoveMeal, s.requireOwner)
+	g.POST("/prep/:id/meals/:rid/servings", s.handlePrepServings, s.requireOwner)
 	g.GET("/prep/:id/print", s.handlePrepPrint)
 
 	g.GET("/data", s.handleData)
 	g.GET("/data/export", s.handleDataExport)
-	g.POST("/data/import", s.handleDataImport)
+	g.POST("/data/import", s.handleDataImport, s.requireOwner)
 
 	g.GET("/settings", s.handleSettings)
 	g.POST("/settings/profile", s.handleSettingsProfile)
@@ -125,6 +129,7 @@ func (s *Server) Router() *echo.Echo {
 	g.GET("/household", s.handleHousehold)
 	g.POST("/household/members", s.handleHouseholdAdd)
 	g.POST("/household/remove", s.handleHouseholdRemove)
+	g.POST("/household/transfer", s.handleHouseholdTransfer)
 	g.POST("/household/invite/regenerate", s.handleHouseholdRegenerateInvite)
 
 	return e
@@ -152,6 +157,17 @@ func (s *Server) csrfMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 		if !s.sameOrigin(c.Request()) {
 			return echo.NewHTTPError(http.StatusForbidden, "cross-origin request rejected")
+		}
+		return next(c)
+	}
+}
+
+// requireOwner rejects a request unless the active membership carries the owner
+// role. It runs after sessionMiddleware, so the membership is resolved (FR3).
+func (s *Server) requireOwner(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		if !s.member(c).IsOwner() {
+			return echo.ErrForbidden
 		}
 		return next(c)
 	}
@@ -289,6 +305,15 @@ func (s *Server) member(c echo.Context) *households.Member {
 func (s *Server) account(c echo.Context) *households.Account {
 	a, _ := c.Get(accountCtxKey).(*households.Account)
 	return a
+}
+
+// actorID returns the id of the account making the request, or uuid.Nil if none
+// (services record it as created_by/updated_by, G2).
+func (s *Server) actorID(c echo.Context) uuid.UUID {
+	if a := s.account(c); a != nil {
+		return a.ID
+	}
+	return uuid.Nil
 }
 
 // household returns the active household id for the request (uuid.Nil if none).

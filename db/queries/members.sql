@@ -66,6 +66,10 @@ ORDER BY h.created_at;
 DELETE FROM household_members
 WHERE household_id = $1 AND account_id = $2 AND role <> 'owner';
 
+-- name: SetMemberRole :exec
+UPDATE household_members SET role = $3
+WHERE household_id = $1 AND account_id = $2;
+
 -- Sessions: keyed on the account, carrying the active household.
 
 -- name: CreateSession :exec

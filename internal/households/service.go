@@ -66,6 +66,12 @@ type Member struct {
 	Color     string
 }
 
+// IsOwner reports whether the membership carries the owner role. Nil-safe so
+// templates and guards can call it on an unresolved membership.
+func (m *Member) IsOwner() bool {
+	return m != nil && m.Role == "owner"
+}
+
 // SessionContext is the resolved session: the account plus its active household.
 type SessionContext struct {
 	Account           Account
@@ -384,6 +390,48 @@ func (s *Service) AddMemberByEmail(ctx context.Context, householdID uuid.UUID, e
 // RemoveMember removes a non-owner member from a household.
 func (s *Service) RemoveMember(ctx context.Context, householdID, accountID uuid.UUID) error {
 	return s.q.RemoveMember(ctx, db.RemoveMemberParams{HouseholdID: householdID, AccountID: accountID})
+}
+
+// TransferOwnership promotes another member to owner and demotes the current
+// owner to member, in one transaction (FR3 AC5). It verifies the caller is the
+// household's owner and that the target is an existing non-owner member.
+func (s *Service) TransferOwnership(ctx context.Context, householdID, fromAccountID, toAccountID uuid.UUID) error {
+	if fromAccountID == toAccountID {
+		return errors.New("you are already the owner")
+	}
+
+	from, err := s.q.GetMembership(ctx, db.GetMembershipParams{HouseholdID: householdID, AccountID: fromAccountID})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errors.New("you are not a member of this household")
+		}
+		return err
+	}
+	if from.Role != "owner" {
+		return errors.New("only the owner can transfer ownership")
+	}
+
+	if _, err := s.q.GetMembership(ctx, db.GetMembershipParams{HouseholdID: householdID, AccountID: toAccountID}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errors.New("that person is not a member of this household")
+		}
+		return err
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	qtx := db.New(tx)
+
+	if err := qtx.SetMemberRole(ctx, db.SetMemberRoleParams{HouseholdID: householdID, AccountID: toAccountID, Role: "owner"}); err != nil {
+		return err
+	}
+	if err := qtx.SetMemberRole(ctx, db.SetMemberRoleParams{HouseholdID: householdID, AccountID: fromAccountID, Role: "member"}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // RegenerateInvite issues a fresh invite code for a household and returns it.

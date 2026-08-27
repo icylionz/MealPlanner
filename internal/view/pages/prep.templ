@@ -17,12 +17,14 @@ func prepHref(sessionID string) string {
 templ Prep(d PrepData) {
 	@layout.Shell("Prep — Backbone Plate", "prep", d.Member) {
 		@layout.PageHeader("Meal prep", "Prep sessions") {
-			<form method="post" action={ templ.URL(view.Href(ctx, "/prep/sessions")) }>
-				<button type="submit" class="btn btn-secondary btn-sm">
-					@icons.Icon("plus", 14)
-					New session
-				</button>
-			</form>
+			if d.Member.IsOwner() {
+				<form method="post" action={ templ.URL(view.Href(ctx, "/prep/sessions")) }>
+					<button type="submit" class="btn btn-secondary btn-sm">
+						@icons.Icon("plus", 14)
+						New session
+					</button>
+				</form>
+			}
 			if d.Active != nil {
 				<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/print")) }>
 					@icons.Icon("printer", 14)
@@ -52,12 +54,14 @@ templ Prep(d PrepData) {
 			<div class="flex-1 overflow-y-auto page-pad" style="padding: 20px 28px;">
 				if d.Active == nil {
 					@layout.Empty("flame", "No prep sessions", "Create a session to plan your meal prep.") {
-						<form method="post" action={ templ.URL(view.Href(ctx, "/prep/sessions")) }>
-							<button type="submit" class="btn btn-sm">
-								@icons.Icon("plus", 14)
-								New session
-							</button>
-						</form>
+						if d.Member.IsOwner() {
+							<form method="post" action={ templ.URL(view.Href(ctx, "/prep/sessions")) }>
+								<button type="submit" class="btn btn-sm">
+									@icons.Icon("plus", 14)
+									New session
+								</button>
+							</form>
+						}
 					}
 				} else {
 					@prepSessionDetail(d)
@@ -69,25 +73,32 @@ templ Prep(d PrepData) {
 
 templ prepSessionDetail(d PrepData) {
 	<div class="flex flex-col" style="max-width: 780px; gap: 22px;">
-		<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/update")) } class="flex items-center flex-wrap" style="gap: 10px;">
-			<input
-				name="name"
-				value={ d.Active.Name }
-				style="font-family: var(--font-display); font-weight: 700; font-size: 22px; color: var(--ink); border: none; background: transparent; outline: none; border-bottom: 2px solid var(--line); padding: 2px 0; min-width: 0; flex: 1;"
-			/>
-			<input
-				type="date"
-				name="date"
-				value={ d.Active.Date }
-				class="tnum"
-				style="font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--fg-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 6px 10px; background: var(--surface); outline: none;"
-			/>
-			<button type="submit" class="btn btn-secondary btn-xs">Save</button>
-			<button type="submit" formaction={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/delete")) } class="btn btn-danger btn-xs">
-				@icons.Icon("trash-2", 12)
-				Delete
-			</button>
-		</form>
+		if d.Member.IsOwner() {
+			<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/update")) } class="flex items-center flex-wrap" style="gap: 10px;">
+				<input
+					name="name"
+					value={ d.Active.Name }
+					style="font-family: var(--font-display); font-weight: 700; font-size: 22px; color: var(--ink); border: none; background: transparent; outline: none; border-bottom: 2px solid var(--line); padding: 2px 0; min-width: 0; flex: 1;"
+				/>
+				<input
+					type="date"
+					name="date"
+					value={ d.Active.Date }
+					class="tnum"
+					style="font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--fg-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 6px 10px; background: var(--surface); outline: none;"
+				/>
+				<button type="submit" class="btn btn-secondary btn-xs">Save</button>
+				<button type="submit" formaction={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/delete")) } class="btn btn-danger btn-xs">
+					@icons.Icon("trash-2", 12)
+					Delete
+				</button>
+			</form>
+		} else {
+			<div class="flex items-center flex-wrap" style="gap: 10px;">
+				<h2 style="font-family: var(--font-display); font-weight: 700; font-size: 22px; color: var(--ink); margin: 0; flex: 1;">{ d.Active.Name }</h2>
+				<span class="tnum" style="font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--fg-3);">{ d.Active.Date }</span>
+			</div>
+		}
 		<div>
 			<div class="overline" style="letter-spacing: .08em; margin-bottom: 8px;">Meals in session</div>
 			if len(d.Active.Meals) == 0 {
@@ -106,31 +117,38 @@ templ prepSessionDetail(d PrepData) {
 									</div>
 								</div>
 								<div class="flex items-center" style="gap: 6px;">
-									<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/meals/"+m.Food.ID.String()+"/servings?delta=-1")) } style="display: contents;">
-										<button type="submit" class="stepper-btn stepper-btn-sm">
-											@icons.Icon("minus", 12)
-										</button>
-									</form>
+									if d.Member.IsOwner() {
+										<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/meals/"+m.Food.ID.String()+"/servings?delta=-1")) } style="display: contents;">
+											<button type="submit" class="stepper-btn stepper-btn-sm">
+												@icons.Icon("minus", 12)
+											</button>
+										</form>
+									}
 									<span class="tnum" style="font-family: var(--font-mono); font-weight: 700; font-size: 14px; color: var(--ink); min-width: 28px; text-align: center;">{ view.Itoa(m.Servings) }</span>
-									<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/meals/"+m.Food.ID.String()+"/servings?delta=1")) } style="display: contents;">
-										<button type="submit" class="stepper-btn stepper-btn-sm">
-											@icons.Icon("plus", 12)
-										</button>
-									</form>
+									if d.Member.IsOwner() {
+										<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/meals/"+m.Food.ID.String()+"/servings?delta=1")) } style="display: contents;">
+											<button type="submit" class="stepper-btn stepper-btn-sm">
+												@icons.Icon("plus", 12)
+											</button>
+										</form>
+									}
 									<span style="font-size: 12px; color: var(--fg-3); margin-left: 2px;">srv</span>
 								</div>
 							</div>
-							<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/meals/"+m.Food.ID.String()+"/remove")) } style="display: contents;">
-								<button type="submit" class="row-del" style="padding: 12px;" title="Remove from session">
-									@icons.Icon("x", 14)
-								</button>
-							</form>
+							if d.Member.IsOwner() {
+								<form method="post" action={ templ.URL(view.Href(ctx, "/prep/"+d.Active.ID+"/meals/"+m.Food.ID.String()+"/remove")) } style="display: contents;">
+									<button type="submit" class="row-del" style="padding: 12px;" title="Remove from session">
+										@icons.Icon("x", 14)
+									</button>
+								</form>
+							}
 						</div>
 					}
 				</div>
 			}
-			<div style="margin-top: 8px;">
-				if d.AddingMeal {
+			if d.Member.IsOwner() {
+				<div style="margin-top: 8px;">
+					if d.AddingMeal {
 					<div class="card" style="padding: 12px;">
 						<form method="get" action={ templ.URL(view.Href(ctx, "/prep")) } class="flex items-center" style="gap: 8px; margin-bottom: 8px;">
 							<input type="hidden" name="session" value={ d.Active.ID }/>
@@ -153,7 +171,8 @@ templ prepSessionDetail(d PrepData) {
 						Add meal to session
 					</a>
 				}
-			</div>
+				</div>
+			}
 		</div>
 		if len(d.Aggregate) > 0 {
 			<div>

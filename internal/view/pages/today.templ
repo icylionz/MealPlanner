@@ -10,28 +10,32 @@ import (
 templ Today(d TodayData) {
 	@layout.Shell("Today — Backbone Plate", "today", d.Member) {
 		@layout.PageHeader("Today", d.DateLabel) {
-			<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/meals/new?date="+d.Date+"&return=/today")) }>
-				@icons.Icon("plus", 14)
-				Add meal
-			</a>
+			if d.Member.IsOwner() {
+				<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/meals/new?date="+d.Date+"&return=/today")) }>
+					@icons.Icon("plus", 14)
+					Add meal
+				</a>
+			}
 		}
 		<div class="page-pad flex-1 flex flex-col" style="gap: 10px;">
 			if len(d.Meals) == 0 {
 				@layout.Empty("sun", "Nothing planned today", "Add a meal to see it here.") {
-					<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/meals/new?date="+d.Date+"&return=/today")) }>
-						@icons.Icon("plus", 14)
-						Add a meal
-					</a>
+					if d.Member.IsOwner() {
+						<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/meals/new?date="+d.Date+"&return=/today")) }>
+							@icons.Icon("plus", 14)
+							Add a meal
+						</a>
+					}
 				}
 			}
 			for _, m := range d.Meals {
-				@todayMealRow(m)
+				@todayMealRow(m, d.Member.IsOwner())
 			}
 		</div>
 	}
 }
 
-templ todayMealRow(m MealVM) {
+templ todayMealRow(m MealVM, owner bool) {
 	<div class={ "card card-flush meal-row", templ.KV("past", m.IsPast), templ.KV("next", m.IsNext) }>
 		<div class="meal-time">{ m.Meal.Time }</div>
 		<a class="meal-link" href={ templ.URL(view.Href(ctx, "/foods/"+m.Meal.FoodID.String())) }>
@@ -81,13 +85,15 @@ templ todayMealRow(m MealVM) {
 		if m.IsNext {
 			<div class="next-badge">Next</div>
 		}
-		<a class="row-del" href={ templ.URL(view.Href(ctx, "/meals/"+m.Meal.ID.String()+"/edit?return=/today")) } title="Edit meal">
-			@icons.Icon("pencil", 14)
-		</a>
-		<form method="post" action={ templ.URL(view.Href(ctx, "/meals/"+m.Meal.ID.String()+"/delete?return=/today")) } style="display: contents;">
-			<button type="submit" class="row-del" title="Remove from plan">
-				@icons.Icon("trash-2", 14)
-			</button>
-		</form>
+		if owner {
+			<a class="row-del" href={ templ.URL(view.Href(ctx, "/meals/"+m.Meal.ID.String()+"/edit?return=/today")) } title="Edit meal">
+				@icons.Icon("pencil", 14)
+			</a>
+			<form method="post" action={ templ.URL(view.Href(ctx, "/meals/"+m.Meal.ID.String()+"/delete?return=/today")) } style="display: contents;">
+				<button type="submit" class="row-del" title="Remove from plan">
+					@icons.Icon("trash-2", 14)
+				</button>
+			</form>
+		}
 	</div>
 }

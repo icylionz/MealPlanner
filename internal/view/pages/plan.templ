@@ -19,10 +19,12 @@ func planHref(date string, layout string) string {
 templ Plan(d PlanData) {
 	@layout.Shell("Plan — Backbone Plate", "plan", d.Member) {
 		@layout.PageHeader("Plan", "Meal plan") {
-			<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/meals/new?date="+d.SelectedDate+"&return="+planHref(d.SelectedDate, d.Layout))) }>
-				@icons.Icon("plus", 14)
-				Add meal
-			</a>
+			if d.Member.IsOwner() {
+				<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/meals/new?date="+d.SelectedDate+"&return="+planHref(d.SelectedDate, d.Layout))) }>
+					@icons.Icon("plus", 14)
+					Add meal
+				</a>
+			}
 		}
 		@dateStrip(d)
 		<div class="flex-1 flex overflow-hidden">
@@ -132,17 +134,21 @@ templ planDayList(d PlanData) {
 					@layout.TagAccent("Today")
 				}
 			</div>
-			<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/meals/new?date="+d.SelectedDate+"&return="+planHref(d.SelectedDate, d.Layout))) }>
-				@icons.Icon("plus", 14)
-				Add meal
-			</a>
+			if d.Member.IsOwner() {
+				<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/meals/new?date="+d.SelectedDate+"&return="+planHref(d.SelectedDate, d.Layout))) }>
+					@icons.Icon("plus", 14)
+					Add meal
+				</a>
+			}
 		</div>
 		if len(d.DayMeals) == 0 {
 			@layout.Empty("calendar", "No meals planned", "Nothing scheduled for this day.") {
-				<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/meals/new?date="+d.SelectedDate+"&return="+planHref(d.SelectedDate, d.Layout))) }>
-					@icons.Icon("plus", 14)
-					Add a meal
-				</a>
+				if d.Member.IsOwner() {
+					<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/meals/new?date="+d.SelectedDate+"&return="+planHref(d.SelectedDate, d.Layout))) }>
+						@icons.Icon("plus", 14)
+						Add a meal
+					</a>
+				}
 			}
 		} else {
 			<div class="flex flex-col" style="gap: 8px;">
@@ -168,14 +174,16 @@ templ planDayList(d PlanData) {
 								@icons.Icon("chevron-right", 14)
 							</span>
 						</a>
-						<a class="row-del" style="padding: 12px;" href={ templ.URL(view.Href(ctx, "/meals/"+m.Meal.ID.String()+"/edit?return="+planHref(d.SelectedDate, d.Layout))) } title="Edit meal">
-							@icons.Icon("pencil", 13)
-						</a>
-						<form method="post" action={ templ.URL(view.Href(ctx, "/meals/"+m.Meal.ID.String()+"/delete?return="+planHref(d.SelectedDate, d.Layout))) } style="display: contents;">
-							<button type="submit" class="row-del" style="padding: 12px;" title="Remove from plan">
-								@icons.Icon("trash-2", 13)
-							</button>
-						</form>
+						if d.Member.IsOwner() {
+							<a class="row-del" style="padding: 12px;" href={ templ.URL(view.Href(ctx, "/meals/"+m.Meal.ID.String()+"/edit?return="+planHref(d.SelectedDate, d.Layout))) } title="Edit meal">
+								@icons.Icon("pencil", 13)
+							</a>
+							<form method="post" action={ templ.URL(view.Href(ctx, "/meals/"+m.Meal.ID.String()+"/delete?return="+planHref(d.SelectedDate, d.Layout))) } style="display: contents;">
+								<button type="submit" class="row-del" style="padding: 12px;" title="Remove from plan">
+									@icons.Icon("trash-2", 13)
+								</button>
+							</form>
+						}
 					</div>
 				}
 			</div>
@@ -199,9 +207,11 @@ templ weekGrid(d PlanData) {
 							<div style="font-family: var(--font-mono); font-size: 9px; color: var(--fg-3); margin-top: 3px; text-transform: uppercase; letter-spacing: .04em;">{ view.Itoa(m.Meal.Servings) } srv</div>
 						</a>
 					}
-					<a class="week-add" href={ templ.URL(view.Href(ctx, "/meals/new?date="+day.Date+"&return="+planHref(day.Date, d.Layout))) }>
-						@icons.Icon("plus", 13)
-					</a>
+					if d.Member.IsOwner() {
+						<a class="week-add" href={ templ.URL(view.Href(ctx, "/meals/new?date="+day.Date+"&return="+planHref(day.Date, d.Layout))) }>
+							@icons.Icon("plus", 13)
+						</a>
+					}
 				</div>
 			</div>
 		}

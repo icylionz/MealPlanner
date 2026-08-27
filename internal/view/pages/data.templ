@@ -61,6 +61,7 @@ templ Data(d DataData) {
 					Export JSON
 				</a>
 			</div>
+			if d.Member.IsOwner() {
 			<div class="card">
 				<div class="overline" style="margin-bottom: 6px;">Import</div>
 				<p style="color: var(--fg-3); margin-bottom: 12px;">
@@ -84,6 +85,7 @@ templ Data(d DataData) {
 					</div>
 				</form>
 			</div>
+			}
 		</div>
 	}
 }

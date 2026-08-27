@@ -43,12 +43,20 @@ templ Household(d HouseholdData) {
 								}
 							</div>
 							if m.Role != "owner" && d.Member.Role == "owner" {
-								<form method="post" action={ templ.URL(view.Href(ctx, "/household/remove?member="+m.AccountID.String())) }>
-									<button type="submit" class="icon-btn icon-btn-danger flex items-center" style="font-size: 12px; gap: 4px;">
-										@icons.Icon("trash-2", 12)
-										Remove
-									</button>
-								</form>
+								<div class="flex items-center" style="gap: 8px;">
+									<form method="post" action={ templ.URL(view.Href(ctx, "/household/transfer?member="+m.AccountID.String())) }>
+										<button type="submit" class="icon-btn flex items-center" style="font-size: 12px; gap: 4px;">
+											@icons.Icon("crown", 12)
+											Make owner
+										</button>
+									</form>
+									<form method="post" action={ templ.URL(view.Href(ctx, "/household/remove?member="+m.AccountID.String())) }>
+										<button type="submit" class="icon-btn icon-btn-danger flex items-center" style="font-size: 12px; gap: 4px;">
+											@icons.Icon("trash-2", 12)
+											Remove
+										</button>
+									</form>
+								</div>
 							}
 						</div>
 					</div>

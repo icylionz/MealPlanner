@@ -29,17 +29,17 @@ No table has `deleted_at`; deletes are hard `ON DELETE CASCADE`.
 
 ## G2. Authorship columns
 PRD §6 (`created_by_user_id`/`updated_by_user_id` on most entities).
-- [ ] Add `created_by`/`updated_by` (account UUID) to `foods`, `meal_plan`, `grocery_lists`, `grocery_items`, `grocery snapshots`.
-- [ ] Populate from the request's account in services.
-- [ ] Depends on nothing; pairs naturally with G1 in one migration.
+- [x] Add `created_by`/`updated_by` (account UUID) to `foods`, `meal_plan`, `grocery_lists`, `grocery_items`, `grocery snapshots`. (0010_authorship: nullable `uuid REFERENCES accounts(id) ON DELETE SET NULL` on the four live tables. "Grocery snapshots" has no table — immutable snapshots were dropped by decision, see G12/FR11 — so nothing to add there.)
+- [x] Populate from the request's account in services. (Services take an `actor uuid.UUID`, threaded from `s.actorID(c)` in handlers; `byPtr` keeps the column NULL for seed/system writes. Creates set both `created_by`+`updated_by`; updates and soft-deletes set `updated_by`. Incidentally fixed a pre-existing bug where the grocery generation merge branch (`AddGroceryItemAmount`) never passed `household_id`, so its amount add silently no-op'd.)
+- [x] Depends on nothing; pairs naturally with G1 in one migration. (Kept as its own migration 0010 since 0009 is already applied.)
 
 ## G3. Role enforcement + ownership transfer
 PRD FR3 AC1/AC2/AC5. Today only household member add/remove/invite is owner-gated;
 members can edit foods/meals/grocery/prep freely.
-- [ ] Add owner-only guard to all mutating food/meal/grocery/prep handlers (middleware or per-handler `member.Role != "owner"` → 403).
-- [ ] Members keep grocery check/uncheck + ad-hoc add (FR3 AC3).
-- [ ] Hide edit controls in templ for members.
-- [ ] Add "transfer ownership" flow: promote a member to owner, demote self (FR3 AC5).
+- [x] Add owner-only guard to all mutating food/meal/grocery/prep handlers (middleware or per-handler `member.Role != "owner"` → 403). (`s.requireOwner` echo route middleware on every mutating meal/food/grocery/prep/import route in `server.go`, plus `/data/import`. Reads the resolved membership via `Member.IsOwner()`. No schema change — `role` already lives on `household_members`, so no migration this unit.)
+- [x] Members keep grocery check/uncheck + ad-hoc add (FR3 AC3). (`/grocery/items/:id/toggle` left ungated; app has no ad-hoc add-item route today, so nothing further to open.)
+- [x] Hide edit controls in templ for members. (Guarded add/edit/delete controls behind `d.Member.IsOwner()` across today/plan/foods/food_detail/grocery/prep/data. Grocery item unit-convert falls back to `UnitTagStatic` for members; prep meal steppers/remove and session rename/delete become read-only. Editors (add/edit meal, food edit, import) are only reachable via now-owner-gated GET routes.)
+- [x] Add "transfer ownership" flow: promote a member to owner, demote self (FR3 AC5). (`households.TransferOwnership` promotes target + demotes caller in one tx via new `SetMemberRole` query; `POST /household/transfer` handler is owner-gated; "Make owner" button on the roster.)
 
 ## G4. Multi-recipe scheduled meals
 PRD FR5 AC3–AC5, ScheduledMeal/ScheduledMealRecipe entities.

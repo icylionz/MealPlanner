@@ -224,7 +224,7 @@ func (s *Server) renderHousehold(c echo.Context, errMsg string) error {
 }
 
 func (s *Server) handleHouseholdAdd(c echo.Context) error {
-	if s.member(c).Role != "owner" {
+	if !s.member(c).IsOwner() {
 		return echo.ErrForbidden
 	}
 	if err := s.households.AddMemberByEmail(c.Request().Context(), s.household(c), c.FormValue("email")); err != nil {
@@ -234,7 +234,7 @@ func (s *Server) handleHouseholdAdd(c echo.Context) error {
 }
 
 func (s *Server) handleHouseholdRemove(c echo.Context) error {
-	if s.member(c).Role != "owner" {
+	if !s.member(c).IsOwner() {
 		return echo.ErrForbidden
 	}
 	accountID, err := uuid.Parse(c.QueryParam("member"))
@@ -247,8 +247,22 @@ func (s *Server) handleHouseholdRemove(c echo.Context) error {
 	return s.redirect(c, "/household")
 }
 
+func (s *Server) handleHouseholdTransfer(c echo.Context) error {
+	if !s.member(c).IsOwner() {
+		return echo.ErrForbidden
+	}
+	target, err := uuid.Parse(c.QueryParam("member"))
+	if err != nil {
+		return echo.ErrNotFound
+	}
+	if err := s.households.TransferOwnership(c.Request().Context(), s.household(c), s.actorID(c), target); err != nil {
+		return s.renderHousehold(c, err.Error())
+	}
+	return s.redirect(c, "/household")
+}
+
 func (s *Server) handleHouseholdRegenerateInvite(c echo.Context) error {
-	if s.member(c).Role != "owner" {
+	if !s.member(c).IsOwner() {
 		return echo.ErrForbidden
 	}
 	if _, err := s.households.RegenerateInvite(c.Request().Context(), s.household(c)); err != nil {
