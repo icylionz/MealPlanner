@@ -10,6 +10,7 @@ import (
 
 	"mealplanner/internal/foods"
 	"mealplanner/internal/grocery"
+	"mealplanner/internal/planner"
 	"mealplanner/internal/view"
 	"mealplanner/internal/view/pages"
 )
@@ -56,7 +57,7 @@ func (s *Server) handleGrocery(c echo.Context) error {
 }
 
 func (s *Server) handleGroceryNewList(c echo.Context) error {
-	id, err := s.grocery.Create(c.Request().Context(), s.household(c), "New list")
+	id, err := s.grocery.Create(c.Request().Context(), s.household(c), s.actorID(c), "New list")
 	if err != nil {
 		return err
 	}
@@ -68,7 +69,7 @@ func (s *Server) handleGroceryRename(c echo.Context) error {
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	if err := s.grocery.Rename(c.Request().Context(), s.household(c), id, strings.TrimSpace(c.FormValue("name"))); err != nil {
+	if err := s.grocery.Rename(c.Request().Context(), s.household(c), s.actorID(c), id, strings.TrimSpace(c.FormValue("name"))); err != nil {
 		return err
 	}
 	return s.redirect(c, "/grocery?list="+id.String())
@@ -79,7 +80,7 @@ func (s *Server) handleGroceryDeleteList(c echo.Context) error {
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	if err := s.grocery.Delete(c.Request().Context(), s.household(c), id); err != nil {
+	if err := s.grocery.Delete(c.Request().Context(), s.household(c), s.actorID(c), id); err != nil {
 		return err
 	}
 	return s.redirect(c, "/grocery")
@@ -90,7 +91,7 @@ func (s *Server) handleGroceryClearChecked(c echo.Context) error {
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	if err := s.grocery.ClearChecked(c.Request().Context(), s.household(c), id); err != nil {
+	if err := s.grocery.ClearChecked(c.Request().Context(), s.household(c), s.actorID(c), id); err != nil {
 		return err
 	}
 	return s.redirect(c, "/grocery?list="+id.String())
@@ -113,7 +114,7 @@ func (s *Server) groceryItemAction(c echo.Context, fn func(uuid.UUID) error) err
 
 func (s *Server) handleGroceryToggle(c echo.Context) error {
 	return s.groceryItemAction(c, func(id uuid.UUID) error {
-		return s.grocery.ToggleItem(c.Request().Context(), s.household(c), id)
+		return s.grocery.ToggleItem(c.Request().Context(), s.household(c), s.actorID(c), id)
 	})
 }
 
@@ -125,13 +126,13 @@ func (s *Server) handleGroceryConvert(c echo.Context) error {
 	}
 	densities := foods.DensityByName(all)
 	return s.groceryItemAction(c, func(id uuid.UUID) error {
-		return s.grocery.ConvertItem(ctx, s.household(c), id, c.FormValue("unit"), densities)
+		return s.grocery.ConvertItem(ctx, s.household(c), s.actorID(c), id, c.FormValue("unit"), densities)
 	})
 }
 
 func (s *Server) handleGroceryDeleteItem(c echo.Context) error {
 	return s.groceryItemAction(c, func(id uuid.UUID) error {
-		return s.grocery.DeleteItem(c.Request().Context(), s.household(c), id)
+		return s.grocery.DeleteItem(c.Request().Context(), s.household(c), s.actorID(c), id)
 	})
 }
 
@@ -224,7 +225,7 @@ func (s *Server) genLeaves(c echo.Context, d pages.GroceryGenData, idx map[uuid.
 		if err != nil {
 			return nil, false, nil
 		}
-		return foods.LeafIngredients(idx, m.FoodID, float64(m.Servings)), true, nil
+		return mealLeaves(idx, *m), true, nil
 	case "food":
 		id, err := uuid.Parse(d.SelectedFood)
 		if err != nil {
@@ -241,11 +242,22 @@ func (s *Server) genLeaves(c echo.Context, d pages.GroceryGenData, idx map[uuid.
 		}
 		var leaves []foods.LeafIngredient
 		for _, m := range meals {
-			leaves = append(leaves, foods.LeafIngredients(idx, m.FoodID, float64(m.Servings))...)
+			leaves = append(leaves, mealLeaves(idx, m)...)
 		}
 		return leaves, true, nil
 	}
 	return nil, false, nil
+}
+
+// mealLeaves expands a scheduled meal into its leaf ingredients: the primary
+// recipe scaled by the meal's servings, plus each additional recipe scaled by
+// its override (or the meal's servings when unset) (G4).
+func mealLeaves(idx map[uuid.UUID]foods.Food, m planner.Meal) []foods.LeafIngredient {
+	leaves := foods.LeafIngredients(idx, m.FoodID, float64(m.Servings))
+	for _, r := range m.Recipes {
+		leaves = append(leaves, foods.LeafIngredients(idx, r.FoodID, float64(r.ScaledServings(m.Servings)))...)
+	}
+	return leaves
 }
 
 func (s *Server) handleGroceryGenerate(c echo.Context) error {
@@ -285,7 +297,7 @@ func (s *Server) handleGroceryGenerateCommit(c echo.Context) error {
 	if id, err := uuid.Parse(d.ListID); err == nil {
 		listID = &id
 	}
-	target, err := s.grocery.AddIngredients(c.Request().Context(), s.household(c), listID, foods.Aggregate(leaves, foods.DensityMap(idx)))
+	target, err := s.grocery.AddIngredients(c.Request().Context(), s.household(c), s.actorID(c), listID, foods.Aggregate(leaves, foods.DensityMap(idx)))
 	if err != nil {
 		return err
 	}

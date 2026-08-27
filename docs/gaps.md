@@ -44,10 +44,10 @@ members can edit foods/meals/grocery/prep freely.
 ## G4. Multi-recipe scheduled meals
 PRD FR5 AC3–AC5, ScheduledMeal/ScheduledMealRecipe entities.
 `meal_plan` holds one `food_id`; no notes/title, no per-recipe servings override.
-- [ ] Add `scheduled_meal_recipes` join (meal → many foods, `servings_override`, `sort_order`).
-- [ ] Add `title`, `notes`, `version` to `meal_plan`.
-- [ ] Update add/edit meal UI to attach multiple recipes + per-recipe override.
-- [ ] Grocery generation uses override when set, else meal-level servings.
+- [x] Add `scheduled_meal_recipes` join (meal → many foods, `servings_override`, `sort_order`). (0011_multi_recipe: `meal_id`/`food_id` FK, nullable `servings_override int`, `sort_order`, plus nullable authorship. `meal_plan.food_id` stays the primary recipe (recipe #1) to keep the 300+ existing `food_id` references and series/rendering intact; the join carries only the *additional* recipes — a minimal-blast-radius reading of "meal → many foods" rather than a full food_id→join migration.)
+- [x] Add `title`, `notes`, `version` to `meal_plan`. (Same migration. `version` increments on every `UpdateMeal`/`UpdateSeriesMealsFrom`; the optimistic-lock *conflict screen* remains G13.)
+- [x] Update add/edit meal UI to attach multiple recipes + per-recipe override. (Add/edit modals gain Title/Notes fields and an "Additional recipes" multi-select mirroring the primary picker, each row a checkbox + optional servings-override input. Handlers parse `extra`/`override_<id>` into `[]planner.MealRecipe`; `planner.Add`/`AddRecurring`/`Update` write join rows in a tx. Recurring: extras replicate to every occurrence on create; on edit, extras re-apply to every occurrence in the chosen scope. Today/Plan cards render the title and additional-recipe names.)
+- [x] Grocery generation uses override when set, else meal-level servings. (`mealLeaves` expands a meal into primary-recipe leaves at meal servings + each extra's leaves at `MealRecipe.ScaledServings` = override or meal servings; used by both planned-meal and date-range modes. Verified e2e: Caesar salad@4 ⊎ Tomato sauce@8 aggregates correctly.)
 
 ## G5. Grocery item traceability
 PRD FR12 AC1–AC2/AC6, GroceryItemSource.

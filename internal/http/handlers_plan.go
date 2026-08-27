@@ -37,6 +37,13 @@ func (s *Server) mealVMs(c echo.Context, meals []planner.Meal, idx map[uuid.UUID
 			continue
 		}
 		vm := pages.MealVM{Meal: m, Food: r}
+		for _, ex := range m.Recipes {
+			ef, ok := idx[ex.FoodID]
+			if !ok {
+				continue
+			}
+			vm.Extras = append(vm.Extras, pages.MealExtraVM{Food: ef, Servings: ex.ScaledServings(m.Servings)})
+		}
 		if markNext && m.Date == today {
 			vm.IsPast = m.Time < nowHHMM
 			if !vm.IsPast && !nextAssigned {
@@ -227,8 +234,31 @@ func (s *Server) handleAddMealForm(c echo.Context) error {
 	return s.render(c, pages.AddMeal(pages.AddMealData{
 		Member: s.member(c), Date: date, Time: timeOfDay, Servings: servings,
 		Search: search, Foods: filtered, Selected: selected,
-		SelectedFood: selectedFood, ReturnTo: returnTo, Active: active,
+		SelectedFood: selectedFood, Title: c.QueryParam("title"), Notes: c.QueryParam("notes"),
+		Extras: map[string]string{}, ReturnTo: returnTo, Active: active,
 	}))
+}
+
+// parseExtras reads the additional-recipe selection from the submitted form:
+// each checked "extra" food id, with an optional per-recipe servings override
+// posted as "override_<foodid>". The primary food is skipped so it is never
+// double-counted (G4).
+func parseExtras(c echo.Context, primary uuid.UUID) []planner.MealRecipe {
+	var out []planner.MealRecipe
+	seen := map[uuid.UUID]bool{primary: true}
+	for _, v := range c.Request().Form["extra"] {
+		fid, err := uuid.Parse(v)
+		if err != nil || seen[fid] {
+			continue
+		}
+		seen[fid] = true
+		mr := planner.MealRecipe{FoodID: fid}
+		if n, err := strconv.Atoi(c.FormValue("override_" + v)); err == nil && n >= 1 {
+			mr.ServingsOverride = &n
+		}
+		out = append(out, mr)
+	}
+	return out
 }
 
 func (s *Server) handleAddMeal(c echo.Context) error {
@@ -242,6 +272,8 @@ func (s *Server) handleAddMeal(c echo.Context) error {
 		servings = 2
 	}
 	date, timeOfDay := c.FormValue("date"), c.FormValue("time")
+	title, notes := strings.TrimSpace(c.FormValue("title")), strings.TrimSpace(c.FormValue("notes"))
+	extras := parseExtras(c, foodID)
 
 	if c.FormValue("repeat") == "on" {
 		rec := planner.Recurrence{
@@ -249,13 +281,13 @@ func (s *Server) handleAddMeal(c echo.Context) error {
 			Weekdays: parseWeekdays(c.Request().Form["weekday"]),
 			Until:    c.FormValue("until"),
 		}
-		if err := s.planner.AddRecurring(c.Request().Context(), s.household(c), date, timeOfDay, foodID, servings, rec); err != nil {
+		if err := s.planner.AddRecurring(c.Request().Context(), s.household(c), s.actorID(c), date, timeOfDay, foodID, servings, title, notes, extras, rec); err != nil {
 			return err
 		}
 		return s.redirect(c, returnTo)
 	}
 
-	if err := s.planner.Add(c.Request().Context(), s.household(c), date, timeOfDay, foodID, servings); err != nil {
+	if err := s.planner.Add(c.Request().Context(), s.household(c), s.actorID(c), date, timeOfDay, foodID, servings, title, notes, extras); err != nil {
 		return err
 	}
 	return s.redirect(c, returnTo)
@@ -321,11 +353,21 @@ func (s *Server) editMealData(c echo.Context, m *planner.Meal, returnTo, search 
 		series, _ = s.planner.GetSeries(ctx, s.household(c), *m.SeriesID)
 	}
 
+	extras := map[string]string{}
+	for _, r := range m.Recipes {
+		ov := ""
+		if r.ServingsOverride != nil {
+			ov = strconv.Itoa(*r.ServingsOverride)
+		}
+		extras[r.FoodID.String()] = ov
+	}
+
 	return pages.EditMealData{
 		Member: s.member(c), MealID: m.ID.String(),
 		Date: m.Date, Time: m.Time, Servings: m.Servings,
 		Search: search, Foods: filtered, Selected: m.FoodID.String(),
-		SelectedFood: selectedFood, ReturnTo: returnTo, Active: active,
+		SelectedFood: selectedFood, Title: m.Title, Notes: m.Notes, Extras: extras,
+		ReturnTo: returnTo, Active: active,
 		Recurring: m.SeriesID != nil, Series: series,
 		LinkURL: m.LinkURL, LinkTitle: m.LinkTitle, LinkImageURL: m.LinkImageURL,
 	}, nil
@@ -355,21 +397,23 @@ func (s *Server) handleEditMeal(c echo.Context) error {
 		servings = 2
 	}
 	scope := planner.ParseScope(c.FormValue("scope"))
-	if err := s.planner.Update(ctx, s.household(c), id, c.FormValue("date"), c.FormValue("time"), foodID, servings, scope); err != nil {
+	title, notes := strings.TrimSpace(c.FormValue("title")), strings.TrimSpace(c.FormValue("notes"))
+	extras := parseExtras(c, foodID)
+	if err := s.planner.Update(ctx, s.household(c), s.actorID(c), id, c.FormValue("date"), c.FormValue("time"), foodID, servings, title, notes, extras, scope); err != nil {
 		return err
 	}
 
 	// Persist the link on this occurrence. A new/changed URL with no manual
 	// title or image is auto-previewed; failures are non-fatal (raw URL kept).
 	url := strings.TrimSpace(c.FormValue("link_url"))
-	title := strings.TrimSpace(c.FormValue("link_title"))
+	linkTitle := strings.TrimSpace(c.FormValue("link_title"))
 	image := strings.TrimSpace(c.FormValue("link_image"))
-	if url != "" && title == "" && image == "" {
+	if url != "" && linkTitle == "" && image == "" {
 		if pv, ferr := linkpreview.Fetch(ctx, url); ferr == nil {
-			title, image = pv.Title, pv.ImageURL
+			linkTitle, image = pv.Title, pv.ImageURL
 		}
 	}
-	if err := s.planner.SetLink(ctx, s.household(c), id, url, title, image); err != nil {
+	if err := s.planner.SetLink(ctx, s.household(c), s.actorID(c), id, url, linkTitle, image); err != nil {
 		return err
 	}
 	return s.redirect(c, returnTo)
@@ -397,7 +441,7 @@ func (s *Server) handleMealLinkAction(c echo.Context, id uuid.UUID, action, retu
 		}
 	}
 
-	if err := s.planner.SetLink(ctx, s.household(c), id, url, title, image); err != nil {
+	if err := s.planner.SetLink(ctx, s.household(c), s.actorID(c), id, url, title, image); err != nil {
 		return err
 	}
 	m, err := s.planner.Get(ctx, s.household(c), id)
@@ -418,7 +462,7 @@ func (s *Server) handleDeleteMeal(c echo.Context) error {
 		return echo.ErrNotFound
 	}
 	scope := planner.ParseScope(c.FormValue("scope"))
-	if err := s.planner.Delete(c.Request().Context(), s.household(c), id, scope); err != nil {
+	if err := s.planner.Delete(c.Request().Context(), s.household(c), s.actorID(c), id, scope); err != nil {
 		return err
 	}
 	returnTo := c.FormValue("return")

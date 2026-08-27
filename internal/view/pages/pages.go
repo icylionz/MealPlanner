@@ -59,8 +59,15 @@ type AuthData struct {
 type MealVM struct {
 	Meal   planner.Meal
 	Food   foods.Food
+	Extras []MealExtraVM // additional recipes resolved for display (G4)
 	IsPast bool
 	IsNext bool
+}
+
+// MealExtraVM is one additional recipe on a meal, resolved for display.
+type MealExtraVM struct {
+	Food     foods.Food
+	Servings int // override when set, else the meal's servings
 }
 
 // TodayData feeds the Today screen.
@@ -341,9 +348,18 @@ type AddMealData struct {
 	Foods        []foods.Food
 	Selected     string
 	SelectedFood *foods.Food
+	Title        string            // optional meal title (G4)
+	Notes        string            // optional meal notes (G4)
+	Extras       map[string]string // additional recipe food id -> override servings ("" if none) (G4)
 	ReturnTo     string
 	Active       string // nav section the modal was opened from
 }
+
+// IsExtra reports whether the given food id is selected as an additional recipe.
+func (d AddMealData) IsExtra(id string) bool { _, ok := d.Extras[id]; return ok }
+
+// ExtraOverride returns the override servings entered for an additional recipe.
+func (d AddMealData) ExtraOverride(id string) string { return d.Extras[id] }
 
 // EditMealData feeds the edit-meal modal page.
 type EditMealData struct {
@@ -358,13 +374,22 @@ type EditMealData struct {
 	SelectedFood *foods.Food
 	ReturnTo     string
 	Active       string
-	Recurring    bool            // meal belongs to a series -> offer scope choice
-	Series       *planner.Series // recurrence rule for display (may be nil)
-	LinkURL      string          // external link + preview (FR13)
+	Title        string            // optional meal title (G4)
+	Notes        string            // optional meal notes (G4)
+	Extras       map[string]string // additional recipe food id -> override servings ("" if none) (G4)
+	Recurring    bool              // meal belongs to a series -> offer scope choice
+	Series       *planner.Series   // recurrence rule for display (may be nil)
+	LinkURL      string            // external link + preview (FR13)
 	LinkTitle    string
 	LinkImageURL string
 	LinkError    string // preview fetch failure -> prompt manual entry (FR13.2)
 }
+
+// IsExtra reports whether the given food id is selected as an additional recipe.
+func (d EditMealData) IsExtra(id string) bool { _, ok := d.Extras[id]; return ok }
+
+// ExtraOverride returns the override servings entered for an additional recipe.
+func (d EditMealData) ExtraOverride(id string) string { return d.Extras[id] }
 
 // WeekdayLabels are the single-letter column headers, Sunday-first (0..6).
 var weekdayLabels = []string{"S", "M", "T", "W", "T", "F", "S"}

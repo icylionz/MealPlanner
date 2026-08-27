@@ -41,7 +41,21 @@ templ todayMealRow(m MealVM, owner bool) {
 		<a class="meal-link" href={ templ.URL(view.Href(ctx, "/foods/"+m.Meal.FoodID.String())) }>
 			<div class="flex-1 min-w-0">
 				<div class="flex items-center" style="gap: 5px;">
+					if m.Meal.Title != "" {
+						<div class="overline" style="font-size: 10px; color: var(--fg-4); letter-spacing: .05em;">{ m.Meal.Title }</div>
+					}
 					<div class="meal-name">{ m.Food.Name }</div>
+					if len(m.Extras) > 0 {
+						<div style="font-size: 12px; color: var(--fg-3); margin-top: 2px;">
+							+
+							for i, ex := range m.Extras {
+								if i > 0 {
+									{ ", " }
+								}
+								{ ex.Food.Name }
+							}
+						</div>
+					}
 					if m.Meal.IsRecurring() {
 						<span title="Recurring" style="color: var(--fg-4); flex: none;">
 							@icons.Icon("refresh", 12)

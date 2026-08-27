@@ -50,6 +50,14 @@ templ EditMeal(d EditMealData) {
 						<input class="input" type="number" name="servings" min="1" value={ view.Itoa(d.Servings) } style="max-width: 110px;"/>
 					</div>
 					<div>
+						@FieldLabel("Title (optional)")
+						<input class="input" type="text" name="title" value={ d.Title } placeholder="e.g. Sunday roast"/>
+					</div>
+					<div>
+						@FieldLabel("Notes (optional)")
+						<textarea class="input" name="notes" rows="2" placeholder="Notes…" style="resize: vertical;">{ d.Notes }</textarea>
+					</div>
+					<div>
 						@FieldLabel("Food")
 						<div class="flex" style="gap: 6px;">
 							<input class="input input-sm" type="search" name="q" value={ d.Search } placeholder="Search foods…"/>
@@ -76,6 +84,24 @@ templ EditMeal(d EditMealData) {
 								<div style="padding: 14px 12px; font-size: 13px; color: var(--fg-3); text-align: center;">No foods match.</div>
 							}
 						</div>
+					</div>
+					<div>
+						@FieldLabel("Additional recipes (optional)")
+						<div class="pick-list" style="margin-top: 6px; max-height: 200px;">
+							for _, r := range d.Foods {
+								<div class="pick-row" style="padding: 10px 12px;">
+									<input type="checkbox" name="extra" value={ r.ID.String() } checked?={ d.IsExtra(r.ID.String()) }/>
+									<div class="flex-1 min-w-0">
+										<div class="pick-name" style="font-size: 14px;">{ r.Name }</div>
+									</div>
+									<input class="input input-sm" type="number" name={ "override_" + r.ID.String() } min="1" value={ d.ExtraOverride(r.ID.String()) } placeholder="srv" style="max-width: 70px;"/>
+								</div>
+							}
+							if len(d.Foods) == 0 {
+								<div style="padding: 14px 12px; font-size: 13px; color: var(--fg-3); text-align: center;">No foods match.</div>
+							}
+						</div>
+						<div class="overline" style="font-size: 10px; color: var(--fg-4); margin-top: 4px;">Optional extra recipes cooked for this meal. Leave a recipe's servings blank to use the meal's servings.</div>
 					</div>
 					@mealLinkSection(d)
 				</div>

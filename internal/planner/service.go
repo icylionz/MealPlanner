@@ -20,17 +20,38 @@ const DateFormat = "2006-01-02"
 
 var timeRe = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
 
-// Meal is one scheduled meal.
+// Meal is one scheduled meal. FoodID is the primary recipe (recipe #1);
+// Recipes holds any additional recipes attached to the meal (G4, FR5).
 type Meal struct {
 	ID           uuid.UUID
 	Date         string // YYYY-MM-DD
 	Time         string // HH:MM
 	FoodID       uuid.UUID
 	Servings     int
+	Title        string // optional meal title (G4)
+	Notes        string // optional meal notes (G4)
+	Version      int    // optimistic-lock version (G13)
+	Recipes      []MealRecipe // additional recipes beyond the primary food (G4)
 	SeriesID     *uuid.UUID // set when this meal belongs to a recurring series
 	LinkURL      string     // optional external link (FR13)
 	LinkTitle    string     // preview title (fetched or manual)
 	LinkImageURL string     // preview image URL
+}
+
+// MealRecipe is one additional recipe attached to a scheduled meal.
+type MealRecipe struct {
+	FoodID           uuid.UUID
+	ServingsOverride *int // nil => use the meal's servings
+	SortOrder        int
+}
+
+// ScaledServings returns the servings to use for this recipe: the override when
+// set, otherwise the meal's servings.
+func (r MealRecipe) ScaledServings(mealServings int) int {
+	if r.ServingsOverride != nil && *r.ServingsOverride >= 1 {
+		return *r.ServingsOverride
+	}
+	return mealServings
 }
 
 // HasLink reports whether the meal carries an external link.
@@ -84,12 +105,13 @@ type Series struct {
 
 // Service owns meal plan use cases.
 type Service struct {
-	q *db.Queries
+	pool *pgxpool.Pool
+	q    *db.Queries
 }
 
 // NewService constructs the planner service.
 func NewService(pool *pgxpool.Pool) *Service {
-	return &Service{q: db.New(pool)}
+	return &Service{pool: pool, q: db.New(pool)}
 }
 
 // ListBetween returns meals within [from, to], ordered by date then time.
@@ -110,7 +132,34 @@ func (s *Service) ListBetween(ctx context.Context, householdID uuid.UUID, from, 
 	for _, m := range rows {
 		out = append(out, fromRow(m))
 	}
+	if err := s.attachRecipes(ctx, out); err != nil {
+		return nil, err
+	}
 	return out, nil
+}
+
+// attachRecipes batch-loads the additional recipes for a set of meals and
+// assigns them onto each meal by id (G4).
+func (s *Service) attachRecipes(ctx context.Context, meals []Meal) error {
+	if len(meals) == 0 {
+		return nil
+	}
+	ids := make([]uuid.UUID, len(meals))
+	for i, m := range meals {
+		ids[i] = m.ID
+	}
+	rows, err := s.q.ListMealRecipesForMeals(ctx, ids)
+	if err != nil {
+		return err
+	}
+	byMeal := map[uuid.UUID][]MealRecipe{}
+	for _, r := range rows {
+		byMeal[r.MealID] = append(byMeal[r.MealID], recipeFromRow(r))
+	}
+	for i := range meals {
+		meals[i].Recipes = byMeal[meals[i].ID]
+	}
+	return nil
 }
 
 // DatesWithMeals returns the distinct dates in [from, to] that have meals.
@@ -141,11 +190,47 @@ func (s *Service) Get(ctx context.Context, householdID, id uuid.UUID) (*Meal, er
 		return nil, err
 	}
 	m := fromRow(row)
+	recs, err := s.q.ListMealRecipes(ctx, m.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range recs {
+		m.Recipes = append(m.Recipes, recipeFromRow(r))
+	}
 	return &m, nil
 }
 
-// Add schedules a food on a date and time.
-func (s *Service) Add(ctx context.Context, householdID uuid.UUID, date, timeOfDay string, foodID uuid.UUID, servings int) error {
+// byPtr returns a nil pointer for the zero account id so authorship columns stay
+// NULL when no actor is known, and a pointer to the account otherwise (G2).
+func byPtr(id uuid.UUID) *uuid.UUID {
+	if id == uuid.Nil {
+		return nil
+	}
+	return &id
+}
+
+// insertRecipes writes a meal's additional recipes (G4) via the given queries
+// handle (transaction-aware). sort_order follows slice order.
+func insertRecipes(ctx context.Context, q *db.Queries, mealID uuid.UUID, actor uuid.UUID, extras []MealRecipe) error {
+	for i, r := range extras {
+		var override *int32
+		if r.ServingsOverride != nil && *r.ServingsOverride >= 1 {
+			v := int32(*r.ServingsOverride)
+			override = &v
+		}
+		if err := q.CreateMealRecipe(ctx, db.CreateMealRecipeParams{
+			MealID: mealID, FoodID: r.FoodID, ServingsOverride: override,
+			SortOrder: int32(i), CreatedBy: byPtr(actor),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Add schedules a food on a date and time, with optional title/notes and
+// additional recipes. actor is recorded as the author (G2).
+func (s *Service) Add(ctx context.Context, householdID, actor uuid.UUID, date, timeOfDay string, foodID uuid.UUID, servings int, title, notes string, extras []MealRecipe) error {
 	d, err := time.Parse(DateFormat, date)
 	if err != nil {
 		return errors.New("invalid date")
@@ -156,15 +241,28 @@ func (s *Service) Add(ctx context.Context, householdID uuid.UUID, date, timeOfDa
 	if servings < 1 {
 		servings = 1
 	}
-	_, err = s.q.CreateMeal(ctx, db.CreateMealParams{
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	q := s.q.WithTx(tx)
+	meal, err := q.CreateMeal(ctx, db.CreateMealParams{
 		HouseholdID: householdID, PlanDate: d, PlanTime: timeOfDay, FoodID: foodID, Servings: int32(servings),
+		Title: title, Notes: notes, CreatedBy: byPtr(actor),
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if err := insertRecipes(ctx, q, meal.ID, actor, extras); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // AddRecurring creates a recurring series and materializes its occurrences
 // as concrete meal_plan rows carrying the series id.
-func (s *Service) AddRecurring(ctx context.Context, householdID uuid.UUID, startDate, timeOfDay string, foodID uuid.UUID, servings int, r Recurrence) error {
+func (s *Service) AddRecurring(ctx context.Context, householdID, actor uuid.UUID, startDate, timeOfDay string, foodID uuid.UUID, servings int, title, notes string, extras []MealRecipe, r Recurrence) error {
 	start, err := time.Parse(DateFormat, startDate)
 	if err != nil {
 		return errors.New("invalid date")
@@ -207,7 +305,14 @@ func (s *Service) AddRecurring(ctx context.Context, householdID uuid.UUID, start
 		return errors.New("recurrence produces no dates")
 	}
 
-	series, err := s.q.CreateSeries(ctx, db.CreateSeriesParams{
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	q := s.q.WithTx(tx)
+
+	series, err := q.CreateSeries(ctx, db.CreateSeriesParams{
 		HouseholdID: householdID, FoodID: foodID, PlanTime: timeOfDay, Servings: int32(servings),
 		Freq: r.Freq, Byweekday: byweekday, StartDate: start, UntilDate: until,
 	})
@@ -216,13 +321,18 @@ func (s *Service) AddRecurring(ctx context.Context, householdID uuid.UUID, start
 	}
 	sid := series.ID
 	for _, d := range dates {
-		if _, err := s.q.CreateMeal(ctx, db.CreateMealParams{
+		meal, err := q.CreateMeal(ctx, db.CreateMealParams{
 			HouseholdID: householdID, PlanDate: d, PlanTime: timeOfDay, FoodID: foodID, Servings: int32(servings), SeriesID: &sid,
-		}); err != nil {
+			Title: title, Notes: notes, CreatedBy: byPtr(actor),
+		})
+		if err != nil {
+			return err
+		}
+		if err := insertRecipes(ctx, q, meal.ID, actor, extras); err != nil {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 // occurrences lists dates in [start, until] matching the recurrence.
@@ -267,7 +377,7 @@ func decodeWeekdays(s string) []time.Weekday {
 
 // Update edits a meal. For non-series meals scope is ignored. For series meals
 // scope selects this occurrence, this and future, or all occurrences.
-func (s *Service) Update(ctx context.Context, householdID, id uuid.UUID, date, timeOfDay string, foodID uuid.UUID, servings int, scope Scope) error {
+func (s *Service) Update(ctx context.Context, householdID, actor, id uuid.UUID, date, timeOfDay string, foodID uuid.UUID, servings int, title, notes string, extras []MealRecipe, scope Scope) error {
 	d, err := time.Parse(DateFormat, date)
 	if err != nil {
 		return errors.New("invalid date")
@@ -283,47 +393,83 @@ func (s *Service) Update(ctx context.Context, householdID, id uuid.UUID, date, t
 		return err
 	}
 
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	q := s.q.WithTx(tx)
+
+	// replaceExtras clears and re-inserts a meal's additional recipes (G4).
+	replaceExtras := func(mealID uuid.UUID) error {
+		if err := q.DeleteMealRecipes(ctx, mealID); err != nil {
+			return err
+		}
+		return insertRecipes(ctx, q, mealID, actor, extras)
+	}
+
 	if m.SeriesID == nil || scope == ScopeOne {
 		// A single-occurrence edit detaches it so series-wide edits skip it.
-		if err := s.q.UpdateMeal(ctx, db.UpdateMealParams{
+		if err := q.UpdateMeal(ctx, db.UpdateMealParams{
 			ID: id, HouseholdID: householdID, PlanDate: d, PlanTime: timeOfDay, FoodID: foodID, Servings: int32(servings),
+			Title: title, Notes: notes, UpdatedBy: byPtr(actor),
 		}); err != nil {
 			return err
 		}
 		if m.SeriesID != nil {
-			return s.q.DetachMeal(ctx, db.DetachMealParams{ID: id, HouseholdID: householdID})
+			if err := q.DetachMeal(ctx, db.DetachMealParams{ID: id, HouseholdID: householdID}); err != nil {
+				return err
+			}
 		}
-		return nil
+		if err := replaceExtras(id); err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
 	}
 
-	// Series-wide edits change time/food/servings but not per-occurrence dates.
+	// Series-wide edits change time/food/servings/title/notes but not
+	// per-occurrence dates. Extras are re-applied to every affected occurrence.
 	from := m.PlanDate
 	if scope == ScopeAll {
 		from = time.Time{} // all rows
 	}
-	return s.q.UpdateSeriesMealsFrom(ctx, db.UpdateSeriesMealsFromParams{
+	if err := q.UpdateSeriesMealsFrom(ctx, db.UpdateSeriesMealsFromParams{
 		SeriesID: m.SeriesID, PlanDate: from, PlanTime: timeOfDay, FoodID: foodID, Servings: int32(servings),
-	})
+		Title: title, Notes: notes, UpdatedBy: byPtr(actor),
+	}); err != nil {
+		return err
+	}
+	affected, err := q.ListSeriesMeals(ctx, db.ListSeriesMealsParams{SeriesID: m.SeriesID, PlanDate: from})
+	if err != nil {
+		return err
+	}
+	for _, occ := range affected {
+		if err := replaceExtras(occ.ID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 // Delete removes a scheduled meal. For series meals scope selects this
 // occurrence, this and future, or all occurrences.
-func (s *Service) Delete(ctx context.Context, householdID, id uuid.UUID, scope Scope) error {
+func (s *Service) Delete(ctx context.Context, householdID, actor, id uuid.UUID, scope Scope) error {
 	m, err := s.q.GetMeal(ctx, db.GetMealParams{ID: id, HouseholdID: householdID})
 	if err != nil {
 		return err
 	}
+	by := byPtr(actor)
 	if m.SeriesID == nil || scope == ScopeOne {
-		return s.q.DeleteMeal(ctx, db.DeleteMealParams{ID: id, HouseholdID: householdID})
+		return s.q.DeleteMeal(ctx, db.DeleteMealParams{ID: id, HouseholdID: householdID, UpdatedBy: by})
 	}
 	if scope == ScopeAll {
 		// Soft-delete every occurrence; the meal_series rule row is left in place
 		// because a hard DELETE there would cascade-remove the occurrences and
 		// defeat the soft-delete history (G1).
-		return s.q.DeleteSeriesMeals(ctx, db.DeleteSeriesMealsParams{SeriesID: m.SeriesID, HouseholdID: householdID})
+		return s.q.DeleteSeriesMeals(ctx, db.DeleteSeriesMealsParams{SeriesID: m.SeriesID, HouseholdID: householdID, UpdatedBy: by})
 	}
 	return s.q.DeleteSeriesMealsFrom(ctx, db.DeleteSeriesMealsFromParams{
-		SeriesID: m.SeriesID, PlanDate: m.PlanDate,
+		SeriesID: m.SeriesID, PlanDate: m.PlanDate, UpdatedBy: by,
 	})
 }
 
@@ -349,6 +495,9 @@ func fromRow(m db.MealPlan) Meal {
 		Time:         m.PlanTime,
 		FoodID:       m.FoodID,
 		Servings:     int(m.Servings),
+		Title:        m.Title,
+		Notes:        m.Notes,
+		Version:      int(m.Version),
 		SeriesID:     m.SeriesID,
 		LinkURL:      m.LinkUrl,
 		LinkTitle:    m.LinkTitle,
@@ -356,10 +505,21 @@ func fromRow(m db.MealPlan) Meal {
 	}
 }
 
+// recipeFromRow maps a stored join row to a MealRecipe.
+func recipeFromRow(r db.ScheduledMealRecipe) MealRecipe {
+	var override *int
+	if r.ServingsOverride != nil {
+		v := int(*r.ServingsOverride)
+		override = &v
+	}
+	return MealRecipe{FoodID: r.FoodID, ServingsOverride: override, SortOrder: int(r.SortOrder)}
+}
+
 // SetLink stores (or clears, when url is empty) the external link and its
 // preview on a single meal occurrence (FR13).
-func (s *Service) SetLink(ctx context.Context, householdID, id uuid.UUID, url, title, imageURL string) error {
+func (s *Service) SetLink(ctx context.Context, householdID, actor, id uuid.UUID, url, title, imageURL string) error {
 	return s.q.UpdateMealLink(ctx, db.UpdateMealLinkParams{
 		ID: id, HouseholdID: householdID, LinkUrl: url, LinkTitle: title, LinkImageUrl: imageURL,
+		UpdatedBy: byPtr(actor),
 	})
 }
