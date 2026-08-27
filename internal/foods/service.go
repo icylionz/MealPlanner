@@ -230,9 +230,20 @@ func (s *Service) foodNames(ctx context.Context, householdID uuid.UUID) (map[uui
 	return m, nil
 }
 
+// byPtr returns a nil pointer for the zero account id so authorship columns stay
+// NULL when no actor is known (e.g. seed/system writes), and a pointer to the
+// account otherwise (G2).
+func byPtr(id uuid.UUID) *uuid.UUID {
+	if id == uuid.Nil {
+		return nil
+	}
+	return &id
+}
+
 // Save creates or updates a food with its tags, components, and steps in one
-// transaction. It rejects component graphs that would contain a cycle.
-func (s *Service) Save(ctx context.Context, householdID uuid.UUID, id *uuid.UUID, form Form) (uuid.UUID, error) {
+// transaction. It rejects component graphs that would contain a cycle. actor is
+// the account performing the write, recorded in created_by/updated_by (G2).
+func (s *Service) Save(ctx context.Context, householdID, actor uuid.UUID, id *uuid.UUID, form Form) (uuid.UUID, error) {
 	if strings.TrimSpace(form.Name) == "" {
 		return uuid.Nil, errors.New("food needs a name")
 	}
@@ -267,6 +278,7 @@ func (s *Service) Save(ctx context.Context, householdID uuid.UUID, id *uuid.UUID
 			PrepTimeMin: int32(form.PrepTime), CookTimeMin: int32(form.CookTime),
 			Servings: int32(form.Servings), DefaultUnit: form.DefaultUnit,
 			DensityGPerMl: density, DensitySource: source,
+			CreatedBy: byPtr(actor),
 		})
 		if err != nil {
 			return uuid.Nil, err
@@ -279,7 +291,7 @@ func (s *Service) Save(ctx context.Context, householdID uuid.UUID, id *uuid.UUID
 			PrepTimeMin: int32(form.PrepTime), CookTimeMin: int32(form.CookTime),
 			Servings: int32(form.Servings), DefaultUnit: form.DefaultUnit,
 			DensityGPerMl: density, DensitySource: source,
-			Version: int32(form.Version),
+			Version: int32(form.Version), UpdatedBy: byPtr(actor),
 		})
 		if err != nil {
 			return uuid.Nil, err
@@ -345,8 +357,9 @@ func (s *Service) Save(ctx context.Context, householdID uuid.UUID, id *uuid.UUID
 	return foodID, nil
 }
 
-// Delete removes a food unless another food uses it as a component.
-func (s *Service) Delete(ctx context.Context, householdID, id uuid.UUID) error {
+// Delete removes a food unless another food uses it as a component. actor is
+// recorded as updated_by on the soft delete (G2).
+func (s *Service) Delete(ctx context.Context, householdID, actor, id uuid.UUID) error {
 	uses, err := s.q.CountComponentUses(ctx, id)
 	if err != nil {
 		return err
@@ -354,7 +367,7 @@ func (s *Service) Delete(ctx context.Context, householdID, id uuid.UUID) error {
 	if uses > 0 {
 		return ErrInUse
 	}
-	return s.q.DeleteFood(ctx, db.DeleteFoodParams{ID: id, HouseholdID: householdID})
+	return s.q.DeleteFood(ctx, db.DeleteFoodParams{ID: id, HouseholdID: householdID, UpdatedBy: byPtr(actor)})
 }
 
 // checkNoCycle verifies that the food's new component references cannot reach

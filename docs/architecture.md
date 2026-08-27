@@ -31,32 +31,10 @@ The app must support standard browser links and form submissions first. HTMX is 
 
 ## Application Structure
 
-Use a single Go binary with clear internal boundaries.
-
-- `cmd/...`
-  - application entrypoint and dependency wiring
-- `internal/config`
-  - env loading, normalization, validation
-- `internal/platform`
-  - shared infrastructure such as database, sessions, renderer, jobs, logging, and time helpers
-- `internal/http`
-  - Echo router, middleware, handlers, request parsing, content negotiation
-- `internal/auth`
-  - accounts, login, logout, session ownership, authorization checks
-- `internal/households`
-  - household membership, roles, invite flows
-- `internal/recipes`
-  - recipes, recipe components, imports, tags
-- `internal/ingredients`
-  - ingredient catalog, aliases, unit conversions, density rules
-- `internal/planner`
-  - scheduled meals, recurrence, agenda behavior
-- `internal/grocery`
-  - snapshot generation, contributor traceability, snapshot edits
-- `internal/imports`
-  - import and export workflows, import review, re-import support
-
-Exact package names can change, but the architectural boundary must remain: handlers stay thin, services own business logic, and data access stays below the service layer.
+Use a single Go binary with clear internal boundaries: the entrypoint under
+`cmd/` wires dependencies, HTTP handlers stay thin, services own business logic,
+and data access stays below the service layer. Package layout can evolve freely
+as long as that boundary holds.
 
 ## Dependency Injection
 
@@ -64,7 +42,7 @@ Use manual constructor-based dependency injection only.
 
 - Wire dependencies in the application entrypoint.
 - Pass concrete dependencies through constructors.
-- Depend on interfaces only where a boundary actually benefits from substitution, such as sessions, jobs, rendering, or repositories.
+- Depend on interfaces only where a boundary actually benefits from substitution, such as sessions, rendering, or repositories.
 - Do not introduce runtime DI containers.
 
 ## Data Access
@@ -84,17 +62,6 @@ Authentication uses server-side, database-backed sessions.
 - Session records live in PostgreSQL.
 - Role and household authorization is enforced on the server for every protected request.
 - This architecture is preferred over JWT for the current SSR-first, web-first application shape.
-
-## Jobs and Slow Work
-
-Slow or asynchronous work runs through an in-process job runner backed by PostgreSQL.
-
-- The initial deployment remains a single app process plus PostgreSQL.
-- A `jobs` table should hold queued work, attempts, status, and scheduling metadata.
-- Work claiming should use database locking patterns appropriate for concurrent workers, such as `FOR UPDATE SKIP LOCKED`.
-- Initial job candidates include recipe URL import processing and rich link preview refresh.
-
-If scale later justifies it, the same job runner can be moved into a separate worker process without redesigning the domain layer.
 
 ## Configuration
 

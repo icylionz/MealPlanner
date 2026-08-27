@@ -295,7 +295,7 @@ func (s *Server) handleFoodEditPost(c echo.Context) error {
 			}
 			idPtr = &id
 		}
-		savedID, err := s.foods.Save(c.Request().Context(), s.household(c), idPtr, form)
+		savedID, err := s.foods.Save(c.Request().Context(), s.household(c), s.actorID(c), idPtr, form)
 		if err != nil {
 			if errors.Is(err, foods.ErrConflict) && idPtr != nil {
 				// Optimistic-lock conflict (FR16): show the current saved record
@@ -363,7 +363,7 @@ func (s *Server) handleFoodDelete(c echo.Context) error {
 	if err != nil {
 		return echo.ErrNotFound
 	}
-	if err := s.foods.Delete(c.Request().Context(), s.household(c), id); err != nil {
+	if err := s.foods.Delete(c.Request().Context(), s.household(c), s.actorID(c), id); err != nil {
 		if errors.Is(err, foods.ErrInUse) {
 			return s.redirect(c, "/foods/"+id.String()+"/edit?error=in-use")
 		}

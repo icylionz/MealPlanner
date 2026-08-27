@@ -10,8 +10,8 @@ SELECT * FROM foods WHERE household_id = $1 ORDER BY lower(name);
 SELECT * FROM foods WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL;
 
 -- name: CreateFood :one
-INSERT INTO foods (household_id, name, description, prep_time_min, cook_time_min, servings, default_unit, density_g_per_ml, density_source)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO foods (household_id, name, description, prep_time_min, cook_time_min, servings, default_unit, density_g_per_ml, density_source, created_by, updated_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
 RETURNING *;
 
 -- name: UpdateFood :execrows
@@ -21,13 +21,13 @@ RETURNING *;
 UPDATE foods
 SET name = $2, description = $3, prep_time_min = $4, cook_time_min = $5,
     servings = $6, default_unit = $7, density_g_per_ml = $8, density_source = $9,
-    version = version + 1, updated_at = now()
+    version = version + 1, updated_at = now(), updated_by = $12
 WHERE id = $1 AND household_id = $11 AND version = $10 AND deleted_at IS NULL;
 
 -- name: DeleteFood :exec
 -- Soft delete (G1): flip deleted_at instead of removing the row so old meals,
 -- prep sessions, and grocery lines still resolve the food's name.
-UPDATE foods SET deleted_at = now(), updated_at = now()
+UPDATE foods SET deleted_at = now(), updated_at = now(), updated_by = $3
 WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL;
 
 -- name: ListAllTags :many

@@ -10,6 +10,9 @@ claude.ai/design MealPlanner project.
 
 ## Screens
 
+- **Login / Register** — email + password accounts backed by server-side,
+  database-backed sessions (bcrypt hashes, `SameSite=Lax` session cookie)
+- **Onboarding** — create a new household or join one by invite code
 - **Today** — agenda for today with next-meal highlight
 - **Plan** — mini calendar + week list, day list or week grid layout
 - **Foods** — food catalog with search, tag filter; atomic ingredients and
@@ -22,7 +25,11 @@ claude.ai/design MealPlanner project.
 - **Grocery** — lists, check-off, unit conversion, generation from planned
   meals / recipes / date ranges with ingredient aggregation
 - **Prep** — prep sessions with aggregate ingredients and printable view
-- **Household** — member profiles with active-profile switching
+- **Household** — multi-tenant: each account belongs to one or more households,
+  each owning its own foods/plans/grocery/prep; owners add members by email or
+  regenerate the shareable invite code, and members switch the active household
+- **Settings** — account self-service: change display name/email (email-unique)
+  and password (verifies the current one, 8-char minimum)
 
 ## Development
 

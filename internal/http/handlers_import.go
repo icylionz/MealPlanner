@@ -106,7 +106,7 @@ func (s *Server) handleImportReconcile(c echo.Context) error {
 			d.Error = perr.Error()
 			break
 		}
-		savedID, err := s.foods.Save(ctx, s.household(c), nil, form)
+		savedID, err := s.foods.Save(ctx, s.household(c), s.actorID(c), nil, form)
 		if err != nil {
 			d.Error = "Couldn’t save the imported recipe: " + err.Error()
 			break
@@ -118,7 +118,7 @@ func (s *Server) handleImportReconcile(c echo.Context) error {
 			name := strings.TrimSpace(d.Lines[i].Name)
 			if name != "" {
 				unit := d.Lines[i].Unit
-				newID, err := s.foods.Save(ctx, s.household(c), nil, foods.Form{
+				newID, err := s.foods.Save(ctx, s.household(c), s.actorID(c), nil, foods.Form{
 					Name: name, Servings: 1, DefaultUnit: unit,
 				})
 				if err != nil {
