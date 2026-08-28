@@ -3,24 +3,26 @@ package httpserver
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/a-h/templ"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 
 	"mealplanner/internal/auth"
 	"mealplanner/internal/config"
 	"mealplanner/internal/foods"
 	"mealplanner/internal/grocery"
 	"mealplanner/internal/households"
+	"mealplanner/internal/observability"
 	"mealplanner/internal/planner"
 	"mealplanner/internal/prep"
 	"mealplanner/internal/transfer"
@@ -29,14 +31,17 @@ import (
 
 // Server bundles the services the handlers need.
 type Server struct {
-	cfg        *config.Config
-	households *households.Service
-	login      loginService
-	foods      *foods.Service
-	planner    *planner.Service
-	grocery    *grocery.Service
-	prep       *prep.Service
-	transfer   *transfer.Service
+	cfg         *config.Config
+	households  *households.Service
+	login       loginService
+	foods       *foods.Service
+	planner     *planner.Service
+	grocery     *grocery.Service
+	prep        *prep.Service
+	transfer    *transfer.Service
+	metrics     *observability.Metrics
+	metricsOnce sync.Once
+	logger      *slog.Logger
 }
 
 type loginService interface {
@@ -45,7 +50,12 @@ type loginService interface {
 
 // New constructs the HTTP server wrapper.
 func New(cfg *config.Config, hh *households.Service, login *auth.Service, fs *foods.Service, ps *planner.Service, gs *grocery.Service, pr *prep.Service, ts *transfer.Service) *Server {
-	return &Server{cfg: cfg, households: hh, login: login, foods: fs, planner: ps, grocery: gs, prep: pr, transfer: ts}
+	return &Server{
+		cfg: cfg, households: hh, login: login, foods: fs, planner: ps,
+		grocery: gs, prep: pr, transfer: ts,
+		metrics: &observability.Metrics{},
+		logger:  slog.New(slog.NewJSONHandler(os.Stdout, nil)),
+	}
 }
 
 // Router builds the Echo instance with all routes mounted under BASE_PATH.
@@ -53,21 +63,25 @@ func (s *Server) Router() *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
 	e.IPExtractor = clientIPExtractor(s.cfg.TrustedProxyCIDRs)
-	e.Use(middleware.Recover())
-	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
-		LogStatus: true, LogURI: true, LogMethod: true, LogLatency: true,
-		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
-			e.Logger.Infof("%s %s -> %d (%s)", v.Method, v.URI, v.Status, v.Latency)
-			return nil
-		},
-	}))
+	e.Use(s.requestIDMiddleware)
+	e.Use(s.requestLoggerMiddleware())
+	e.Use(s.recoverMiddleware())
 
 	g := e.Group(s.cfg.BasePath)
 	g.Use(s.csrfMiddleware)
 	g.Use(s.sessionMiddleware)
+	g.GET("/metrics", s.handleMetrics)
 
 	if _, err := os.Stat("web/static"); err == nil {
 		g.Static("/static", "web/static")
+		g.GET("/manifest.webmanifest", func(c echo.Context) error {
+			c.Response().Header().Set(echo.HeaderContentType, "application/manifest+json")
+			return c.File("web/static/manifest.webmanifest")
+		})
+		g.GET("/service-worker.js", func(c echo.Context) error {
+			c.Response().Header().Set(echo.HeaderCacheControl, "no-cache")
+			return c.File("web/static/service-worker.js")
+		})
 	}
 
 	g.GET("/login", s.handleLoginForm)
@@ -312,7 +326,7 @@ func (s *Server) sessionMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 func (s *Server) isPublicPath(c echo.Context) bool {
 	rel := strings.TrimPrefix(c.Request().URL.Path, s.cfg.BasePath)
 	switch rel {
-	case "/login", "/register", "/logout":
+	case "/login", "/register", "/logout", "/manifest.webmanifest", "/service-worker.js", "/metrics":
 		return true
 	}
 	return strings.HasPrefix(rel, "/static")

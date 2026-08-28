@@ -2,9 +2,12 @@ package httpserver
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -89,6 +92,74 @@ func TestFoodDetailBaseURLRemovesBasePathExactlyOnce(t *testing.T) {
 		if got := foodDetailBaseURL(tc.uri, tc.basePath); got != tc.want {
 			t.Errorf("foodDetailBaseURL(%q, %q) = %q, want %q", tc.uri, tc.basePath, got, tc.want)
 		}
+	}
+}
+
+func TestPWAAssetsArePublicUnderBasePath(t *testing.T) {
+	workingDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Clean(filepath.Join(workingDir, "../.."))
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(workingDir) })
+
+	s := &Server{
+		cfg:        &config.Config{AppEnv: "development", BasePath: "/plate", SessionCookieName: "test_session"},
+		households: households.NewService(nil),
+	}
+	e := s.Router()
+
+	manifestReq := httptest.NewRequest(http.MethodGet, "/plate/manifest.webmanifest", nil)
+	manifestRec := httptest.NewRecorder()
+	e.ServeHTTP(manifestRec, manifestReq)
+	if manifestRec.Code != http.StatusOK {
+		t.Fatalf("manifest status = %d, want 200; body: %s", manifestRec.Code, manifestRec.Body.String())
+	}
+	if got := manifestRec.Header().Get(echo.HeaderContentType); !strings.HasPrefix(got, "application/manifest+json") {
+		t.Errorf("manifest content type = %q", got)
+	}
+	var manifest struct {
+		Name     string `json:"name"`
+		StartURL string `json:"start_url"`
+		Scope    string `json:"scope"`
+		Display  string `json:"display"`
+		Theme    string `json:"theme_color"`
+		Icons    []struct {
+			Src string `json:"src"`
+		} `json:"icons"`
+	}
+	if err := json.Unmarshal(manifestRec.Body.Bytes(), &manifest); err != nil {
+		t.Fatalf("decode manifest: %v", err)
+	}
+	if manifest.Name != "Backbone Plate" || manifest.Theme != "#22386A" || manifest.StartURL != "./" || manifest.Scope != "./" || manifest.Display != "standalone" {
+		t.Errorf("manifest deployment settings = %+v", manifest)
+	}
+	if len(manifest.Icons) < 2 || strings.HasPrefix(manifest.Icons[0].Src, "/") {
+		t.Errorf("manifest icons are not base-path-relative: %+v", manifest.Icons)
+	}
+	for _, icon := range manifest.Icons {
+		iconReq := httptest.NewRequest(http.MethodGet, "/plate/"+icon.Src, nil)
+		iconRec := httptest.NewRecorder()
+		e.ServeHTTP(iconRec, iconReq)
+		if iconRec.Code != http.StatusOK {
+			t.Errorf("icon %q status = %d, want 200", icon.Src, iconRec.Code)
+		}
+	}
+
+	workerReq := httptest.NewRequest(http.MethodGet, "/plate/service-worker.js", nil)
+	workerRec := httptest.NewRecorder()
+	e.ServeHTTP(workerRec, workerReq)
+	if workerRec.Code != http.StatusOK {
+		t.Fatalf("service worker status = %d, want 200; body: %s", workerRec.Code, workerRec.Body.String())
+	}
+	if got := workerRec.Header().Get(echo.HeaderCacheControl); got != "no-cache" {
+		t.Errorf("service worker Cache-Control = %q, want no-cache", got)
+	}
+	if !strings.Contains(workerRec.Body.String(), "self.registration.scope") {
+		t.Error("service worker does not derive assets from its registered BASE_PATH scope")
 	}
 }
 

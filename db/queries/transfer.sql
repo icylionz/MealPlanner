@@ -219,13 +219,14 @@ VALUES ($1, $2, $3)
 ON CONFLICT (food_id, step_number) DO UPDATE SET instruction = excluded.instruction;
 
 -- name: ImportMealSeries :one
-INSERT INTO meal_series (id, household_id, food_id, plan_time, servings, freq, byweekday, start_date, until_date)
-SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9
+INSERT INTO meal_series (id, household_id, food_id, plan_time, servings, freq, byweekday, start_date, until_date, version)
+SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 WHERE EXISTS (SELECT 1 FROM foods f WHERE f.id = $3 AND f.household_id = $2)
 ON CONFLICT (id) DO UPDATE SET
     food_id = excluded.food_id, plan_time = excluded.plan_time,
     servings = excluded.servings, freq = excluded.freq, byweekday = excluded.byweekday,
-    start_date = excluded.start_date, until_date = excluded.until_date
+    start_date = excluded.start_date, until_date = excluded.until_date,
+    version = meal_series.version + 1
 WHERE meal_series.household_id = excluded.household_id
 RETURNING (xmax = 0) AS inserted;
 
@@ -239,9 +240,14 @@ ON CONFLICT (id) DO UPDATE SET
     plan_date = excluded.plan_date, plan_time = excluded.plan_time,
     food_id = excluded.food_id, servings = excluded.servings, series_id = excluded.series_id,
     link_url = excluded.link_url, link_title = excluded.link_title,
-    link_image_url = excluded.link_image_url
+    link_image_url = excluded.link_image_url, version = meal_plan.version + 1
 WHERE meal_plan.household_id = excluded.household_id
 RETURNING (xmax = 0) AS inserted;
+
+-- name: GetImportedMealSeries :one
+SELECT series_id
+FROM meal_plan
+WHERE id = sqlc.arg(id) AND household_id = sqlc.arg(household_id);
 
 -- name: ImportMealPlanV2 :one
 INSERT INTO meal_plan (id, household_id, plan_date, plan_time, food_id, servings, series_id,
@@ -254,10 +260,17 @@ ON CONFLICT (id) DO UPDATE SET
     food_id = excluded.food_id, servings = excluded.servings, series_id = excluded.series_id,
     link_url = excluded.link_url, link_title = excluded.link_title,
     link_image_url = excluded.link_image_url, title = excluded.title, notes = excluded.notes,
-    version = excluded.version, deleted_at = excluded.deleted_at,
+    version = meal_plan.version + 1, deleted_at = excluded.deleted_at,
     created_by = excluded.created_by, updated_by = excluded.updated_by
 WHERE meal_plan.household_id = excluded.household_id
 RETURNING (xmax = 0) AS inserted;
+
+-- name: BumpImportedMealSeriesVersion :execrows
+-- Selective imports may update one occurrence without carrying its series row.
+-- Invalidate every editor opened against that attached aggregate.
+UPDATE meal_series
+SET version = version + 1
+WHERE id = sqlc.arg(id) AND household_id = sqlc.arg(household_id);
 
 -- name: DeleteImportedScheduledMealRecipes :exec
 DELETE FROM scheduled_meal_recipes smr

@@ -2,9 +2,9 @@
 
 ## Summary
 
-MealPlanner is implemented as a single Go monolith using Echo, templ, PostgreSQL, sqlc, and golang-migrate. The application is SSR-first and multipage-first, with HTMX used to reduce full page reloads by swapping only the relevant HTML fragments when JavaScript is available. The application must remain fully usable when JavaScript is disabled.
+MealPlanner is implemented as a single Go monolith using Echo, templ, PostgreSQL, sqlc, and golang-migrate. The application is SSR-first and multipage-first. Every page request renders a complete HTML document; global HTMX `hx-boost` progressively enhances ordinary links and forms by replacing the page body when JavaScript is available. The application must remain fully usable when JavaScript is disabled.
 
-The current prototype in `docs/MealPlanner.html` and `docs/src/` is the authoritative UI target. It is not a loose reference. Implementation work must match the prototype and its design system unless the user explicitly approves a deviation first.
+Prototype artifacts belong under `docs/prototype/`. No prototype artifact is currently checked into that path, so the repository does not presently contain an inspectable prototype source of truth. A restored prototype remains the authoritative UI target and must be followed unless the user explicitly approves a deviation first.
 
 ## Technology Decisions
 
@@ -21,13 +21,18 @@ The current prototype in `docs/MealPlanner.html` and `docs/src/` is the authorit
 
 ## Request and Response Contract
 
-The same feature routes support full-page HTML, partial HTML, and JSON depending on the request.
+HTML page routes use one response model:
 
-1. Direct browser navigation returns a full HTML page.
-2. Requests with `HX-Request: true` return only the relevant HTML fragment for the target swap.
-3. Requests with `Accept: application/json` return JSON and take precedence over HTMX fragment responses.
+1. GET routes render a complete HTML document through the shared templ layout.
+2. Successful state-changing form submissions generally use Post/Redirect/Get and return `303 See Other` to an app-local page route. Editor sub-actions that must show refreshed in-form state may render the complete page directly.
+3. The shared `<body hx-boost="true">` lets HTMX intercept eligible links and forms. Boosted requests receive the same complete HTML document as direct requests; HTMX extracts and replaces the body and maintains browser history.
+4. Handlers do not branch on `HX-Request` and do not provide a feature-route JSON representation based on `Accept`.
 
-The app must support standard browser links and form submissions first. HTMX is an enhancement layer and must not become a hard dependency for core flows.
+Purpose-specific static asset and file download routes, such as data export, may
+return their declared non-HTML representation; they are not alternate
+representations of page routes.
+
+The app must support standard browser links and form submissions first. HTMX is an optional transport enhancement, not a separate fragment API and not a dependency for core flows.
 
 ## Application Structure
 
@@ -114,9 +119,11 @@ Do not use the Tailwind CDN script in production. The generated CSS must be part
 
 ## UI Source of Truth
 
-The prototype is authoritative.
+The prototype is authoritative when its artifacts are present.
 
-- `docs/MealPlanner.html` and `docs/src/` define the required UI.
+- `docs/prototype/` is the canonical location for prototype artifacts.
+- That path currently contains no checked-in prototype files. Do not claim fidelity to, or infer missing details from, an unavailable artifact.
+- When prototype files are restored, they define the required UI.
 - The prototype's design system must be followed strictly.
 - Layout, hierarchy, screens, states, spacing, controls, and interaction intent must match the prototype.
 - templ, Echo, HTMX, and Tailwind are implementation tools only. They do not authorize redesign.
@@ -136,7 +143,7 @@ Possible reasons may include accessibility, SSR or HTMX runtime constraints, or 
 ## Implementation Guardrails
 
 - Build SSR-first pages first, then add HTMX enhancement where it improves UX.
-- Prefer full-page routes plus fragment templates rather than separate feature implementations for SSR and HTMX.
-- Keep feature logic in services so HTML, HTMX fragments, and JSON can share the same use-case layer.
+- Keep one full-page HTML implementation for direct and `hx-boost` requests; do not add fragment or JSON response tiers without an explicit architecture change.
+- Keep feature logic in services and out of handlers.
 - Keep the app fully functional without JavaScript.
-- Treat the prototype as the acceptance target for UI fidelity.
+- Treat a restored prototype under `docs/prototype/` as the acceptance target for UI fidelity.

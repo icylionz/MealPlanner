@@ -13,9 +13,10 @@ import (
 )
 
 // SchemaVersion is the format written by this build. Version 2 adds G1-G6
-// metadata and relationships; version 1 remains readable.
+// metadata and relationships; version 3 adds the recurring-series optimistic
+// token. Versions 1 and 2 remain readable.
 const (
-	SchemaVersion    = 2
+	SchemaVersion    = 3
 	minSchemaVersion = 1
 )
 
@@ -121,6 +122,7 @@ type MealSeries struct {
 	Byweekday string    `json:"byweekday"`
 	StartDate time.Time `json:"start_date"`
 	UntilDate time.Time `json:"until_date"`
+	Version   int32     `json:"version,omitempty"`
 }
 
 type MealPlan struct {

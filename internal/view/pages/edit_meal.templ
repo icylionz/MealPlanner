@@ -12,7 +12,21 @@ templ EditMeal(d EditMealData) {
 	@layout.ModalPage("Edit meal", "Edit meal — Backbone Plate", d.Active, d.Member, d.ReturnTo) {
 		<form method="post" action={ templ.URL(view.Href(ctx, "/meals/"+d.MealID+"/edit")) }>
 			<input type="hidden" name="return" value={ d.ReturnTo }/>
+			<input type="hidden" name="version" value={ d.Version }/>
+			<input type="hidden" name="series_version" value={ d.SeriesVersion }/>
+			if d.Recurring {
+				<input type="hidden" name="recurring" value="1"/>
+			}
 			<div class="modal-body">
+				if d.Error != "" {
+					<div class="flex items-center" style="gap: 6px; color: var(--danger); background: var(--danger-tint); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 13px; margin-bottom: 14px;">
+						@icons.Icon("alert-circle", 14)
+						{ d.Error }
+					</div>
+				}
+				if d.Conflict != nil {
+					@mealConflictPanel(d.Conflict)
+				}
 				<div class="flex flex-col" style="gap: 14px;">
 					if d.Recurring {
 						<div style="border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px;">
@@ -24,13 +38,13 @@ templ EditMeal(d EditMealData) {
 							}
 							<div class="flex flex-col" style="gap: 6px; font-size: 13px;">
 								<label class="flex items-center" style="gap: 8px;">
-									<input type="radio" name="scope" value="one" checked/> This occurrence
+									<input type="radio" name="scope" value="one" checked?={ d.Scope == "one" }/> This occurrence
 								</label>
 								<label class="flex items-center" style="gap: 8px;">
-									<input type="radio" name="scope" value="future"/> This and future occurrences
+									<input type="radio" name="scope" value="future" checked?={ d.Scope == "future" }/> This and future occurrences
 								</label>
 								<label class="flex items-center" style="gap: 8px;">
-									<input type="radio" name="scope" value="all"/> All occurrences
+									<input type="radio" name="scope" value="all" checked?={ d.Scope == "all" }/> All occurrences
 								</label>
 							</div>
 						</div>
@@ -59,12 +73,14 @@ templ EditMeal(d EditMealData) {
 					</div>
 					<div>
 						@FieldLabel("Food")
-						<div class="flex" style="gap: 6px;">
-							<input class="input input-sm" type="search" name="q" value={ d.Search } placeholder="Search foods…"/>
-							<button type="submit" formmethod="get" formaction={ templ.URL(view.Href(ctx, "/meals/"+d.MealID+"/edit")) } class="btn btn-secondary btn-sm">
-								@icons.Icon("search", 13)
-							</button>
-						</div>
+						if d.Conflict == nil {
+							<div class="flex" style="gap: 6px;">
+								<input class="input input-sm" type="search" name="q" value={ d.Search } placeholder="Search foods…"/>
+								<button type="submit" formmethod="get" formaction={ templ.URL(view.Href(ctx, "/meals/"+d.MealID+"/edit")) } class="btn btn-secondary btn-sm">
+									@icons.Icon("search", 13)
+								</button>
+							</div>
+						}
 						<div class="pick-list" style="margin-top: 6px; max-height: 200px;">
 							for _, r := range d.Foods {
 								<label class="pick-row" style="padding: 10px 12px;">
@@ -115,6 +131,57 @@ templ EditMeal(d EditMealData) {
 			</div>
 		</form>
 	}
+}
+
+// mealConflictPanel mirrors the food conflict treatment while showing the
+// current saved meal aggregate. The attempted aggregate remains in the form.
+templ mealConflictPanel(c *MealConflict) {
+	<div class="card" style="border-color: var(--danger); margin-bottom: 14px;">
+		<div class="overline" style="margin-bottom: 8px; color: var(--danger);">
+			Current saved version (meal v{ view.Itoa(c.Version) }
+			if c.Recurring {
+				, series v{ view.Itoa(c.SeriesVersion) }
+			}
+			)
+		</div>
+		<div class="flex flex-col" style="gap: 4px; font-size: 13px; color: var(--fg-3);">
+			<div>
+				<strong style="color: var(--fg-1);">
+					if c.Title != "" {
+						{ c.Title }
+					} else {
+						{ c.FoodName }
+					}
+				</strong>
+			</div>
+			<div>{ c.Date } at { c.Time } · Serves { view.Itoa(c.Servings) } · { c.FoodName }</div>
+			for _, extra := range c.Extras {
+				<div>+ { extra.Name } · Serves { view.Itoa(extra.Servings) }</div>
+			}
+			if c.Notes != "" {
+				<div>{ c.Notes }</div>
+			}
+			if c.LinkURL != "" {
+				<div>
+					Link:
+					if c.LinkTitle != "" {
+						{ c.LinkTitle }
+					} else {
+						{ c.LinkURL }
+					}
+				</div>
+				if c.LinkImageURL != "" {
+					<div>Preview image: { c.LinkImageURL }</div>
+				}
+			}
+			if c.Recurring {
+				<div>Still attached to its recurring series.</div>
+			} else {
+				<div>Not attached to a recurring series.</div>
+			}
+		</div>
+		<div style="margin-top: 8px; font-size: 12px; color: var(--fg-4);">Your meal fields, recipes, link, and scope are kept below. Saving again will apply them against these current tokens.</div>
+	</div>
 }
 
 // mealLinkSection renders the optional external link with its fetched or manual

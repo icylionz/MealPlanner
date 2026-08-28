@@ -3,13 +3,13 @@
 ## Implementation Authority
 
 - `docs/architecture.md` is the implementation architecture source of truth.
-- `docs/MealPlanner.html` and `docs/src/` are the UI source of truth.
-- The prototype is not a suggestion. The shipped UI should match it and its design system strictly.
+- Prototype artifacts belong under `docs/prototype/`; no prototype files are currently checked into that path.
+- When restored, the prototype is not a suggestion. The shipped UI should match it and its design system strictly.
 - Any UI deviation requires user approval first, together with the reason, impact, and implementation plan.
 
 ## 1. Summary
 
-Build a mobile-first, responsive meal planner for shared households. Users can schedule meals, attach one or more recipes to a scheduled meal, generate grocery list snapshots from scheduled meals over a date range or selected meals/ingredients, import/export recipes and related data as JSON, and manage ingredient conversions including density-based volume↔weight conversion. The MVP is a server-hosted PWA + website built with a Go server-rendered stack.
+Build a mobile-first, responsive meal planner for shared households. Users can schedule meals, attach one or more foods/recipes to a scheduled meal, add aggregated ingredients to live grocery lists from a planned meal, food, or date range, organize prep sessions, import/export household data, and manage ingredient conversions including density-based volume↔weight conversion. The MVP is a server-hosted PWA + website built with a Go server-rendered stack.
 
 ## 2. Personas & Goals
 
@@ -25,17 +25,17 @@ Build a mobile-first, responsive meal planner for shared households. Users can s
 - Joins a household via invite
 - Views household plans/recipes/lists
 - Helps shop by checking/unchecking grocery items
-- Can add ad-hoc grocery items to a grocery snapshot
+- Checks and unchecks items on a live grocery list while shopping
 - Does not edit recipes, schedules, ingredients, or household settings
 
 ## 3. Scope
 
 ### 3.1 MVP
 
-- Authentication with username or email + password
+- Authentication with email + password; usernames are not part of the account model
 - Household create/join flow
 - Owner/member roles
-- Agenda home view with date selector and continuous day-grouped scroll
+- Today landing view and Plan calendar/list views
 - Scheduled meals with:
   - date + time
   - multiple recipes
@@ -44,9 +44,8 @@ Build a mobile-first, responsive meal planner for shared households. Users can s
   - notes
   - optional link with rich preview
   - recurrence
-- Recipe library with tags
-- Ingredient catalog with canonical ingredients
-- Ingredient aliases/synonyms
+- Unified Foods library: atomic ingredients and recipes-with-components share one catalog
+- Food tags and aliases/synonyms
 - Ingredient variants/forms as attributes on usage lines
 - Nested component recipes
 - Yield/scaling across nested recipes
@@ -56,15 +55,17 @@ Build a mobile-first, responsive meal planner for shared households. Users can s
   - starter density set + user override
 - Grocery list generation by:
   - date range
-  - selected meals
-  - selected ingredients
-- Grocery snapshots:
+  - one selected planned meal
+  - one selected food/recipe with servings
+- Live grocery lists:
   - named
-  - immutable after generation except snapshot edits
-  - regeneration creates a new snapshot
-  - pantry/purchased check state per snapshot
-  - ad-hoc items
+  - directly editable rather than immutable snapshots
+  - generation can add to an existing list or create a new list
+  - pantry/purchased check state per list
   - traceability to source meals/recipes/ingredients
+- Prep sessions with selected foods, per-food servings, aggregated ingredients, per-meal breakdowns, and print/export view
+- Account Settings for display name, sign-in email, and password changes
+- Optional CoFID seeder that enriches the Starter Template food catalog for subsequently created households
 - JSON import/export with schema version
 - URL recipe import with parse/review/fix/re-import
 - Optimistic locking
@@ -89,13 +90,13 @@ Build a mobile-first, responsive meal planner for shared households. Users can s
 
 ### FR1. Account signup and login
 
-Users can sign up with username or email and password, log in, and access their household data across devices.
+Users sign up and log in with an email address and password and can access their household data across devices. Accounts have a display name but no username credential.
 
 #### Acceptance Criteria
 
-1. Given a new user on the signup page, when they provide a valid username or email and password, then the system creates an account and proceeds to household create/join.
-2. Given an existing user on the login page, when they submit valid credentials, then the system creates a session and redirects them to the agenda view.
-3. Given invalid credentials, when the user submits the login form, then the system rejects the login with a generic error message and does not reveal whether the username/email exists.
+1. Given a new user on the signup page, when they provide a display name, a unique valid email, and a valid password, then the system creates an account and proceeds to household create/join.
+2. Given an existing user on the login page, when they submit valid credentials, then the system creates a session and redirects them to Today.
+3. Given invalid credentials, when the user submits the login form, then the system rejects the login with a generic error message and does not reveal whether the email exists.
 4. Given repeated failed login attempts from the same IP or account, when the threshold is exceeded, then the system slows or blocks further attempts for a limited period.
 
 ### FR2. Household create or join
@@ -111,26 +112,26 @@ A user must create a new household or join an existing one via invite during onb
 
 ### FR3. Household roles and permissions
 
-Owners can edit household data and manage members; members can view data and interact with grocery snapshots only.
+Owners can edit household data and manage members; members can view data and interact with live grocery lists only.
 
 #### Acceptance Criteria
 
-1. Given an owner, when they access recipes, ingredients, schedules, or settings, then edit controls are available.
-2. Given a member, when they access recipes, ingredients, schedules, or settings, then edit controls are not available.
-3. Given a member viewing a grocery snapshot, when they check/uncheck an item or add an ad-hoc item, then the system saves the change.
+1. Given an owner, when they access Foods, Plan, grocery list management, Prep, or household administration, then the corresponding edit controls are available.
+2. Given a member, when they access Foods, Plan, Grocery, Prep, or Household, then owner-only edit controls are not available.
+3. Given a member viewing a grocery list, when they check or uncheck an item, then the system saves the change on that list.
 4. Given an owner, when they remove a member, then that member immediately loses household access.
 5. Given an owner, when they transfer ownership to another member, then the new owner gains owner permissions and the previous owner loses them if demoted.
 
-### FR4. Agenda home view
+### FR4. Today and Plan views
 
-The home screen is an agenda view grouped by day with continuous scrolling and a date selector.
+Today is the default landing screen and shows the current day's agenda. Plan provides calendar navigation with day-list and week-grid planning views.
 
 #### Acceptance Criteria
 
-1. Given a signed-in user, when they open the app, then the default landing page is the agenda view.
-2. Given scheduled meals across multiple days, when the user scrolls, then items appear grouped by day in chronological order.
-3. Given the user selects a date, when the agenda updates, then the view jumps to or centers on the selected date's section.
-4. Given a day has no scheduled meals, when that day is viewed, then the UI shows an empty state with an action to add a meal.
+1. Given a signed-in user with an active household, when they open the app, then the root route redirects to Today.
+2. Given meals scheduled today, when Today opens, then they appear in chronological order with the next meal highlighted.
+3. Given the user opens Plan, when they select a date or week, then the day-list or week-grid view shows the corresponding scheduled meals.
+4. Given a viewed day has no scheduled meals, then the UI shows an empty state with an owner action to add a meal.
 
 ### FR5. Create and edit scheduled meals
 
@@ -138,7 +139,7 @@ Owners can create scheduled meals by choosing date/time first and then selecting
 
 #### Acceptance Criteria
 
-1. Given an owner in the agenda view, when they choose to add a meal, then the app prompts for date and time before recipe selection.
+1. Given an owner in Today or Plan, when they choose to add a meal, then the app prompts for date and time before recipe selection.
 2. Given selected recipes, when the owner saves the scheduled meal, then it appears in the agenda under the correct day and time.
 3. Given a scheduled meal, when the owner adds notes or a URL, then those values persist and display in the meal detail view.
 4. Given a scheduled meal with multiple recipes, when the owner sets a per-meal servings value, then all recipes inherit that value unless a per-recipe override is set.
@@ -203,27 +204,27 @@ The system supports unit conversions, including volume↔weight using density.
 
 ### FR11. Grocery list generation
 
-Owners can generate grocery snapshots by date range, selected meals, and/or selected ingredients.
+Owners add aggregated ingredients to a live grocery list from one planned meal, one food/recipe, or a date range of planned meals. Immutable point-in-time grocery snapshots are a deliberate non-goal: lists remain editable, and generation may merge into a selected existing list or create a new live list.
 
 #### Acceptance Criteria
 
-1. Given scheduled meals exist, when the owner chooses a date range and generates a list, then the system creates a new named grocery snapshot containing required ingredients.
-2. Given the owner chooses specific meals instead of a date range, when the snapshot is generated, then only ingredients from those meals are included.
-3. Given the owner chooses specific ingredients as a filter, when the snapshot is generated, then only matching ingredients are included.
-4. Given the owner regenerates for the same criteria later, when generation completes, then a new snapshot is created and prior snapshots remain unchanged.
+1. Given scheduled meals exist, when the owner chooses a valid date range, then ingredients from every meal in the range are aggregated for insertion.
+2. Given the owner chooses a planned meal, then the primary and additional recipes are expanded using the meal servings and any per-recipe override.
+3. Given the owner chooses a food/recipe and servings, then its leaf ingredients are aggregated for insertion.
+4. Given the owner selects an existing list, when generation completes, then compatible generated lines merge into that live list and retain source traceability.
+5. Given no existing target list is selected, when generation completes, then the system creates a new live list named "Generated list".
 
-### FR12. Grocery aggregation, traceability, and snapshot editing
+### FR12. Grocery aggregation, traceability, and live-list editing
 
-Generated grocery items are merged when possible, traceable to their sources, and editable at the snapshot level.
+Generated grocery items are merged when possible, traceable to their sources, and editable on their live list.
 
 #### Acceptance Criteria
 
-1. Given the same canonical ingredient appears across multiple included meals, when the snapshot is generated, then the system merges compatible quantities and performs needed unit conversions.
+1. Given the same canonical ingredient and normalized variant appear across included sources, when ingredients are added, then the system merges compatible quantities and performs supported unit conversions.
 2. Given merged grocery items, when the user opens item details, then the UI shows which meals, recipes, and ingredient lines contributed to the total.
-3. Given a snapshot item, when a household member checks or unchecks it, then the state is saved only on that snapshot.
-4. Given a snapshot, when a household member adds an ad-hoc item, then the item appears in the snapshot and is marked as ad-hoc.
-5. Given an owner edits quantities or removes an item in a snapshot, when the edit is saved, then that edit affects only the snapshot and does not alter source recipes.
-6. Given a deleted recipe or ingredient contributed to a snapshot historically, when the snapshot is viewed later, then the contributing reference remains readable.
+3. Given a list item, when a household member checks or unchecks it, then the state is saved on that live list.
+4. Given an owner converts or removes an item in a list, then that edit affects only the list and does not alter source foods or planned meals.
+5. Given a deleted recipe or ingredient contributed to a generated item historically, when item details are viewed later, then the contributing reference remains readable.
 
 ### FR13. Rich link previews on scheduled meals
 
@@ -268,13 +269,34 @@ Concurrent edits are detected and surfaced.
 2. Given a conflict occurs, when the second user is shown the conflict screen, then the UI presents the current saved version and the user's attempted changes.
 3. Given the conflict screen is shown, when the user reapplies their changes and saves again, then the system persists the updated record if no newer conflict exists.
 
+### FR17. Prep sessions
+
+Owners can group foods/recipes into dated prep sessions, adjust servings, and review the resulting prep work. Members have read-only access.
+
+#### Acceptance Criteria
+
+1. Given an owner, when they create, rename, re-date, or delete a prep session, then the session list reflects the change.
+2. Given an owner editing a prep session, when they add or remove a food or adjust its servings, then the session updates accordingly.
+3. Given a session with foods, when it is viewed, then the app shows aggregated leaf ingredients and a per-food ingredient/step breakdown.
+4. Given any household member viewing a session, when they open its print/export route, then a printable preparation view is rendered.
+
+### FR18. Account settings
+
+Authenticated users can maintain their own account profile and password from Settings. Settings is linked from the desktop sidebar and is not a mobile bottom-tab destination.
+
+#### Acceptance Criteria
+
+1. Given an authenticated user, when they save a non-empty display name and unique valid email, then the account profile is updated.
+2. Given an authenticated user, when they provide the correct current password and a new password of at least eight characters, then the password is changed.
+3. Given an invalid current password or an email already in use, then the app preserves the submitted profile context and shows an error.
+
 ## 5. Non-Functional Requirements
 
 ### 5.1 Performance
 
 - Initial agenda page render target: p95 under 1.5 seconds for a household with up to 90 days of scheduled meals cached server-side.
 - Picker search target: p95 under 250 ms for common lookups within a household.
-- Grocery snapshot generation target: complete under 5 seconds for a household with up to:
+- Grocery ingredient generation target: complete under 5 seconds for a household with up to:
   - 500 recipes
   - 3,000 ingredient lines
   - 90 scheduled meals in range
@@ -308,282 +330,234 @@ Concurrent edits are detected and surfaced.
 ### 5.6 Observability
 
 - Structured request logs with request IDs.
-- Error logging for failed imports, preview fetches, snapshot generation, and auth failures.
+- Error logging for failed imports, preview fetches, grocery generation, and auth failures.
 - Metrics for:
   - login attempts
   - import failures
-  - snapshot generation duration
+  - grocery generation duration
   - conflict rates
   - invite acceptance
 
 ## 6. Data Model
 
-### 6.1 Entities
+This section describes the shipped PostgreSQL schema through migration `0018`.
+It supersedes the earlier target model that used separate Recipe, Ingredient,
+RecipeIngredientLine, and immutable GrocerySnapshot entities. Database table and
+column names below are the implementation contract.
 
-#### User
+### 6.1 Identity and households
 
-- id (UUID)
-- household_id (UUID)
-- username (nullable if email used as login)
-- email (nullable if username-only account)
-- password_hash
-- role (owner, member)
-- status
-- created_at
-- updated_at
-- deleted_at
+#### Account (`accounts`)
 
-#### Household
+- `id` (UUID)
+- `email` (required, case-insensitively unique; the only login identifier)
+- `password_hash`
+- `name` (display name)
+- `created_at`
 
-- id (UUID)
-- name
-- created_at
-- updated_at
-- deleted_at
+#### Household (`households`)
 
-#### Invite
+- `id` (UUID)
+- `name`
+- `is_template` (marks the hidden Starter Template)
+- `created_at`
 
-- id (UUID)
-- household_id
-- code
-- created_by_user_id
-- expires_at
-- revoked_at
-- max_uses (nullable)
-- use_count
-- created_at
+#### HouseholdMember (`household_members`)
 
-#### Recipe
+- `id` (UUID)
+- `household_id`, `account_id` (unique pair)
+- `role` (`owner`, `member`)
+- `initials`, `color`
+- `created_at`
 
-- id (UUID)
-- household_id
-- title
-- description
-- yield_amount
-- yield_unit
-- source_url (nullable)
-- source_last_imported_at (nullable)
-- version
-- created_by_user_id
-- updated_by_user_id
-- created_at
-- updated_at
-- deleted_at
+#### Session (`sessions`)
 
-#### RecipeTag
+- `token`
+- `account_id`
+- `active_household_id` (nullable)
+- `created_at`, `expires_at`
 
-- id (UUID)
-- household_id
-- name
-- created_at
+#### Invite (`invites`)
 
-#### RecipeTagAssignment
+- `id`, `household_id`, `code`
+- `expires_at`, `revoked_at` (nullable)
+- `max_uses` (nullable), `use_count`
+- `created_by` (nullable account UUID), `created_at`
 
-- recipe_id
-- tag_id
+### 6.2 Unified foods
 
-#### Ingredient
+#### Food (`foods`)
 
-- id (UUID)
-- household_id
-- canonical_name
-- default_density_g_per_ml (nullable)
-- density_source_type (starter, custom, none)
-- note (nullable)
-- created_at
-- updated_at
-- deleted_at
+A food is atomic when it has no components and acts as a recipe when it has one
+or more components. Both forms share the same catalog and identifier space.
 
-#### IngredientAlias
+- `id`, `household_id`, `name`, `description`
+- `prep_time_min`, `cook_time_min`, `servings`, `default_unit`
+- `density_g_per_ml`, `density_source` (`starter`, `custom`, `none`)
+- `source_url`, `source_last_imported_at` (nullable)
+- `version`
+- `created_by`, `updated_by` (nullable account UUIDs)
+- `created_at`, `updated_at`, `deleted_at` (nullable)
 
-- id (UUID)
-- ingredient_id
-- alias
-- created_by_user_id
-- created_at
+#### FoodAlias (`food_aliases`)
 
-#### RecipeComponent
+- `id`, `food_id`, `alias`
+- `created_by` (nullable), `created_at`
 
-- id (UUID)
-- parent_recipe_id
-- component_recipe_id
-- quantity
-- unit
-- sort_order
+#### FoodTag (`food_tags`)
 
-#### RecipeIngredientLine
+- `food_id`, `tag` (composite primary key)
 
-- id (UUID)
-- recipe_id
-- ingredient_id
-- quantity
-- unit
-- variant_text
-- prep_note
-- optional_flag
-- sort_order
+#### FoodComponent (`food_components`)
 
-#### RecipeStep
+- `id`, `parent_food_id`, `child_food_id`
+- `amount`, `unit`, `variant_text`, `sort_order`
 
-- id (UUID)
-- recipe_id
-- step_number
-- instruction
+Each component references another food; component lines are never free text.
+The same table represents recipe-to-recipe nesting and recipe-to-atomic-food
+ingredient usage.
 
-#### ScheduledMeal
+#### FoodStep (`food_steps`)
 
-- id (UUID)
-- household_id
-- title (optional)
-- scheduled_at
-- notes
-- link_url (nullable)
-- link_title (nullable)
-- link_image_url (nullable)
-- recurrence_series_id (nullable)
-- created_by_user_id
-- updated_by_user_id
-- version
-- created_at
-- updated_at
-- deleted_at
+- `food_id`, `step_number` (composite primary key)
+- `instruction`
 
-#### ScheduledMealRecipe
+### 6.3 Planning
 
-- id (UUID)
-- scheduled_meal_id
-- recipe_id
-- servings_override_amount (nullable)
-- sort_order
+#### MealSeries (`meal_series`)
 
-#### RecurrenceSeries
+- `id`, `household_id`, `food_id`
+- `plan_time`, `servings`
+- `freq` (`daily`, `weekly`), `byweekday`
+- `start_date`, `until_date`
+- `version` (series-wide optimistic-lock token)
 
-- id (UUID)
-- household_id
-- rule_type
-- interval_value
-- by_weekday (nullable)
-- start_at
-- end_at (nullable)
-- created_at
-- updated_at
+#### ScheduledMeal (`meal_plan`)
 
-#### GrocerySnapshot
+- `id`, `household_id`, `plan_date`, `plan_time`
+- `food_id` (the primary food/recipe), `servings`
+- `series_id` (nullable)
+- `title`, `notes`
+- `link_url`, `link_title`, `link_image_url`
+- `version`
+- `created_by`, `updated_by` (nullable account UUIDs)
+- `deleted_at` (nullable)
 
-- id (UUID)
-- household_id
-- name
-- generation_mode (date_range, meals, ingredients, mixed)
-- generation_filter_json
-- created_by_user_id
-- created_at
+#### ScheduledMealRecipe (`scheduled_meal_recipes`)
 
-#### GroceryItem
+- `id`, `meal_id`, `food_id`
+- `servings_override` (nullable; falls back to meal servings)
+- `sort_order`
+- `created_by`, `updated_by` (nullable account UUIDs)
 
-- id (UUID)
-- snapshot_id
-- ingredient_id (nullable for ad-hoc)
-- display_name
-- quantity
-- unit
-- checked
-- source_type (generated, adhoc)
-- note (nullable)
-- created_by_user_id
-- updated_by_user_id
-- created_at
-- updated_at
-- deleted_at
+The primary recipe remains on `meal_plan.food_id`; this table stores only
+additional attached recipes.
 
-#### GroceryItemSource
+### 6.4 Grocery lists
 
-- id (UUID)
-- grocery_item_id
-- scheduled_meal_id (nullable)
-- recipe_id (nullable)
-- recipe_ingredient_line_id (nullable)
-- quantity_contributed
-- unit_contributed
+#### GroceryList (`grocery_lists`)
 
-#### ImportJob
+- `id`, `household_id`, `name`
+- `created_by`, `updated_by` (nullable account UUIDs)
+- `created_at`, `deleted_at` (nullable)
 
-- id (UUID)
-- household_id
-- type (url_recipe, json_merge, json_selective)
-- status
-- source_url (nullable)
-- payload_json (nullable)
-- report_json (nullable)
-- created_by_user_id
-- created_at
-- completed_at (nullable)
+#### GroceryItem (`grocery_items`)
 
-### 6.2 Relationships
+- `id`, `list_id`
+- `ingredient_id` (nullable food UUID)
+- `name`, `amount`, `unit`, `variant_text`, `note`, `sort_order`
+- `checked`
+- `source_type` (`generated`, `adhoc`)
+- `created_by`, `updated_by` (nullable account UUIDs)
+- `deleted_at` (nullable)
 
-- Household 1..n Users
-- Household 1..n Recipes
-- Household 1..n Ingredients
-- Household 1..n ScheduledMeals
-- Household 1..n GrocerySnapshots
-- Recipe n..n RecipeTags
-- Recipe 1..n RecipeIngredientLines
-- Recipe 1..n RecipeComponents
-- ScheduledMeal 1..n ScheduledMealRecipes
-- GrocerySnapshot 1..n GroceryItems
-- GroceryItem 1..n GroceryItemSources
+#### GroceryItemSource (`grocery_item_sources`)
 
-### 6.3 Invariants
+- `id`, `grocery_item_id`
+- `scheduled_meal_id`, `recipe_id`, `recipe_ingredient_line_id` (nullable)
+- `quantity_contributed`, `unit_contributed`
+- `variant_text`, `line_recipe_name`
 
-- Every household-scoped record must belong to exactly one household.
-- Members cannot mutate non-grocery household data.
-- Recipe component graph must be acyclic.
-- Soft-deleted records may not be used in new schedules/import links, but historical references remain visible.
-- Snapshot generation never mutates older snapshots.
-- Import/export IDs are UUIDs and must remain stable across exports/imports.
+`line_recipe_name` and source variant values are display snapshots used to keep
+provenance readable if a component line later changes. There is no
+GrocerySnapshot table or generation-filter record.
+
+### 6.5 Prep
+
+#### PrepSession (`prep_sessions`)
+
+- `id`, `household_id`, `name`, `session_date`, `created_at`
+
+#### PrepSessionMeal (`prep_session_meals`)
+
+- `session_id`, `food_id` (composite primary key)
+- `servings`, `sort_order`
+
+### 6.6 Relationships
+
+- Accounts join one or more households through HouseholdMember; a Session may select one active household.
+- Household owns Foods, MealSeries, ScheduledMeals, GroceryLists, and PrepSessions.
+- Food has aliases, tags, steps, and child Foods through FoodComponent.
+- ScheduledMeal has one primary Food and zero or more additional Foods through ScheduledMealRecipe.
+- GroceryList has GroceryItems; generated GroceryItems have GroceryItemSources.
+- PrepSession has Foods through PrepSessionMeal.
+
+### 6.7 Invariants
+
+- Every household-scoped record and every referenced child record must remain within one household.
+- Members cannot mutate foods, plans, grocery list structure/items, prep sessions, imports, or household administration; they may check and uncheck grocery items.
+- The food component graph must be acyclic.
+- Soft-deleted foods, meals, lists, and items are unavailable to new work, while historical meal and grocery provenance remains readable.
+- Grocery lists are live and mutable. Generation may merge into an existing list; the system does not promise immutable historical snapshots.
+- Import/export IDs are UUIDs and remain stable across exports/imports. Import processing is request-scoped; there is no persisted ImportJob table.
 
 ## 7. Integrations
 
 - Public web pages for recipe URL import using structured recipe metadata
+- UK CoFID 2021 workbook, fetched by the optional `cmd/seed-foods` operator command or supplied as a local file; the idempotent seeder populates the Starter Template so future households clone the enriched raw-food catalog
 - PWA install/browser capabilities
 - Optional metadata fetch for rich link previews
 
 ## 8. UX Requirements
 
-### 8.1 Mobile navigation
+### 8.1 Navigation
 
-Top-level navigation:
+The mobile bottom tab bar contains exactly:
 
+- Today
 - Plan
+- Foods
 - Grocery
-- Recipes
-- Ingredients
-- Settings
+- Prep
+
+The desktop sidebar contains those five destinations plus Data, Household, and
+Settings. Settings is sidebar-only navigation and does not appear in the mobile
+bottom tab bar. Atomic ingredients and recipes are both reached through Foods;
+there are no separate Recipes and Ingredients navigation destinations.
 
 ### 8.2 Core screens
 
 - Login
-- Signup
+- Register
 - Create/join household
-- Agenda view
+- Today agenda
+- Plan calendar with day-list and week-grid layouts
 - Scheduled meal create/edit
-- Scheduled meal detail
-- Recipe list
-- Recipe detail/edit
-- Ingredient list
-- Ingredient detail/edit
-- Grocery snapshot list
-- Grocery snapshot detail
-- URL import review/fix
+- Foods list, food detail, and food editor for both atomic foods and recipes
+- URL/file food import and reconcile/review
+- Live grocery lists, grocery generation, and grocery item provenance detail
+- Prep session list/detail and printable prep view
 - JSON import/export
-- Household members/invites
-- Conflict resolution screen
+- Household switching, members, ownership transfer, and invite lifecycle
+- Account Settings for display name, email, and password
+- Food and scheduled-meal optimistic-lock conflict states
 
 ### 8.3 Key UX behaviors
 
-- Agenda grouped by day, infinite-ish scroll by pagination/loading
+- Today orders the current day's meals chronologically; Plan provides explicit date and week navigation
 - Pickers support inline search
 - Grocery item detail explains "why this is here"
-- Conflict UI shows saved version vs attempted version
+- Food and scheduled-meal conflict UI shows saved version vs attempted version
 - Recurring edit flow offers occurrence scope explicitly
 - Preview fetch failures degrade gracefully to raw URL + manual fields
 
@@ -599,6 +573,7 @@ Top-level navigation:
 - Global search page
 - Full calendar-rule recurrence engine
 - Real-time collaboration
+- Immutable or versioned grocery snapshots; grocery lists are intentionally live and mutable
 
 ## 10. Open Questions (remaining but non-blocking)
 

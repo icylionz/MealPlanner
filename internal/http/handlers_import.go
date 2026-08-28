@@ -38,6 +38,7 @@ func (s *Server) handleImportPost(c echo.Context) error {
 	input := strings.TrimSpace(c.FormValue("input"))
 
 	fail := func(code int, message string) error {
+		s.recordImportFailure(c, format, errors.New(message))
 		return s.renderStatus(c, code, pages.Import(pages.ImportData{
 			Member: s.member(c), Format: format, Input: input, Status: message,
 		}))
@@ -75,12 +76,14 @@ func (s *Server) handleImportPost(c echo.Context) error {
 
 	d, err := s.importReconcileData(c, parsed)
 	if err != nil {
+		s.recordImportFailure(c, format, err)
 		return err
 	}
 	if format == "url" {
 		d.SourceURL = input
 		d.SourceState, err = s.signImportSource(c, importSourceState{URL: input, HouseholdID: s.household(c).String()})
 		if err != nil {
+			s.recordImportFailure(c, format, err)
 			return err
 		}
 	}
@@ -128,6 +131,7 @@ func (s *Server) handleFoodReimport(c echo.Context) error {
 		return echo.ErrNotFound
 	}
 	if err := foods.ValidateImportURL(food.SourceURL); err != nil {
+		s.recordImportFailure(c, "url", err)
 		return s.renderStatus(c, http.StatusUnprocessableEntity, pages.Import(pages.ImportData{
 			Member: s.member(c), Format: "url", Input: food.SourceURL,
 			Status: "Re-import failed: " + err.Error(),
@@ -135,6 +139,7 @@ func (s *Server) handleFoodReimport(c echo.Context) error {
 	}
 	parsed, err := foods.ImportFromURL(c.Request().Context(), food.SourceURL)
 	if err != nil {
+		s.recordImportFailure(c, "url", err)
 		return s.renderStatus(c, http.StatusUnprocessableEntity, pages.Import(pages.ImportData{
 			Member: s.member(c), Format: "url", Input: food.SourceURL,
 			Status: "Re-import failed: " + err.Error(),
@@ -142,6 +147,7 @@ func (s *Server) handleFoodReimport(c echo.Context) error {
 	}
 	d, err := s.importReconcileData(c, parsed)
 	if err != nil {
+		s.recordImportFailure(c, "url", err)
 		return err
 	}
 	d.TargetFoodID = food.ID.String()
@@ -151,6 +157,7 @@ func (s *Server) handleFoodReimport(c echo.Context) error {
 		URL: food.SourceURL, TargetFoodID: food.ID.String(), HouseholdID: s.household(c).String(),
 	})
 	if err != nil {
+		s.recordImportFailure(c, "url", err)
 		return err
 	}
 	d.Aliases = food.Aliases
@@ -163,6 +170,7 @@ func (s *Server) handleImportReconcile(c echo.Context) error {
 	ctx := c.Request().Context()
 	d, err := s.parseReconcile(c)
 	if err != nil {
+		s.recordImportFailure(c, "file", err)
 		return err
 	}
 	action := c.FormValue("action")
@@ -215,6 +223,7 @@ func (s *Server) handleImportReconcile(c echo.Context) error {
 		savedID, err := s.foods.Save(ctx, s.household(c), s.actorID(c), target, form)
 		if err != nil {
 			if errors.Is(err, foods.ErrConflict) && target != nil {
+				s.recordFoodConflict()
 				if current, getErr := s.foods.Get(ctx, s.household(c), *target); getErr == nil {
 					d.ReapplyVersion = strconv.Itoa(current.Version)
 					d.Conflict = &pages.ImportConflict{
@@ -256,6 +265,13 @@ func (s *Server) handleImportReconcile(c echo.Context) error {
 		return err
 	}
 	d.AllFoods = all
+	if d.Error != "" && d.Conflict == nil {
+		source := "file"
+		if d.SourceState != "" || d.TargetFoodID != "" {
+			source = "url"
+		}
+		s.recordImportFailure(c, source, errors.New(d.Error))
+	}
 	return s.renderStatus(c, status, pages.ImportReconcile(d))
 }
 

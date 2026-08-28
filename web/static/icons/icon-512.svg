@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Backbone Plate">
+  <rect width="512" height="512" fill="#22386A"/>
+  <g fill="#FFFFFF">
+    <rect x="128" y="163" width="256" height="38" rx="19"/>
+    <rect x="128" y="237" width="256" height="38" rx="19"/>
+    <rect x="128" y="311" width="256" height="38" rx="19"/>
+  </g>
+</svg>

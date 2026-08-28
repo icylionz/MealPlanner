@@ -5,8 +5,8 @@ system. Go SSR monolith: Echo · templ · PostgreSQL · sqlc · golang-migrate,
 Tailwind built ahead of time, HTMX vendored, Node-free runtime.
 
 See `docs/architecture.md` (implementation source of truth) and `docs/doc.md`
-(PRD). The UI implements the `Backbone Plate.html` prototype from the
-claude.ai/design MealPlanner project.
+(PRD). Prototype artifacts belong in `docs/prototype/`, but no prototype files
+are currently checked into that path.
 
 ## Screens
 
@@ -33,9 +33,11 @@ claude.ai/design MealPlanner project.
 
 ## Development
 
-Requirements: Go 1.26+, `templ`, `sqlc`, PostgreSQL (defaults expect
-`postgres://plate:plate@localhost:5433/plate`), the standalone Tailwind CLI at
-`bin/tailwindcss`.
+Requirements: Go 1.26+, `templ`, `sqlc`, PostgreSQL, and the standalone Tailwind
+CLI at `bin/tailwindcss`. `DATABASE_URL` is required when running the server
+directly. Compose supplies `postgres://plate:plate@db:5432/plate?sslmode=disable`
+to the app; its database service listens on container port `5432` and is not
+published to a host port.
 
 ```sh
 templ generate                                   # regenerate views

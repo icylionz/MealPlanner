@@ -314,6 +314,7 @@ func (s *Server) handleFoodEditPost(c echo.Context) error {
 		savedID, err := s.foods.Save(c.Request().Context(), s.household(c), s.actorID(c), idPtr, form)
 		if err != nil {
 			if errors.Is(err, foods.ErrConflict) && idPtr != nil {
+				s.recordFoodConflict()
 				// Optimistic-lock conflict (FR16): show the current saved record
 				// alongside the user's attempt, and advance the hidden version so a
 				// deliberate re-save succeeds if no newer conflict has landed.

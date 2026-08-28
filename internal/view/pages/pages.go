@@ -390,26 +390,54 @@ func (d AddMealData) ExtraOverride(id string) string { return d.Extras[id] }
 
 // EditMealData feeds the edit-meal modal page.
 type EditMealData struct {
-	Member       *households.Member
-	MealID       string
-	Date         string
-	Time         string
-	Servings     int
-	Search       string
-	Foods        []foods.Food
-	Selected     string
-	SelectedFood *foods.Food
-	ReturnTo     string
-	Active       string
-	Title        string            // optional meal title (G4)
-	Notes        string            // optional meal notes (G4)
-	Extras       map[string]string // additional recipe food id -> override servings ("" if none) (G4)
-	Recurring    bool              // meal belongs to a series -> offer scope choice
-	Series       *planner.Series   // recurrence rule for display (may be nil)
-	LinkURL      string            // external link + preview (FR13)
-	LinkTitle    string
-	LinkImageURL string
-	LinkError    string // preview fetch failure -> prompt manual entry (FR13.2)
+	Member        *households.Member
+	MealID        string
+	Date          string
+	Time          string
+	Servings      int
+	Search        string
+	Foods         []foods.Food
+	Selected      string
+	SelectedFood  *foods.Food
+	ReturnTo      string
+	Active        string
+	Title         string            // optional meal title (G4)
+	Notes         string            // optional meal notes (G4)
+	Extras        map[string]string // additional recipe food id -> override servings ("" if none) (G4)
+	Version       string            // occurrence optimistic-lock token (G13)
+	SeriesVersion string            // series-wide optimistic-lock token; "0" when detached
+	Scope         planner.Scope     // attempted recurring scope, retained on conflict
+	Recurring     bool              // meal belongs to a series -> offer scope choice
+	Series        *planner.Series   // recurrence rule for display (may be nil)
+	LinkURL       string            // external link + preview (FR13)
+	LinkTitle     string
+	LinkImageURL  string
+	LinkError     string // preview fetch failure -> prompt manual entry (FR13.2)
+	Error         string
+	Conflict      *MealConflict
+}
+
+// MealConflict is the current saved aggregate shown above the retained attempted
+// form after an optimistic-lock rejection (FR16.2).
+type MealConflict struct {
+	Version       int
+	SeriesVersion int
+	Date          string
+	Time          string
+	Servings      int
+	Title         string
+	Notes         string
+	FoodName      string
+	Extras        []MealConflictExtra
+	Recurring     bool
+	LinkURL       string
+	LinkTitle     string
+	LinkImageURL  string
+}
+
+type MealConflictExtra struct {
+	Name     string
+	Servings int
 }
 
 // IsExtra reports whether the given food id is selected as an additional recipe.

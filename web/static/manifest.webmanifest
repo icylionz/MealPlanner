@@ -1,0 +1,25 @@
+{
+  "id": "./",
+  "name": "Backbone Plate",
+  "short_name": "Backbone",
+  "description": "Shared household meal planning, groceries, and meal prep.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F4F5F7",
+  "theme_color": "#22386A",
+  "icons": [
+    {
+      "src": "static/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "static/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

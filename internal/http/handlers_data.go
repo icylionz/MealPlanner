@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -37,6 +38,7 @@ func (s *Server) handleDataExport(c echo.Context) error {
 func (s *Server) handleDataImport(c echo.Context) error {
 	member := s.member(c)
 	fail := func(status int, msg string) error {
+		s.recordImportFailure(c, "json", errors.New(msg))
 		return s.renderStatus(c, status, pages.Data(pages.DataData{Member: member, Error: msg, Selected: formSections(c)}))
 	}
 

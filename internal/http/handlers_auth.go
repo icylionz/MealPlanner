@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -11,6 +12,7 @@ import (
 
 	"mealplanner/internal/auth"
 	"mealplanner/internal/households"
+	"mealplanner/internal/observability"
 	"mealplanner/internal/view/pages"
 )
 
@@ -34,6 +36,8 @@ func (s *Server) handleLogin(c echo.Context) error {
 	if err != nil {
 		var blocked *auth.BlockedError
 		if errors.As(err, &blocked) {
+			s.metricsRegistry().RecordLoginAttempt(observability.LoginBlocked)
+			s.logError(c, "login_failed", err, slog.String("outcome", "blocked"))
 			seconds := max(1, int((blocked.RetryAfter+time.Second-1)/time.Second))
 			c.Response().Header().Set("Retry-After", strconv.Itoa(seconds))
 			return s.renderStatus(c, http.StatusTooManyRequests, pages.Login(pages.AuthData{
@@ -41,10 +45,15 @@ func (s *Server) handleLogin(c echo.Context) error {
 			}))
 		}
 		if errors.Is(err, households.ErrInvalidCredentials) {
+			s.metricsRegistry().RecordLoginAttempt(observability.LoginInvalid)
+			s.logError(c, "login_failed", err, slog.String("outcome", "invalid"))
 			return s.render(c, pages.Login(pages.AuthData{Email: email, Error: households.ErrInvalidCredentials.Error()}))
 		}
+		s.metricsRegistry().RecordLoginAttempt(observability.LoginError)
+		s.logError(c, "login_failed", err, slog.String("outcome", "error"))
 		return err
 	}
+	s.metricsRegistry().RecordLoginAttempt(observability.LoginSuccess)
 	return s.startSession(c, acc)
 }
 

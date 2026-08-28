@@ -337,12 +337,15 @@ func (s *Server) handleGroceryGenerate(c echo.Context) error {
 }
 
 func (s *Server) handleGroceryGenerateCommit(c echo.Context) error {
+	started := time.Now()
 	d, idx, err := s.genState(c)
 	if err != nil {
+		s.logError(c, "grocery_generation_failed", err)
 		return err
 	}
 	leaves, ok, err := s.genLeaves(c, d, idx)
 	if err != nil {
+		s.logError(c, "grocery_generation_failed", err)
 		return err
 	}
 	if !ok {
@@ -355,7 +358,9 @@ func (s *Server) handleGroceryGenerateCommit(c echo.Context) error {
 	}
 	target, err := s.grocery.AddIngredients(c.Request().Context(), s.household(c), s.actorID(c), listID, foods.Aggregate(leaves, foods.DensityMap(idx)))
 	if err != nil {
+		s.logError(c, "grocery_generation_failed", err)
 		return err
 	}
+	s.metricsRegistry().ObserveGroceryGeneration(time.Since(started))
 	return s.redirect(c, "/grocery?list="+target.String())
 }

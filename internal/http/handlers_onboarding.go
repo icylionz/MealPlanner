@@ -1,9 +1,12 @@
 package httpserver
 
 import (
+	"log/slog"
+
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
+	"mealplanner/internal/observability"
 	"mealplanner/internal/view/pages"
 )
 
@@ -45,8 +48,11 @@ func (s *Server) handleJoinHousehold(c echo.Context) error {
 	code := c.FormValue("invite_code")
 	hh, err := s.households.JoinByInvite(ctx, acc.ID, code)
 	if err != nil {
+		s.metricsRegistry().RecordInviteAcceptance(observability.InviteRejected)
+		s.logError(c, "invite_acceptance_failed", err, slog.String("outcome", "rejected"))
 		return s.renderOnboarding(c, err.Error(), code)
 	}
+	s.metricsRegistry().RecordInviteAcceptance(observability.InviteAccepted)
 	return s.activateAndGo(c, hh.ID)
 }
 

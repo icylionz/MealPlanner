@@ -100,6 +100,7 @@ func (s *Service) Export(ctx context.Context, householdID uuid.UUID) (*Archive, 
 		arc.MealSeries = append(arc.MealSeries, MealSeries{
 			ID: m.ID, FoodID: m.FoodID, PlanTime: m.PlanTime, Servings: m.Servings,
 			Freq: m.Freq, Byweekday: m.Byweekday, StartDate: m.StartDate, UntilDate: m.UntilDate,
+			Version: m.Version,
 		})
 	}
 
@@ -399,9 +400,13 @@ func (s *Service) Import(ctx context.Context, householdID uuid.UUID, arc *Archiv
 				sr.skip(fmt.Sprintf("meal series references unknown food %s", m.FoodID))
 				continue
 			}
+			version := m.Version
+			if version < 1 {
+				version = 1
+			}
 			ins, err := q.ImportMealSeries(ctx, db.ImportMealSeriesParams{
 				ID: m.ID, HouseholdID: householdID, FoodID: m.FoodID, PlanTime: m.PlanTime, Servings: m.Servings,
-				Freq: m.Freq, Byweekday: m.Byweekday, StartDate: m.StartDate, UntilDate: m.UntilDate,
+				Freq: m.Freq, Byweekday: m.Byweekday, StartDate: m.StartDate, UntilDate: m.UntilDate, Version: version,
 			})
 			ok, err := scopedResult(ins, err, &sr, fmt.Sprintf("meal series %s", m.ID))
 			if err != nil {
@@ -423,6 +428,12 @@ func (s *Service) Import(ctx context.Context, householdID uuid.UUID, arc *Archiv
 			series := m.SeriesID
 			if series != nil && !knownSeries[*series] {
 				series = nil // keep the meal but drop the dangling series link
+			}
+			previousSeries, previousErr := q.GetImportedMealSeries(ctx, db.GetImportedMealSeriesParams{
+				ID: m.ID, HouseholdID: householdID,
+			})
+			if previousErr != nil && !errors.Is(previousErr, pgx.ErrNoRows) {
+				return nil, previousErr
 			}
 			var ins bool
 			var err error
@@ -448,6 +459,26 @@ func (s *Service) Import(ctx context.Context, householdID uuid.UUID, arc *Archiv
 			}
 			if ok {
 				knownMeals[m.ID] = true
+			}
+			if ok {
+				seriesToInvalidate := map[uuid.UUID]bool{}
+				if previousSeries != nil {
+					seriesToInvalidate[*previousSeries] = true
+				}
+				if series != nil {
+					seriesToInvalidate[*series] = true
+				}
+				for seriesID := range seriesToInvalidate {
+					rows, bumpErr := q.BumpImportedMealSeriesVersion(ctx, db.BumpImportedMealSeriesVersionParams{
+						ID: seriesID, HouseholdID: householdID,
+					})
+					if bumpErr != nil {
+						return nil, bumpErr
+					}
+					if rows != 1 {
+						return nil, fmt.Errorf("invalidate imported meal series %s", seriesID)
+					}
+				}
 			}
 			if !ok || arc.SchemaVersion < 2 {
 				continue

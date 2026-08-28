@@ -73,6 +73,11 @@ func TestArchiveJSONRoundTrip(t *testing.T) {
 	in := Archive{
 		SchemaVersion: SchemaVersion,
 		ExportedAt:    time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		MealSeries: []MealSeries{{
+			ID: sid, FoodID: fid, PlanTime: "08:00", Servings: 2,
+			Freq: "weekly", Byweekday: "6", StartDate: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC),
+			UntilDate: time.Date(2026, 2, 3, 0, 0, 0, 0, time.UTC), Version: 5,
+		}},
 		Foods: []Food{{
 			ID: fid, Name: "Dough", Servings: 1, DefaultUnit: "g",
 			DensityGPerMl: 0.53, DensitySource: "custom",
@@ -131,6 +136,9 @@ func TestArchiveJSONRoundTrip(t *testing.T) {
 	}
 	if out.MealPlans[0].SeriesID == nil || *out.MealPlans[0].SeriesID != sid {
 		t.Fatalf("series link not preserved: %+v", out.MealPlans[0])
+	}
+	if len(out.MealSeries) != 1 || out.MealSeries[0].Version != 5 {
+		t.Fatalf("series optimistic token not preserved: %+v", out.MealSeries)
 	}
 	meal := out.MealPlans[0]
 	if meal.Title != "Brunch" || meal.Notes != "Bring jam" || meal.Version != 7 || meal.DeletedAt == nil || meal.CreatedBy == nil {

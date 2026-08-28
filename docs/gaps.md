@@ -20,7 +20,7 @@ update the PRD, or honor the PRD term.
 ---
 
 ## G1. Soft delete (foundation) — do first
-PRD 3.1, FR7.3, FR9.4, FR12.6, NFR5.3, §6.3 invariants.
+PRD 3.1, FR7.3, FR9.4, FR12.5, NFR5.3, §6.7 invariants.
 No table has `deleted_at`; deletes are hard `ON DELETE CASCADE`.
 - [x] Add `deleted_at timestamptz` to `foods`, `meal_plan`, `grocery_lists`, `grocery_items` (and any entity referenced historically).
 - [x] Delete handlers set `deleted_at` instead of `DELETE`.
@@ -50,7 +50,7 @@ PRD FR5 AC3–AC5, ScheduledMeal/ScheduledMealRecipe entities.
 - [x] Grocery generation uses override when set, else meal-level servings. (`mealLeaves` expands a meal into primary-recipe leaves at meal servings + each extra's leaves at `MealRecipe.ScaledServings` = override or meal servings; used by both planned-meal and date-range modes. Verified e2e: Caesar salad@4 ⊎ Tomato sauce@8 aggregates correctly.)
 
 ## G5. Grocery item traceability
-PRD FR12 AC1–AC2/AC6, GroceryItemSource.
+PRD FR12 AC1–AC2/AC5, GroceryItemSource.
 Grocery stays live-editable lists (immutable-snapshot model dropped by decision);
 no source table today.
 - [x] Add `grocery_item_sources` (item → meal/recipe/ingredient-line, contributed quantity/unit, plus variant and line-recipe display snapshots that survive component replacement).
@@ -76,28 +76,28 @@ PRD FR1 AC4, NFR5.2.
 
 ## G9. PWA installability
 PRD 3.1, §7.
-- [ ] Add `manifest.webmanifest` (name, icons, theme, display standalone) served under BASE_PATH.
-- [ ] Add a minimal service worker (offline shell / cache static). Link both from `layout.templ` `<head>`.
+- [x] Add `manifest.webmanifest` (name, icons, theme, display standalone) served under BASE_PATH.
+- [x] Add a minimal service worker (offline shell / cache static). Link both from `layout.templ` `<head>`.
 
 ## G10. Observability
 PRD NFR5.6.
-- [ ] Add request-ID middleware; include the ID in structured logs.
-- [ ] Emit metrics: login attempts, import failures, snapshot generation duration, conflict rates, invite acceptance (Prometheus endpoint or structured metric logs).
+- [x] Add request-ID middleware; include the ID in structured logs.
+- [x] Emit metrics: login attempts, import failures, grocery generation duration, conflict rates, invite acceptance (Prometheus endpoint or structured metric logs).
 
 ## G11. Response contract — DOC FIX (likely)
 `architecture.md` §Request and Response Contract claims HX-fragment + JSON tiers.
 App is full-page + `hx-boost` only.
-- [ ] Decide: build fragment/JSON tiers, or (recommended) rewrite the section to describe the actual SSR + hx-boost model. If doc-fix, do it and stop.
+- [x] Decide: build fragment/JSON tiers, or (recommended) rewrite the section to describe the actual SSR + hx-boost model. If doc-fix, do it and stop. (Documented the shipped full-page SSR + global `hx-boost` contract; handlers do not branch for fragments or JSON representations.)
 
 ## G12. Doc reconciliation — DOC FIX
-- [ ] Fix prototype paths: `docs/MealPlanner.html` + `docs/src/` → `docs/prototype/` (currently empty — re-add prototype files or note absence). Same in `README.md` (`Backbone Plate.html`).
-- [ ] Reconcile PRD §8.1/§8.2 nav + screens to reality: Recipes+Ingredients→Foods, add Today + Prep, Settings sidebar-only.
-- [ ] Add app-only features to PRD/README: Prep sessions, CoFID seeder, Settings (account name/email/password).
-- [ ] Update PRD §6 data model to the shipped `foods`-unified schema, or mark it "target, superseded by implementation."
-- [ ] Mark PRD FR11 immutable grocery snapshots as a deliberate non-goal — app uses live-editable grocery lists by decision. Do not re-add.
-- [ ] Decide on `username` (FR1): implement, or relax PRD to email-only (app is email-only).
-- [ ] README: reconcile local DB port `5433` vs compose `5432`.
+- [x] Fix prototype paths: `docs/MealPlanner.html` + `docs/src/` → `docs/prototype/` (currently empty — re-add prototype files or note absence). Same in `README.md` (`Backbone Plate.html`). (Documented the canonical path and current absence.)
+- [x] Reconcile PRD §8.1/§8.2 nav + screens to reality: Recipes+Ingredients→Foods, add Today + Prep, Settings sidebar-only.
+- [x] Add app-only features to PRD/README: Prep sessions, CoFID seeder, Settings (account name/email/password).
+- [x] Update PRD §6 data model to the shipped `foods`-unified schema, or mark it "target, superseded by implementation."
+- [x] Mark PRD FR11 immutable grocery snapshots as a deliberate non-goal — app uses live-editable grocery lists by decision. Do not re-add.
+- [x] Decide on `username` (FR1): implement, or relax PRD to email-only (app is email-only). (Documented email-only authentication with a separate display name.)
+- [x] README: reconcile local DB port `5433` vs compose `5432`. (Compose uses internal `db:5432` and publishes no host database port.)
 
 ## G13. Optimistic locking on meals
 PRD FR16 + ScheduledMeal.version. Only `foods` has versioning today.
-- [ ] Add `version` to `meal_plan` (folds into G4) and apply the same conflict screen (mirror FR16 foods impl).
+- [x] Add `version` to `meal_plan` (folds into G4) and apply the same conflict screen (mirror FR16 foods impl). (`meal_plan.version` arrived in 0011; 0018 adds a series token so overlapping recurrence-scope edits are atomic. Meal fields, extra recipes, and links share guarded transactions; stale attempts retain their fields and scope beside the current saved state.)
