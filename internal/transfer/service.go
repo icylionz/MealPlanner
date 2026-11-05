@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"mealplanner/internal/database/db"
+	foodservice "mealplanner/internal/foods"
 )
 
 // Service reads and writes the full data archive against the database.
@@ -84,7 +85,8 @@ func (s *Service) Export(ctx context.Context, householdID uuid.UUID) (*Archive, 
 		arc.Foods = append(arc.Foods, Food{
 			ID: f.ID, Name: f.Name, Description: f.Description,
 			PrepTimeMin: f.PrepTimeMin, CookTimeMin: f.CookTimeMin, Servings: f.Servings,
-			DefaultUnit: f.DefaultUnit, DensityGPerMl: f.DensityGPerMl, DensitySource: f.DensitySource,
+			YieldAmount: f.YieldAmount, DefaultUnit: f.DefaultUnit,
+			DensityGPerMl: f.DensityGPerMl, DensitySource: f.DensitySource,
 			SourceURL: stringValue(f.SourceUrl), SourceLastImportedAt: timestampPtr(f.SourceLastImportedAt),
 			CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt, DeletedAt: timestampPtr(f.DeletedAt),
 			CreatedBy: f.CreatedBy, UpdatedBy: f.UpdatedBy,
@@ -123,8 +125,8 @@ func (s *Service) Export(ctx context.Context, householdID uuid.UUID) (*Archive, 
 		arc.MealPlans = append(arc.MealPlans, MealPlan{
 			ID: m.ID, PlanDate: m.PlanDate, PlanTime: m.PlanTime,
 			FoodID: m.FoodID, Servings: m.Servings, SeriesID: m.SeriesID,
-			LinkURL: m.LinkUrl, LinkTitle: m.LinkTitle, LinkImageURL: m.LinkImageUrl,
-			Title: m.Title, Notes: m.Notes, Version: m.Version,
+			LinkURL: m.LinkUrl,
+			Title:   m.Title, Notes: m.Notes, Version: m.Version,
 			DeletedAt: timestampPtr(m.DeletedAt), CreatedBy: m.CreatedBy, UpdatedBy: m.UpdatedBy,
 			Recipes: recipesByMeal[m.ID],
 		})
@@ -214,6 +216,13 @@ func (s *Service) Import(ctx context.Context, householdID uuid.UUID, arc *Archiv
 	}
 	defer tx.Rollback(ctx)
 	q := s.q.WithTx(tx)
+	if sections[SectionFoods] {
+		// Keep the graph snapshot stable through validation and replacement, and
+		// serialize archive imports with ordinary food saves.
+		if err := q.LockFoodGraph(ctx, householdID); err != nil {
+			return nil, err
+		}
+	}
 
 	owners, err := q.TransferIDOwners(ctx, archiveStableIDs(arc))
 	if err != nil {
@@ -274,18 +283,29 @@ func (s *Service) Import(ctx context.Context, householdID uuid.UUID, arc *Archiv
 			}
 			var ins bool
 			var err error
+			yieldAmount := importedYieldAmount(f)
 			if arc.SchemaVersion == 1 {
 				ins, err = q.ImportFoodV1(ctx, db.ImportFoodV1Params{
 					ID: f.ID, HouseholdID: householdID, Name: f.Name, Description: f.Description,
 					PrepTimeMin: f.PrepTimeMin, CookTimeMin: f.CookTimeMin, Servings: f.Servings,
-					DefaultUnit: f.DefaultUnit, CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt,
+					YieldAmount: yieldAmount, DefaultUnit: f.DefaultUnit, CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt,
 					DensityGPerMl: f.DensityGPerMl, DensitySource: densitySourceOrNone(f.DensitySource),
 				})
-			} else {
+			} else if arc.SchemaVersion < 4 {
 				ins, err = q.ImportFoodV2(ctx, db.ImportFoodV2Params{
 					ID: f.ID, HouseholdID: householdID, Name: f.Name, Description: f.Description,
 					PrepTimeMin: f.PrepTimeMin, CookTimeMin: f.CookTimeMin, Servings: f.Servings,
-					DefaultUnit: f.DefaultUnit, CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt,
+					YieldAmount: yieldAmount, DefaultUnit: f.DefaultUnit, CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt,
+					DensityGPerMl: f.DensityGPerMl, DensitySource: densitySourceOrNone(f.DensitySource),
+					SourceUrl: stringPtr(f.SourceURL), SourceLastImportedAt: nullableTimestamp(f.SourceLastImportedAt),
+					DeletedAt: nullableTimestamp(f.DeletedAt), CreatedBy: scopedAuthor(f.CreatedBy, knownAccounts),
+					UpdatedBy: scopedAuthor(f.UpdatedBy, knownAccounts),
+				})
+			} else {
+				ins, err = q.ImportFoodV4(ctx, db.ImportFoodV4Params{
+					ID: f.ID, HouseholdID: householdID, Name: f.Name, Description: f.Description,
+					PrepTimeMin: f.PrepTimeMin, CookTimeMin: f.CookTimeMin, Servings: f.Servings,
+					YieldAmount: yieldAmount, DefaultUnit: f.DefaultUnit, CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt,
 					DensityGPerMl: f.DensityGPerMl, DensitySource: densitySourceOrNone(f.DensitySource),
 					SourceUrl: stringPtr(f.SourceURL), SourceLastImportedAt: nullableTimestamp(f.SourceLastImportedAt),
 					DeletedAt: nullableTimestamp(f.DeletedAt), CreatedBy: scopedAuthor(f.CreatedBy, knownAccounts),
@@ -340,7 +360,10 @@ func (s *Service) Import(ctx context.Context, householdID uuid.UUID, arc *Archiv
 				}
 			}
 		}
-		// Now components, skipping any whose child food is unknown.
+		// Preflight every replacement before changing any component relationship.
+		// The final graph is validated as one unit so cycles spanning multiple
+		// imported foods cannot slip through sequential per-food checks.
+		componentReplacements := make([]Food, 0, len(arc.Foods))
 		for _, f := range arc.Foods {
 			if !knownFoods[f.ID] || ownership.ownedElsewhere("food", f.ID, householdID) {
 				continue
@@ -349,6 +372,18 @@ func (s *Service) Import(ctx context.Context, householdID uuid.UUID, arc *Archiv
 				sr.skip(reason)
 				continue
 			}
+			componentReplacements = append(componentReplacements, f)
+		}
+		existingComponents, err := q.ListComponentsForFoods(ctx, householdID)
+		if err != nil {
+			return nil, err
+		}
+		proposedEdges := proposedFoodComponentGraph(existingComponents, componentReplacements, arc.SchemaVersion)
+		if err := foodservice.ValidateComponentGraph(proposedEdges); err != nil {
+			return nil, fmt.Errorf("archive food component graph is invalid: %w", err)
+		}
+
+		for _, f := range componentReplacements {
 			if arc.SchemaVersion >= 2 {
 				if err := q.DeleteFoodComponents(ctx, f.ID); err != nil {
 					return nil, err
@@ -441,14 +476,14 @@ func (s *Service) Import(ctx context.Context, householdID uuid.UUID, arc *Archiv
 				ins, err = q.ImportMealPlanV1(ctx, db.ImportMealPlanV1Params{
 					ID: m.ID, HouseholdID: householdID, PlanDate: m.PlanDate, PlanTime: m.PlanTime,
 					FoodID: m.FoodID, Servings: m.Servings, SeriesID: series,
-					LinkUrl: m.LinkURL, LinkTitle: m.LinkTitle, LinkImageUrl: m.LinkImageURL,
+					LinkUrl: m.LinkURL,
 				})
 			} else {
 				ins, err = q.ImportMealPlanV2(ctx, db.ImportMealPlanV2Params{
 					ID: m.ID, HouseholdID: householdID, PlanDate: m.PlanDate, PlanTime: m.PlanTime,
 					FoodID: m.FoodID, Servings: m.Servings, SeriesID: series,
-					LinkUrl: m.LinkURL, LinkTitle: m.LinkTitle, LinkImageUrl: m.LinkImageURL,
-					Title: m.Title, Notes: m.Notes, Version: m.Version,
+					LinkUrl: m.LinkURL,
+					Title:   m.Title, Notes: m.Notes, Version: m.Version,
 					DeletedAt: nullableTimestamp(m.DeletedAt), CreatedBy: scopedAuthor(m.CreatedBy, knownAccounts),
 					UpdatedBy: scopedAuthor(m.UpdatedBy, knownAccounts),
 				})
@@ -776,6 +811,48 @@ func componentReplacementIssue(food Food, ownership ownerIndex, foods map[uuid.U
 	return ""
 }
 
+func proposedFoodComponentGraph(existing []db.FoodComponent, replacements []Food, schemaVersion int) []foodservice.ComponentEdge {
+	// Component IDs are stable and upserts may move an existing line between
+	// parents, so simulate the import by ID rather than only replacing adjacency
+	// lists. This matches both v1's upsert-then-prune and v2's delete-then-upsert.
+	edgesByID := make(map[uuid.UUID]foodservice.ComponentEdge, len(existing))
+	for _, component := range existing {
+		edgesByID[component.ID] = foodservice.ComponentEdge{
+			ParentFoodID: component.ParentFoodID,
+			ChildFoodID:  component.ChildFoodID,
+		}
+	}
+	for _, food := range replacements {
+		if schemaVersion >= 2 {
+			for id, edge := range edgesByID {
+				if edge.ParentFoodID == food.ID {
+					delete(edgesByID, id)
+				}
+			}
+		}
+		keep := make(map[uuid.UUID]bool, len(food.Components))
+		for _, component := range food.Components {
+			keep[component.ID] = true
+			edgesByID[component.ID] = foodservice.ComponentEdge{
+				ParentFoodID: food.ID,
+				ChildFoodID:  component.ChildFoodID,
+			}
+		}
+		if schemaVersion == 1 {
+			for id, edge := range edgesByID {
+				if edge.ParentFoodID == food.ID && !keep[id] {
+					delete(edgesByID, id)
+				}
+			}
+		}
+	}
+	edges := make([]foodservice.ComponentEdge, 0, len(edgesByID))
+	for _, edge := range edgesByID {
+		edges = append(edges, edge)
+	}
+	return edges
+}
+
 func scheduledRecipeReplacementIssue(meal MealPlan, ownership ownerIndex, foods map[uuid.UUID]bool, householdID uuid.UUID) string {
 	for _, recipe := range meal.Recipes {
 		if ownership.ownedElsewhere("scheduled_meal_recipe", recipe.ID, householdID) {
@@ -814,6 +891,16 @@ func densitySourceOrNone(s string) string {
 	default:
 		return "none"
 	}
+}
+
+func importedYieldAmount(food Food) float64 {
+	if food.YieldAmount > 0 {
+		return food.YieldAmount
+	}
+	if food.Servings > 0 {
+		return float64(food.Servings)
+	}
+	return 1
 }
 
 func sourceTypeOrAdhoc(s string) string {

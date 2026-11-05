@@ -42,7 +42,7 @@ Build a mobile-first, responsive meal planner for shared households. Users can s
   - per-meal servings
   - optional per-recipe servings override
   - notes
-  - optional link with rich preview
+  - optional external link
   - recurrence
 - Unified Foods library: atomic ingredients and recipes-with-components share one catalog
 - Food tags and aliases/synonyms
@@ -141,7 +141,7 @@ Owners can create scheduled meals by choosing date/time first and then selecting
 
 1. Given an owner in Today or Plan, when they choose to add a meal, then the app prompts for date and time before recipe selection.
 2. Given selected recipes, when the owner saves the scheduled meal, then it appears in the agenda under the correct day and time.
-3. Given a scheduled meal, when the owner adds notes or a URL, then those values persist and display in the meal detail view.
+3. Given a scheduled meal, when the owner adds notes or an optional URL, then those values persist, and the URL displays as a plain safe external link without metadata fetching.
 4. Given a scheduled meal with multiple recipes, when the owner sets a per-meal servings value, then all recipes inherit that value unless a per-recipe override is set.
 5. Given a scheduled meal with per-recipe servings overrides, when the meal is saved, then the grocery calculations use the override for that recipe and the meal-level value for others.
 
@@ -226,15 +226,9 @@ Generated grocery items are merged when possible, traceable to their sources, an
 4. Given an owner converts or removes an item in a list, then that edit affects only the list and does not alter source foods or planned meals.
 5. Given a deleted recipe or ingredient contributed to a generated item historically, when item details are viewed later, then the contributing reference remains readable.
 
-### FR13. Rich link previews on scheduled meals
+### FR13. Removed
 
-Scheduled meal links may show fetched title and image metadata.
-
-#### Acceptance Criteria
-
-1. Given an owner enters a URL on a scheduled meal, when preview fetch succeeds, then the system stores and displays the preview title and image.
-2. Given preview fetch fails, when the owner edits the scheduled meal, then they can keep the raw URL and manually enter fallback preview values.
-3. Given the URL changes, when the owner requests a refresh, then the system re-fetches the preview metadata.
+This requirement is reserved. Scheduled-meal URL behavior is covered by FR5.3.
 
 ### FR14. URL recipe import
 
@@ -290,6 +284,19 @@ Authenticated users can maintain their own account profile and password from Set
 2. Given an authenticated user, when they provide the correct current password and a new password of at least eight characters, then the password is changed.
 3. Given an invalid current password or an email already in use, then the app preserves the submitted profile context and shows an error.
 
+### FR19. Grocery item cost and food cost estimation
+
+Owners record what a grocery item costs while shopping. From the latest recorded cost per food the app derives a cost-per-unit and shows an estimated cost when viewing any food, rolling the estimate up across the food's entire ingredient tree. Costs are not immutable history; the latest recorded cost for a food supersedes earlier ones.
+
+#### Acceptance Criteria
+
+1. Given an owner viewing a grocery item, when they enter the total cost paid for that line (interpreted against the line's `amount` and `unit`), then the cost is saved on the item and a cost-per-unit is derived from it.
+2. Given the same food is bought again on a later list at a different cost, then the food's estimate uses the most recent recorded cost, and earlier costs are retained on their own items.
+3. Given a food with a recorded cost, when it is viewed, then the app shows an estimated cost derived as cost-per-unit, so that changing the displayed amount or recipe scale rescales the estimate proportionally.
+4. Given a recipe, when its estimate is computed, then each node in the ingredient tree contributes its own recorded cost if it has one, otherwise the sum of its children's estimates, recursively to the deepest leaves.
+5. Given some ingredients in the tree have no recorded cost, then the app shows a partial estimate over the priced ingredients together with a coverage indicator (for example "3 of 5 ingredients priced").
+6. Given a cost recorded in a unit of a different measurement dimension than a component usage, then the app converts using the food's density where possible and otherwise treats that ingredient as unpriced rather than guessing.
+
 ## 5. Non-Functional Requirements
 
 ### 5.1 Performance
@@ -330,7 +337,7 @@ Authenticated users can maintain their own account profile and password from Set
 ### 5.6 Observability
 
 - Structured request logs with request IDs.
-- Error logging for failed imports, preview fetches, grocery generation, and auth failures.
+- Error logging for failed imports, grocery generation, and auth failures.
 - Metrics for:
   - login attempts
   - import failures
@@ -340,7 +347,7 @@ Authenticated users can maintain their own account profile and password from Set
 
 ## 6. Data Model
 
-This section describes the shipped PostgreSQL schema through migration `0018`.
+This section describes the shipped PostgreSQL schema through migration `0020`.
 It supersedes the earlier target model that used separate Recipe, Ingredient,
 RecipeIngredientLine, and immutable GrocerySnapshot entities. Database table and
 column names below are the implementation contract.
@@ -392,7 +399,7 @@ A food is atomic when it has no components and acts as a recipe when it has one
 or more components. Both forms share the same catalog and identifier space.
 
 - `id`, `household_id`, `name`, `description`
-- `prep_time_min`, `cook_time_min`, `servings`, `default_unit`
+- `prep_time_min`, `cook_time_min`, `servings`, `yield_amount`, `default_unit`
 - `density_g_per_ml`, `density_source` (`starter`, `custom`, `none`)
 - `source_url`, `source_last_imported_at` (nullable)
 - `version`
@@ -417,6 +424,11 @@ Each component references another food; component lines are never free text.
 The same table represents recipe-to-recipe nesting and recipe-to-atomic-food
 ingredient usage.
 
+A food's estimated cost is always derived at read time from the latest recorded
+grocery item cost for that food (see `GroceryItem.cost`) and, for recipes, from
+the cost-per-unit rollup across its component tree. It is never stored on
+`foods`.
+
 #### FoodStep (`food_steps`)
 
 - `food_id`, `step_number` (composite primary key)
@@ -438,7 +450,7 @@ ingredient usage.
 - `food_id` (the primary food/recipe), `servings`
 - `series_id` (nullable)
 - `title`, `notes`
-- `link_url`, `link_title`, `link_image_url`
+- `link_url` (optional external URL; rendered as a plain safe link)
 - `version`
 - `created_by`, `updated_by` (nullable account UUIDs)
 - `deleted_at` (nullable)
@@ -466,6 +478,7 @@ additional attached recipes.
 - `id`, `list_id`
 - `ingredient_id` (nullable food UUID)
 - `name`, `amount`, `unit`, `variant_text`, `note`, `sort_order`
+- `cost` (nullable; total price paid for this line at its `amount`/`unit`)
 - `checked`
 - `source_type` (`generated`, `adhoc`)
 - `created_by`, `updated_by` (nullable account UUIDs)
@@ -516,7 +529,6 @@ GrocerySnapshot table or generation-filter record.
 - Public web pages for recipe URL import using structured recipe metadata
 - UK CoFID 2021 workbook, fetched by the optional `cmd/seed-foods` operator command or supplied as a local file; the idempotent seeder populates the Starter Template so future households clone the enriched raw-food catalog
 - PWA install/browser capabilities
-- Optional metadata fetch for rich link previews
 
 ## 8. UX Requirements
 
@@ -557,9 +569,10 @@ there are no separate Recipes and Ingredients navigation destinations.
 - Today orders the current day's meals chronologically; Plan provides explicit date and week navigation
 - Pickers support inline search
 - Grocery item detail explains "why this is here"
+- Grocery items accept a per-line cost; food views show a derived estimated cost that rescales with amount and flags partial ingredient coverage
 - Food and scheduled-meal conflict UI shows saved version vs attempted version
 - Recurring edit flow offers occurrence scope explicitly
-- Preview fetch failures degrade gracefully to raw URL + manual fields
+- Scheduled-meal URLs render as plain external links without server-side fetching
 
 ## 9. Out of Scope
 
@@ -579,5 +592,4 @@ there are no separate Recipes and Ingredients navigation destinations.
 
 - Whether recurrence MVP is weekly-only or daily+weekly
 - Whether invite links should have unlimited uses or configurable max uses
-- Exact search match scope for scheduled meal link metadata
 - Exact merge rules for JSON import field-level conflicts

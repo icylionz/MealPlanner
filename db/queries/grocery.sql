@@ -134,7 +134,10 @@ UPDATE grocery_items SET note = $2, updated_by = $4
 WHERE grocery_items.id = $1 AND grocery_items.deleted_at IS NULL AND grocery_items.list_id IN (SELECT gl.id FROM grocery_lists gl WHERE gl.household_id = $3);
 
 -- name: AddGroceryItemAmount :exec
-UPDATE grocery_items SET amount = amount + $2, updated_by = $4
+-- A priced line keeps its unit price when generation merges more quantity in.
+UPDATE grocery_items SET amount = amount + $2,
+    cost = CASE WHEN cost IS NULL OR amount <= 0 THEN cost ELSE cost * (amount + $2) / amount END,
+    updated_by = $4
 WHERE grocery_items.id = $1 AND grocery_items.deleted_at IS NULL AND grocery_items.list_id IN (SELECT gl.id FROM grocery_lists gl WHERE gl.household_id = $3);
 
 -- name: ToggleGroceryItem :exec
@@ -152,3 +155,25 @@ UPDATE grocery_items SET deleted_at = now(), updated_by = $2 WHERE list_id = $1 
 
 -- name: MaxGrocerySortOrder :one
 SELECT coalesce(max(sort_order), -1)::int FROM grocery_items WHERE list_id = $1 AND deleted_at IS NULL;
+
+-- name: SetGroceryItemCost :execrows
+-- FR19: total price paid for the line at its amount/unit; NULL clears it.
+UPDATE grocery_items SET cost = sqlc.narg(cost),
+    cost_recorded_at = CASE WHEN sqlc.narg(cost)::numeric IS NULL THEN NULL ELSE now() END,
+    updated_by = sqlc.narg(updated_by)
+WHERE grocery_items.id = sqlc.arg(id) AND grocery_items.deleted_at IS NULL
+  AND grocery_items.list_id IN (
+      SELECT gl.id FROM grocery_lists gl
+      WHERE gl.household_id = sqlc.arg(household_id) AND gl.deleted_at IS NULL);
+
+-- name: ListLatestFoodCosts :many
+-- FR19: the most recently priced line per food. Lines on deleted lists or
+-- deleted items still count: a recorded price stays history until superseded.
+SELECT DISTINCT ON (gi.ingredient_id)
+    gi.ingredient_id::uuid AS food_id, gi.cost::numeric AS cost, gi.amount, gi.unit
+FROM grocery_items gi
+JOIN grocery_lists gl ON gl.id = gi.list_id
+JOIN foods f ON f.id = gi.ingredient_id AND f.household_id = gl.household_id
+WHERE gl.household_id = $1
+  AND gi.ingredient_id IS NOT NULL AND gi.cost IS NOT NULL AND gi.amount > 0
+ORDER BY gi.ingredient_id, gi.cost_recorded_at DESC NULLS LAST, gi.id DESC;

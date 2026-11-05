@@ -43,6 +43,13 @@ func ConvertOptionsForDensity(amount float64, unit string, density float64) []Co
 // FormatAmount proxies units.Format for templates.
 func FormatAmount(n float64) string { return units.Format(n) }
 
+// CurrencySymbol prefixes recorded and estimated costs (FR19). The app has no
+// per-household currency setting; costs are plain amounts in one currency.
+const CurrencySymbol = "£"
+
+// FormatCost renders a cost with two decimals and the currency symbol.
+func FormatCost(n float64) string { return CurrencySymbol + strconv.FormatFloat(n, 'f', 2, 64) }
+
 // FormatDensity renders a density with full precision (no rounding), since
 // densities carry meaningful sub-decimal values (e.g. 0.918, 1.25 g/ml).
 func FormatDensity(n float64) string { return strconv.FormatFloat(n, 'g', -1, 64) }
@@ -117,7 +124,12 @@ type PlanData struct {
 type FoodsData struct {
 	Member  *households.Member
 	Search  string
-	Tag     string
+	Tags    []string // selected tag filters
+	TagMode string   // "and" (default) or "or"
+	PrepMin string   // raw minute bounds, echoed back into the form inputs
+	PrepMax string
+	CookMin string
+	CookMax string
 	AllTags []string
 	Foods   []foods.Food
 }
@@ -152,6 +164,10 @@ type FoodDetailData struct {
 	Scale   int
 	Tree    []IngNode
 	BaseURL string // detail path with scale/unit params preserved except scale
+	// Cost is the derived estimate for one batch at Scale (FR19); RecordedCost
+	// is the food's own latest priced grocery line, if any.
+	Cost         foods.CostEstimate
+	RecordedCost *foods.RecordedCost
 }
 
 // ComponentForm is one editable component row in the editor. Every component
@@ -175,6 +191,7 @@ type FoodEditData struct {
 	PrepTime      string
 	CookTime      string
 	Servings      string
+	YieldAmount   string
 	DefaultUnit   string
 	Density       string // g/ml, blank = unset (falls back to starter set)
 	DensitySource string // "starter", "custom", or "none" (display hint)
@@ -199,6 +216,7 @@ type FoodConflict struct {
 	PrepTime    int
 	CookTime    int
 	Servings    int
+	YieldAmount float64
 	DefaultUnit string
 }
 
@@ -212,8 +230,10 @@ type GroceryData struct {
 
 // GroceryItemDetailData feeds the household-scoped generation provenance page.
 type GroceryItemDetailData struct {
-	Member *households.Member
-	Detail grocery.ItemDetail
+	Member    *households.Member
+	Detail    grocery.ItemDetail
+	CostInput string // cost field value, preserved on validation errors
+	CostError string
 }
 
 // GenPreviewItem is one previewed generated ingredient.
@@ -341,6 +361,7 @@ type ImportReconcileData struct {
 	Prep           string
 	Cook           string
 	Servings       string
+	YieldAmount    string
 	DefaultUnit    string
 	TargetFoodID   string // set for re-import so commit updates instead of creates
 	Version        string // version used by the original re-import attempt
@@ -409,10 +430,7 @@ type EditMealData struct {
 	Scope         planner.Scope     // attempted recurring scope, retained on conflict
 	Recurring     bool              // meal belongs to a series -> offer scope choice
 	Series        *planner.Series   // recurrence rule for display (may be nil)
-	LinkURL       string            // external link + preview (FR13)
-	LinkTitle     string
-	LinkImageURL  string
-	LinkError     string // preview fetch failure -> prompt manual entry (FR13.2)
+	LinkURL       string            // optional external link
 	Error         string
 	Conflict      *MealConflict
 }
@@ -431,8 +449,6 @@ type MealConflict struct {
 	Extras        []MealConflictExtra
 	Recurring     bool
 	LinkURL       string
-	LinkTitle     string
-	LinkImageURL  string
 }
 
 type MealConflictExtra struct {

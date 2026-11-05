@@ -22,6 +22,7 @@ var unitTypes = map[string]Type{
 	"ml": Volume, "cl": Volume, "dl": Volume, "L": Volume, "l": Volume,
 	"tsp": Volume, "tbsp": Volume, "fl oz": Volume, "cup": Volume, "pint": Volume, "quart": Volume,
 	"count": Count, "pcs": Count, "whole": Count,
+	"serving": Count, "servings": Count,
 }
 
 var unitFactors = map[string]float64{
@@ -29,6 +30,7 @@ var unitFactors = map[string]float64{
 	"ml": 1, "cl": 10, "dl": 100, "L": 1000, "l": 1000,
 	"tsp": 4.92892, "tbsp": 14.7868, "fl oz": 29.5735, "cup": 236.588, "pint": 473.176, "quart": 946.353,
 	"count": 1, "pcs": 1, "whole": 1,
+	"serving": 1, "servings": 1,
 }
 
 // ByType lists selectable units per dimension, in prototype order.
@@ -39,7 +41,20 @@ var ByType = map[Type][]string{
 }
 
 // EditorUnits is the flat unit list offered in the recipe editor.
-var EditorUnits = []string{"mg", "g", "kg", "oz", "lb", "ml", "cl", "dl", "L", "tsp", "tbsp", "fl oz", "cup", "pint", "quart", "count"}
+var EditorUnits = []string{"mg", "g", "kg", "oz", "lb", "ml", "cl", "dl", "L", "tsp", "tbsp", "fl oz", "cup", "pint", "quart", "count", "serving"}
+
+// IsServing reports whether a unit explicitly denotes recipe servings. Serving
+// units are handled separately from physical/count yields during recipe
+// expansion even though both are count-like for grocery aggregation.
+func IsServing(unit string) bool {
+	return unit == "serving" || unit == "servings"
+}
+
+// IsKnown reports whether unit has defined conversion semantics.
+func IsKnown(unit string) bool {
+	_, ok := unitTypes[unit]
+	return ok
+}
 
 // TypeOf returns the dimension of a unit, defaulting to Count.
 func TypeOf(u string) Type {

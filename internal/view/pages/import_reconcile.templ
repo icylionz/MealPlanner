@@ -41,6 +41,7 @@ templ ImportReconcile(d ImportReconcileData) {
 			<input type="hidden" name="reapply_version" value={ d.ReapplyVersion }/>
 			<input type="hidden" name="source_state" value={ d.SourceState }/>
 			<input type="hidden" name="imp_default_unit" value={ d.DefaultUnit }/>
+			<input type="hidden" name="imp_yield_amount" value={ d.YieldAmount }/>
 			<div class="modal-body">
 				<div class="flex flex-col" style="gap: 14px;">
 					if d.Error != "" {

@@ -61,7 +61,7 @@ templ FoodEdit(d FoodEditData) {
 					@FieldLabel("Description")
 					<textarea class="textarea" name="description" placeholder="Optional short description">{ d.Description }</textarea>
 				</div>
-				<div class="flex" style="gap: 12px; margin-bottom: 20px;">
+				<div class="flex flex-wrap" style="gap: 12px; margin-bottom: 20px;">
 					<div class="flex-1">
 						@FieldLabel("Prep time (min)")
 						<input class="input input-sm" type="number" min="0" name="prep" value={ d.PrepTime }/>
@@ -71,11 +71,15 @@ templ FoodEdit(d FoodEditData) {
 						<input class="input input-sm" type="number" min="0" name="cook" value={ d.CookTime }/>
 					</div>
 					<div class="flex-1">
-						@FieldLabel("Servings / yield")
+						@FieldLabel("Servings")
 						<input class="input input-sm" type="number" min="1" name="servings" value={ d.Servings }/>
 					</div>
 					<div class="flex-1">
-						@FieldLabel("Default unit")
+						@FieldLabel("Recipe yield")
+						<input class="input input-sm" type="number" step="any" min="0.001" name="yield_amount" value={ d.YieldAmount }/>
+					</div>
+					<div class="flex-1">
+						@FieldLabel("Yield unit")
 						<select
 							class="select input-sm"
 							name="default_unit"
@@ -83,7 +87,9 @@ templ FoodEdit(d FoodEditData) {
 							data-search-select-placeholder="Unit…"
 						>
 							for _, u := range d.Units {
-								<option value={ u } selected?={ d.DefaultUnit == u }>{ u }</option>
+								if u != "serving" {
+									<option value={ u } selected?={ d.DefaultUnit == u }>{ u }</option>
+								}
 							}
 						</select>
 					</div>
@@ -156,7 +162,7 @@ templ FoodEdit(d FoodEditData) {
 				</div>
 				<div style="margin-bottom: 20px;">
 					@FieldLabel("Components")
-					<p style="font-size: 12px; color: var(--fg-3); margin: 0 0 8px;">A food with no components is a raw ingredient. Add components to make it a recipe — each references another food.</p>
+					<p style="font-size: 12px; color: var(--fg-3); margin: 0 0 8px;">A food with no components is a raw ingredient. For a nested recipe, use its yield unit or “serving”.</p>
 					<div class="flex flex-col" style="gap: 6px;">
 						for i, comp := range d.Components {
 							@componentEditRow(d, i, comp)
@@ -242,7 +248,7 @@ templ foodConflictPanel(c *FoodConflict) {
 			if c.Description != "" {
 				<div>{ c.Description }</div>
 			}
-			<div>Prep { view.Itoa(c.PrepTime) } · Cook { view.Itoa(c.CookTime) } · Serves { view.Itoa(c.Servings) } · Unit { c.DefaultUnit }</div>
+							<div>Prep { view.Itoa(c.PrepTime) } · Cook { view.Itoa(c.CookTime) } · Serves { view.Itoa(c.Servings) } · Yields { FormatAmount(c.YieldAmount) } { c.DefaultUnit }</div>
 		</div>
 		<div style="margin-top: 8px; font-size: 12px; color: var(--fg-4);">Your edits are kept in the form below. Saving again will overwrite this version.</div>
 	</div>

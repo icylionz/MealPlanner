@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"errors"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -81,8 +82,42 @@ func (s *Server) handleGroceryItemDetail(c echo.Context) error {
 		return err
 	}
 	return s.render(c, pages.GroceryItemDetail(pages.GroceryItemDetailData{
-		Member: s.member(c), Detail: *detail,
+		Member: s.member(c), Detail: *detail, CostInput: costInput(detail.Item.Cost),
 	}))
+}
+
+// handleGroceryItemCost records or clears the price paid for a line (FR19).
+func (s *Server) handleGroceryItemCost(c echo.Context) error {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return echo.ErrNotFound
+	}
+	ctx := c.Request().Context()
+	raw := c.FormValue("cost")
+	err = s.grocery.SetItemCost(ctx, s.household(c), s.actorID(c), id, raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return echo.ErrNotFound
+	}
+	if errors.Is(err, grocery.ErrInvalidCost) {
+		detail, derr := s.grocery.GetItemDetail(ctx, s.household(c), id)
+		if derr != nil {
+			return derr
+		}
+		return s.renderStatus(c, http.StatusUnprocessableEntity, pages.GroceryItemDetail(pages.GroceryItemDetailData{
+			Member: s.member(c), Detail: *detail, CostInput: raw, CostError: "Enter a cost of zero or more, or leave it blank.",
+		}))
+	}
+	if err != nil {
+		return err
+	}
+	return s.redirect(c, "/grocery/items/"+id.String())
+}
+
+func costInput(cost *float64) string {
+	if cost == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*cost, 'f', 2, 64)
 }
 
 func (s *Server) handleGroceryNewList(c echo.Context) error {

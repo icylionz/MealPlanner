@@ -59,7 +59,7 @@ func TestOptimisticMealAggregateUpdates(t *testing.T) {
 	form := Form{
 		Date: "2026-09-14", Time: "19:30", FoodID: primaryID, Servings: 4,
 		Title: "Attempted", Notes: "Attempted notes", Scope: ScopeFuture,
-		LinkURL: "https://attempted.example", LinkTitle: "Attempted link",
+		LinkURL: "https://attempted.example",
 		Recipes: []MealRecipe{{FoodID: extraBID, ServingsOverride: &servings}},
 		Version: 1, SeriesVersion: 0,
 	}
@@ -111,30 +111,18 @@ func TestOptimisticMealAggregateUpdates(t *testing.T) {
 	}
 	assertMealState(t, pool, mealIDs[0], "Detached", "", 2, false, extraBID)
 
-	if err := service.SetLink(ctx, householdID, uuid.Nil, mealIDs[1], 1, 2, "https://stale.example", "Stale", ""); !errors.Is(err, ErrConflict) {
-		t.Fatalf("stale preview update: want conflict, got %v", err)
-	}
-	assertMealState(t, pool, mealIDs[1], "Attempted", "https://attempted.example", 2, true, extraBID)
-	assertSeriesVersion(t, pool, seriesID, 3)
-
-	if err := service.SetLink(ctx, householdID, uuid.Nil, mealIDs[1], 2, 3, "https://current.example", "Current", ""); err != nil {
-		t.Fatalf("current preview update: %v", err)
-	}
-	assertMealState(t, pool, mealIDs[1], "Attempted", "https://current.example", 3, true, extraBID)
-	assertSeriesVersion(t, pool, seriesID, 4)
-
 	if err := service.Delete(ctx, householdID, uuid.Nil, mealIDs[2], ScopeOne); err != nil {
 		t.Fatalf("delete attached occurrence: %v", err)
 	}
-	assertSeriesVersion(t, pool, seriesID, 5)
+	assertSeriesVersion(t, pool, seriesID, 4)
 	staleAfterDelete := Form{
 		Date: "2026-09-14", Time: "20:30", FoodID: primaryID, Servings: 4,
-		Title: "Overwrite after delete", Scope: ScopeAll, Version: 3, SeriesVersion: 4,
+		Title: "Overwrite after delete", Scope: ScopeAll, Version: 2, SeriesVersion: 3,
 	}
 	if err := service.Update(ctx, householdID, uuid.Nil, mealIDs[1], staleAfterDelete); !errors.Is(err, ErrConflict) {
 		t.Fatalf("series update after concurrent delete: want conflict, got %v", err)
 	}
-	assertMealState(t, pool, mealIDs[1], "Attempted", "https://current.example", 3, true, extraBID)
+	assertMealState(t, pool, mealIDs[1], "Attempted", "https://attempted.example", 2, true, extraBID)
 
 	if err := service.Add(ctx, otherHouseholdID, uuid.Nil, "2026-10-01", "18:00", primaryID, 2, "Cross household", "", nil); err == nil {
 		t.Fatal("cross-household primary food was accepted for a meal")

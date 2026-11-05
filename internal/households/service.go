@@ -469,43 +469,74 @@ func (s *Service) RemoveMember(ctx context.Context, householdID, accountID uuid.
 }
 
 // TransferOwnership promotes another member to owner and demotes the current
-// owner to member, in one transaction (FR3 AC5). It verifies the caller is the
-// household's owner and that the target is an existing non-owner member.
+// owner to member, in one transaction (FR3 AC5). Validation and role changes
+// run while the household and its memberships are locked.
 func (s *Service) TransferOwnership(ctx context.Context, householdID, fromAccountID, toAccountID uuid.UUID) error {
-	if fromAccountID == toAccountID {
-		return errors.New("you are already the owner")
-	}
-
-	from, err := s.q.GetMembership(ctx, db.GetMembershipParams{HouseholdID: householdID, AccountID: fromAccountID})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return errors.New("you are not a member of this household")
-		}
-		return err
-	}
-	if from.Role != "owner" {
-		return errors.New("only the owner can transfer ownership")
-	}
-
-	if _, err := s.q.GetMembership(ctx, db.GetMembershipParams{HouseholdID: householdID, AccountID: toAccountID}); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return errors.New("that person is not a member of this household")
-		}
-		return err
-	}
-
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	qtx := db.New(tx)
+	qtx := s.q.WithTx(tx)
 
-	if err := qtx.SetMemberRole(ctx, db.SetMemberRoleParams{HouseholdID: householdID, AccountID: toAccountID, Role: "owner"}); err != nil {
+	if fromAccountID == toAccountID {
+		return errors.New("you are already the owner")
+	}
+	if _, err := qtx.LockHousehold(ctx, householdID); err != nil {
 		return err
 	}
-	if err := qtx.SetMemberRole(ctx, db.SetMemberRoleParams{HouseholdID: householdID, AccountID: fromAccountID, Role: "member"}); err != nil {
+	members, err := qtx.LockHouseholdMembers(ctx, householdID)
+	if err != nil {
 		return err
+	}
+
+	var from, to *db.HouseholdMember
+	ownerCount := 0
+	for i := range members {
+		member := &members[i]
+		if member.Role == "owner" {
+			ownerCount++
+		}
+		if member.AccountID == fromAccountID {
+			from = member
+		}
+		if member.AccountID == toAccountID {
+			to = member
+		}
+	}
+	if from == nil {
+		return errors.New("you are not a member of this household")
+	}
+	if from.Role != "owner" {
+		return errors.New("only the owner can transfer ownership")
+	}
+	if ownerCount != 1 {
+		return errors.New("household ownership is inconsistent")
+	}
+	if to == nil {
+		return errors.New("that person is not a member of this household")
+	}
+	if to.Role != "member" {
+		return errors.New("that person is already an owner")
+	}
+
+	promoted, err := qtx.PromoteMemberToOwner(ctx, db.PromoteMemberToOwnerParams{
+		HouseholdID: householdID, AccountID: toAccountID,
+	})
+	if err != nil {
+		return err
+	}
+	if promoted != 1 {
+		return errors.New("household membership changed; reload and try again")
+	}
+	demoted, err := qtx.DemoteOwnerToMember(ctx, db.DemoteOwnerToMemberParams{
+		HouseholdID: householdID, AccountID: fromAccountID,
+	})
+	if err != nil {
+		return err
+	}
+	if demoted != 1 {
+		return errors.New("household membership changed; reload and try again")
 	}
 	return tx.Commit(ctx)
 }
@@ -670,6 +701,7 @@ func cloneTemplateFoods(ctx context.Context, q *db.Queries, householdID uuid.UUI
 			PrepTimeMin:   f.PrepTimeMin,
 			CookTimeMin:   f.CookTimeMin,
 			Servings:      f.Servings,
+			YieldAmount:   f.YieldAmount,
 			DefaultUnit:   f.DefaultUnit,
 			DensityGPerMl: f.DensityGPerMl,
 			DensitySource: f.DensitySource,

@@ -43,7 +43,7 @@ func TestSupportedSchemaVersions(t *testing.T) {
 func TestArchiveValidateURLs(t *testing.T) {
 	valid := Archive{
 		Foods:     []Food{{SourceURL: "https://recipes.example/soup"}},
-		MealPlans: []MealPlan{{LinkURL: "http://example.test/page", LinkImageURL: "https://example.test/image.jpg"}},
+		MealPlans: []MealPlan{{LinkURL: "http://example.test/page"}},
 	}
 	if err := valid.ValidateURLs(); err != nil {
 		t.Fatalf("valid archive URLs rejected: %v", err)
@@ -52,7 +52,6 @@ func TestArchiveValidateURLs(t *testing.T) {
 		{Foods: []Food{{SourceURL: "javascript:alert(1)"}}},
 		{Foods: []Food{{SourceURL: "https://user@example.test/recipe"}}},
 		{MealPlans: []MealPlan{{LinkURL: "//example.test/page"}}},
-		{MealPlans: []MealPlan{{LinkImageURL: "https://example.test/image%0a.jpg"}}},
 	} {
 		if err := arc.ValidateURLs(); err == nil {
 			t.Fatalf("unsafe archive URL accepted: %+v", arc)
@@ -79,7 +78,7 @@ func TestArchiveJSONRoundTrip(t *testing.T) {
 			UntilDate: time.Date(2026, 2, 3, 0, 0, 0, 0, time.UTC), Version: 5,
 		}},
 		Foods: []Food{{
-			ID: fid, Name: "Dough", Servings: 1, DefaultUnit: "g",
+			ID: fid, Name: "Dough", Servings: 1, YieldAmount: 750, DefaultUnit: "g",
 			DensityGPerMl: 0.53, DensitySource: "custom",
 			SourceURL: "https://example.test/dough", SourceLastImportedAt: func() *time.Time { v := time.Date(2026, 1, 1, 2, 3, 4, 0, time.UTC); return &v }(),
 			DeletedAt: &deletedAt, CreatedBy: &actorID, UpdatedBy: &actorID,
@@ -91,7 +90,7 @@ func TestArchiveJSONRoundTrip(t *testing.T) {
 		MealPlans: []MealPlan{{
 			ID: mealID, PlanDate: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC),
 			PlanTime: "08:00", FoodID: fid, Servings: 2, SeriesID: &sid,
-			Title: "Brunch", Notes: "Bring jam", Version: 7,
+			LinkURL: "https://example.test/brunch", Title: "Brunch", Notes: "Bring jam", Version: 7,
 			DeletedAt: &deletedAt, CreatedBy: &actorID, UpdatedBy: &actorID,
 			Recipes: []ScheduledMealRecipe{{
 				ID: uuid.New(), FoodID: fid, ServingsOverride: &servingsOverride,
@@ -141,7 +140,7 @@ func TestArchiveJSONRoundTrip(t *testing.T) {
 		t.Fatalf("series optimistic token not preserved: %+v", out.MealSeries)
 	}
 	meal := out.MealPlans[0]
-	if meal.Title != "Brunch" || meal.Notes != "Bring jam" || meal.Version != 7 || meal.DeletedAt == nil || meal.CreatedBy == nil {
+	if meal.LinkURL != "https://example.test/brunch" || meal.Title != "Brunch" || meal.Notes != "Bring jam" || meal.Version != 7 || meal.DeletedAt == nil || meal.CreatedBy == nil {
 		t.Fatalf("G1/G2/G4 meal metadata not preserved: %+v", meal)
 	}
 	if len(meal.Recipes) != 1 || meal.Recipes[0].ServingsOverride == nil || *meal.Recipes[0].ServingsOverride != 6 || meal.Recipes[0].SortOrder != 3 || meal.Recipes[0].CreatedBy == nil {

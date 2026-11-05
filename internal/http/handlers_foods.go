@@ -18,12 +18,19 @@ import (
 func (s *Server) handleFoods(c echo.Context) error {
 	ctx := c.Request().Context()
 	search := c.QueryParam("q")
-	tag := c.QueryParam("tag")
+	tagMode := "and"
+	if c.QueryParam("tag_mode") == "or" {
+		tagMode = "or"
+	}
+	selTags := normalizeFilterTags(c.QueryParams()["tags"])
+	prepMin, prepMax := parseRange(c.QueryParam("prep_min"), c.QueryParam("prep_max"))
+	cookMin, cookMax := parseRange(c.QueryParam("cook_min"), c.QueryParam("cook_max"))
 
 	all, err := s.foods.List(ctx, s.household(c))
 	if err != nil {
 		return err
 	}
+	idx := foods.Index(all)
 
 	tagSet := map[string]bool{}
 	var filtered []foods.Food
@@ -31,10 +38,13 @@ func (s *Server) handleFoods(c echo.Context) error {
 		for _, t := range r.Tags {
 			tagSet[t] = true
 		}
-		if !r.Matches(search) {
+		if !foods.MatchSearch(idx, r, search) {
 			continue
 		}
-		if tag != "" && tag != "all" && !contains(r.Tags, tag) {
+		if !inRange(r.PrepTime, prepMin, prepMax) || !inRange(r.CookTime, cookMin, cookMax) {
+			continue
+		}
+		if !matchTags(r.Tags, selTags, tagMode) {
 			continue
 		}
 		filtered = append(filtered, r)
@@ -46,8 +56,74 @@ func (s *Server) handleFoods(c echo.Context) error {
 	sort.Strings(allTags)
 
 	return s.render(c, pages.Foods(pages.FoodsData{
-		Member: s.member(c), Search: search, Tag: tag, AllTags: allTags, Foods: filtered,
+		Member: s.member(c), Search: search,
+		Tags: selTags, TagMode: tagMode,
+		PrepMin: c.QueryParam("prep_min"), PrepMax: c.QueryParam("prep_max"),
+		CookMin: c.QueryParam("cook_min"), CookMax: c.QueryParam("cook_max"),
+		AllTags: allTags, Foods: filtered,
 	}))
+}
+
+// parseRange parses optional min/max minute bounds. A blank or non-numeric
+// bound is returned as -1, meaning unbounded on that side.
+func parseRange(minStr, maxStr string) (int, int) {
+	lo, hi := -1, -1
+	if n, err := strconv.Atoi(strings.TrimSpace(minStr)); err == nil && n >= 0 {
+		lo = n
+	}
+	if n, err := strconv.Atoi(strings.TrimSpace(maxStr)); err == nil && n >= 0 {
+		hi = n
+	}
+	return lo, hi
+}
+
+// inRange reports whether v falls within [lo, hi]; a bound of -1 is unbounded.
+func inRange(v, lo, hi int) bool {
+	if lo >= 0 && v < lo {
+		return false
+	}
+	if hi >= 0 && v > hi {
+		return false
+	}
+	return true
+}
+
+// matchTags reports whether a food's tags satisfy the selected tags under mode
+// "and" (all present) or "or" (any present). No selection matches everything.
+func matchTags(foodTags, want []string, mode string) bool {
+	if len(want) == 0 {
+		return true
+	}
+	if mode == "or" {
+		for _, t := range want {
+			if contains(foodTags, t) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, t := range want {
+		if !contains(foodTags, t) {
+			return false
+		}
+	}
+	return true
+}
+
+// normalizeFilterTags lowercases, trims, dedupes, and drops empty/"all" values
+// from the repeated tags query params.
+func normalizeFilterTags(raw []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, t := range raw {
+		t = strings.ToLower(strings.TrimSpace(t))
+		if t == "" || t == "all" || seen[t] {
+			continue
+		}
+		seen[t] = true
+		out = append(out, t)
+	}
+	return out
 }
 
 func contains(list []string, v string) bool {
@@ -87,12 +163,23 @@ func (s *Server) handleFoodDetail(c echo.Context) error {
 
 	tree := s.buildIngTree(c, idx, food.Components, float64(scale), 0, map[uuid.UUID]bool{food.ID: true})
 
+	costs, err := s.grocery.LatestFoodCosts(ctx, s.household(c))
+	if err != nil {
+		return err
+	}
+	var recorded *foods.RecordedCost
+	if rc, ok := costs[food.ID]; ok {
+		recorded = &rc
+	}
+
 	return s.render(c, pages.FoodDetail(pages.FoodDetailData{
-		Member:  s.member(c),
-		Food:    *food,
-		Scale:   scale,
-		Tree:    tree,
-		BaseURL: foodDetailBaseURL(c.Request().URL.RequestURI(), s.cfg.BasePath),
+		Member:       s.member(c),
+		Food:         *food,
+		Scale:        scale,
+		Tree:         tree,
+		BaseURL:      foodDetailBaseURL(c.Request().URL.RequestURI(), s.cfg.BasePath),
+		Cost:         foods.BatchCost(idx, costs, food.ID).Scale(float64(scale)),
+		RecordedCost: recorded,
 	}))
 }
 
@@ -117,11 +204,10 @@ func (s *Server) buildIngTree(c echo.Context, idx map[uuid.UUID]foods.Food, comp
 			if visited[child.ID] {
 				continue
 			}
-			servings := float64(child.Servings)
-			if servings == 0 {
-				servings = 1
+			subScale, ok := foods.ComponentRecipeScale(comp, child, scale)
+			if !ok {
+				subScale = 0
 			}
-			subScale := scaled / servings
 			visited[child.ID] = true
 			children := s.buildIngTree(c, idx, child.Components, subScale, depth+1, visited)
 			delete(visited, child.ID)
@@ -164,6 +250,7 @@ func (s *Server) editorData(c echo.Context, isNew bool, foodID string) (pages.Fo
 		PrepTime:    c.FormValue("prep"),
 		CookTime:    c.FormValue("cook"),
 		Servings:    c.FormValue("servings"),
+		YieldAmount: c.FormValue("yield_amount"),
 		DefaultUnit: c.FormValue("default_unit"),
 		Density:     c.FormValue("density"),
 		Version:     c.FormValue("version"),
@@ -226,7 +313,7 @@ func (s *Server) fillEditorLookups(c echo.Context, d *pages.FoodEditData) error 
 func (s *Server) handleFoodNew(c echo.Context) error {
 	d := pages.FoodEditData{
 		Member: s.member(c), IsNew: true, Action: "/foods/new",
-		PrepTime: "0", CookTime: "0", Servings: "1", DefaultUnit: "g",
+		PrepTime: "0", CookTime: "0", Servings: "1", YieldAmount: "1", DefaultUnit: "g",
 		Units: units.EditorUnits,
 	}
 	if err := s.fillEditorLookups(c, &d); err != nil {
@@ -257,6 +344,7 @@ func (s *Server) handleFoodEdit(c echo.Context) error {
 		PrepTime:      strconv.Itoa(r.PrepTime),
 		CookTime:      strconv.Itoa(r.CookTime),
 		Servings:      strconv.Itoa(r.Servings),
+		YieldAmount:   units.Format(r.YieldAmount),
 		DefaultUnit:   r.DefaultUnit,
 		DensitySource: r.DensitySource,
 		Version:       strconv.Itoa(r.Version),
@@ -322,14 +410,14 @@ func (s *Server) handleFoodEditPost(c echo.Context) error {
 					d.Conflict = &pages.FoodConflict{
 						Version: cur.Version, Name: cur.Name, Description: cur.Description,
 						PrepTime: cur.PrepTime, CookTime: cur.CookTime,
-						Servings: cur.Servings, DefaultUnit: cur.DefaultUnit,
+						Servings: cur.Servings, YieldAmount: cur.YieldAmount, DefaultUnit: cur.DefaultUnit,
 					}
 					d.Version = strconv.Itoa(cur.Version)
 				}
 				d.Error = "This food was changed by someone else since you opened it. Review the current version below, then save again to overwrite it."
 				break
 			}
-			if errors.Is(err, foods.ErrCycle) || errors.Is(err, foods.ErrInvalidComponent) || err.Error() == "food needs a name" {
+			if errors.Is(err, foods.ErrCycle) || errors.Is(err, foods.ErrInvalidComponent) || errors.Is(err, foods.ErrInvalidComponentYield) || err.Error() == "food needs a name" {
 				d.Error = err.Error()
 				break
 			}
@@ -403,6 +491,10 @@ func editorToForm(d pages.FoodEditData) (foods.Form, error) {
 	if strings.TrimSpace(d.Name) == "" {
 		return foods.Form{}, errors.New("Food needs a name.")
 	}
+	yieldAmount, err := strconv.ParseFloat(strings.TrimSpace(d.YieldAmount), 64)
+	if err != nil || yieldAmount <= 0 {
+		return foods.Form{}, errors.New("Recipe yield must be greater than zero.")
+	}
 	density, _ := strconv.ParseFloat(strings.TrimSpace(d.Density), 64)
 	form := foods.Form{
 		Name:        strings.TrimSpace(d.Name),
@@ -410,6 +502,7 @@ func editorToForm(d pages.FoodEditData) (foods.Form, error) {
 		PrepTime:    atoiDefault(d.PrepTime, 0),
 		CookTime:    atoiDefault(d.CookTime, 0),
 		Servings:    atoiDefault(d.Servings, 1),
+		YieldAmount: yieldAmount,
 		DefaultUnit: d.DefaultUnit,
 		Density:     density,
 		Version:     atoiDefault(d.Version, 0),
@@ -443,6 +536,14 @@ func containsFold(list []string, value string) bool {
 func atoiDefault(s string, def int) int {
 	n, err := strconv.Atoi(strings.TrimSpace(s))
 	if err != nil {
+		return def
+	}
+	return n
+}
+
+func floatDefault(s string, def float64) float64 {
+	n, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil || n <= 0 {
 		return def
 	}
 	return n

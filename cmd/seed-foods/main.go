@@ -115,6 +115,7 @@ func run(file, url, household string, dryRun bool) error {
 			DensityGPerMl: f.Density,
 			DensitySource: f.Source,
 			Servings:      1,
+			YieldAmount:   1,
 		})
 		if err != nil {
 			return err

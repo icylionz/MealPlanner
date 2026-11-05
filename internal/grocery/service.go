@@ -4,10 +4,13 @@ package grocery
 import (
 	"context"
 	"errors"
+	"math"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"mealplanner/internal/database/db"
@@ -33,7 +36,8 @@ type Item struct {
 	Note         string
 	SourceType   string
 	Variant      string
-	Density      float64 // g/ml of the matching food, 0 if unknown (view-only)
+	Cost         *float64 // total price paid for this line (FR19), nil if unpriced
+	Density      float64  // g/ml of the matching food, 0 if unknown (view-only)
 }
 
 // ItemDetail is one household-scoped grocery item and its generation history.
@@ -135,7 +139,7 @@ func (s *Service) ListAll(ctx context.Context, householdID uuid.UUID) ([]List, e
 		byList[i.ListID] = append(byList[i.ListID], Item{
 			ID: i.ID, IngredientID: i.IngredientID, Name: i.Name, Amount: i.Amount,
 			Unit: i.Unit, Checked: i.Checked, Note: i.Note, SourceType: i.SourceType,
-			Variant: i.VariantText,
+			Variant: i.VariantText, Cost: numericPtr(i.Cost),
 		})
 	}
 	out := make([]List, 0, len(lists))
@@ -164,7 +168,7 @@ func (s *Service) GetItemDetail(ctx context.Context, householdID, itemID uuid.UU
 			ID: item.ID, IngredientID: item.IngredientID, Name: item.Name,
 			Amount: item.Amount, Unit: item.Unit, Checked: item.Checked,
 			Note: item.Note, SourceType: item.SourceType,
-			Variant: item.VariantText,
+			Variant: item.VariantText, Cost: numericPtr(item.Cost),
 		},
 	}
 	for _, row := range rows {
@@ -212,6 +216,60 @@ func (s *Service) Rename(ctx context.Context, householdID, actor, id uuid.UUID, 
 // Delete removes a list and its items.
 func (s *Service) Delete(ctx context.Context, householdID, actor, id uuid.UUID) error {
 	return s.q.DeleteGroceryList(ctx, db.DeleteGroceryListParams{ID: id, HouseholdID: householdID, UpdatedBy: byPtr(actor)})
+}
+
+// ErrInvalidCost is returned for a negative or non-numeric item cost.
+var ErrInvalidCost = errors.New("cost must be a number of zero or more")
+
+// SetItemCost records the total price paid for a line at its amount/unit
+// (FR19 AC1). A blank cost clears it. Missing or foreign items return
+// pgx.ErrNoRows.
+func (s *Service) SetItemCost(ctx context.Context, householdID, actor, itemID uuid.UUID, raw string) error {
+	var cost pgtype.Numeric
+	if raw = strings.TrimSpace(raw); raw != "" {
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil || v < 0 || math.IsInf(v, 0) || math.IsNaN(v) {
+			return ErrInvalidCost
+		}
+		if err := cost.Scan(strconv.FormatFloat(v, 'f', -1, 64)); err != nil {
+			return err
+		}
+	}
+	n, err := s.q.SetGroceryItemCost(ctx, db.SetGroceryItemCostParams{
+		Cost: cost, UpdatedBy: byPtr(actor), ID: itemID, HouseholdID: householdID,
+	})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// LatestFoodCosts returns the most recently recorded line cost per food in
+// the household (FR19 AC2), keyed by food ID.
+func (s *Service) LatestFoodCosts(ctx context.Context, householdID uuid.UUID) (map[uuid.UUID]foods.RecordedCost, error) {
+	rows, err := s.q.ListLatestFoodCosts(ctx, householdID)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uuid.UUID]foods.RecordedCost, len(rows))
+	for _, r := range rows {
+		out[r.FoodID] = foods.RecordedCost{Cost: r.Cost, Amount: r.Amount, Unit: r.Unit}
+	}
+	return out, nil
+}
+
+func numericPtr(n pgtype.Numeric) *float64 {
+	if !n.Valid {
+		return nil
+	}
+	f, err := n.Float64Value()
+	if err != nil || !f.Valid {
+		return nil
+	}
+	return &f.Float64
 }
 
 // ToggleItem flips an item's checked state.

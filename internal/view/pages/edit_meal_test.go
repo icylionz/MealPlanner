@@ -32,15 +32,12 @@ func TestMealConflictKeepsAttemptedAggregateScopeAndCurrentTokens(t *testing.T) 
 		Scope:         planner.ScopeFuture,
 		Recurring:     true,
 		LinkURL:       "https://attempted.example/meal",
-		LinkTitle:     "Attempted preview",
-		LinkImageURL:  "https://attempted.example/image.jpg",
 		Conflict: &MealConflict{
 			Version: 8, SeriesVersion: 5, Date: "2026-09-07", Time: "17:30",
 			Servings: 2, Title: "Current title", Notes: "Current notes",
 			FoodName: "Current soup", Recurring: true,
 			Extras:  []MealConflictExtra{{Name: "Current rolls", Servings: 3}},
-			LinkURL: "https://current.example/meal", LinkTitle: "Current preview",
-			LinkImageURL: "https://current.example/image.jpg",
+			LinkURL: "https://current.example/meal",
 		},
 		Error: "conflict",
 	}
@@ -63,13 +60,11 @@ func TestMealConflictKeepsAttemptedAggregateScopeAndCurrentTokens(t *testing.T) 
 		`name="extra" value="` + extraID.String() + `" checked`,
 		`name="override_` + extraID.String() + `" min="1" value="9"`,
 		`name="link_url" value="https://attempted.example/meal"`,
-		`name="link_title" value="Attempted preview"`,
-		`name="link_image" value="https://attempted.example/image.jpg"`,
+		`href="https://attempted.example/meal" target="_blank" rel="noopener noreferrer"`,
 		"Current title",
 		"Current soup",
 		"Current rolls",
-		"Current preview",
-		"https://current.example/image.jpg",
+		"https://current.example/meal",
 		"Your meal fields, recipes, link, and scope are kept below.",
 	} {
 		if !strings.Contains(html, want) {

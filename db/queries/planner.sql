@@ -22,14 +22,13 @@ WHERE f.id = sqlc.arg(food_id) AND f.household_id = sqlc.arg(household_id)
 RETURNING m.*;
 
 -- name: UpdateMeal :one
--- A non-series edit is accepted only at the version the editor loaded. Link
--- fields are part of the same write so a successful save is atomic (G13).
+-- A non-series edit is accepted only at the version the editor loaded. The
+-- optional link is part of the same write so a successful save is atomic (G13).
 UPDATE meal_plan AS m
 SET plan_date = sqlc.arg(plan_date), plan_time = sqlc.arg(plan_time),
     food_id = sqlc.arg(food_id), servings = sqlc.arg(servings),
     title = sqlc.arg(title), notes = sqlc.arg(notes),
-    link_url = sqlc.arg(link_url), link_title = sqlc.arg(link_title),
-    link_image_url = sqlc.arg(link_image_url), version = m.version + 1,
+    link_url = sqlc.arg(link_url), version = m.version + 1,
     updated_by = sqlc.arg(updated_by)
 WHERE m.id = sqlc.arg(id) AND m.household_id = sqlc.arg(household_id)
   AND m.version = sqlc.arg(version) AND m.series_id IS NULL AND m.deleted_at IS NULL
@@ -62,8 +61,7 @@ UPDATE meal_plan AS m
 SET plan_date = sqlc.arg(plan_date), plan_time = sqlc.arg(plan_time),
     food_id = sqlc.arg(food_id), servings = sqlc.arg(servings),
     title = sqlc.arg(title), notes = sqlc.arg(notes),
-    link_url = sqlc.arg(link_url), link_title = sqlc.arg(link_title),
-    link_image_url = sqlc.arg(link_image_url), series_id = NULL,
+    link_url = sqlc.arg(link_url), series_id = NULL,
     version = m.version + 1, updated_by = sqlc.arg(updated_by)
 FROM guarded_series
 WHERE m.id = sqlc.arg(id) AND m.household_id = sqlc.arg(household_id)
@@ -130,8 +128,6 @@ WITH selected AS MATERIALIZED (
         servings = sqlc.arg(servings), title = sqlc.arg(title),
         notes = sqlc.arg(notes),
         link_url = CASE WHEN m.id = sqlc.arg(id) THEN sqlc.arg(link_url) ELSE m.link_url END,
-        link_title = CASE WHEN m.id = sqlc.arg(id) THEN sqlc.arg(link_title) ELSE m.link_title END,
-        link_image_url = CASE WHEN m.id = sqlc.arg(id) THEN sqlc.arg(link_image_url) ELSE m.link_image_url END,
         version = m.version + 1, updated_by = sqlc.arg(updated_by)
     FROM guarded_series
     WHERE m.series_id = guarded_series.id
@@ -184,41 +180,3 @@ SELECT * FROM scheduled_meal_recipes WHERE meal_id = ANY($1::uuid[]) ORDER BY me
 -- name: DeleteMealRecipes :exec
 -- Replace-on-edit: clear a meal's additional recipes before re-inserting.
 DELETE FROM scheduled_meal_recipes WHERE meal_id = $1;
-
--- name: UpdateMealLink :one
--- FR13/G13: preview sub-actions on a non-series meal cannot bypass locking.
-UPDATE meal_plan AS m
-SET link_url = sqlc.arg(link_url), link_title = sqlc.arg(link_title),
-    link_image_url = sqlc.arg(link_image_url), version = m.version + 1,
-    updated_by = sqlc.arg(updated_by)
-WHERE m.id = sqlc.arg(id) AND m.household_id = sqlc.arg(household_id)
-  AND m.version = sqlc.arg(version) AND m.series_id IS NULL AND m.deleted_at IS NULL
-RETURNING m.id;
-
--- name: UpdateSeriesMealLink :one
--- A preview action keeps an occurrence attached, but claims the series token so
--- it cannot be overwritten by an overlapping future/all edit.
-WITH guarded_series AS (
-    UPDATE meal_series AS s
-    SET version = s.version + 1
-    WHERE s.id = sqlc.arg(series_id) AND s.household_id = sqlc.arg(household_id)
-      AND s.version = sqlc.arg(series_version)
-      AND EXISTS (
-          SELECT 1 FROM meal_plan selected
-          WHERE selected.id = sqlc.arg(id)
-            AND selected.household_id = sqlc.arg(household_id)
-            AND selected.series_id = s.id
-            AND selected.version = sqlc.arg(version)
-            AND selected.deleted_at IS NULL
-      )
-    RETURNING s.id
-)
-UPDATE meal_plan AS m
-SET link_url = sqlc.arg(link_url), link_title = sqlc.arg(link_title),
-    link_image_url = sqlc.arg(link_image_url), version = m.version + 1,
-    updated_by = sqlc.arg(updated_by)
-FROM guarded_series
-WHERE m.id = sqlc.arg(id) AND m.household_id = sqlc.arg(household_id)
-  AND m.series_id = guarded_series.id AND m.version = sqlc.arg(version)
-  AND m.deleted_at IS NULL
-RETURNING m.id;

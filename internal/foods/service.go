@@ -33,6 +33,10 @@ var ErrConflict = errors.New("food was changed by someone else since you opened 
 // belong to the household saving the recipe.
 var ErrInvalidComponent = errors.New("food component does not belong to this household")
 
+// ErrInvalidComponentYield is returned when a nested recipe usage cannot be
+// related to that recipe's serving or persisted physical/count yield.
+var ErrInvalidComponentYield = errors.New("nested recipe component unit must match its yield unit or be servings")
+
 // Component is one component line: a reference to another food with a quantity.
 type Component struct {
 	ID            uuid.UUID
@@ -53,6 +57,7 @@ type Food struct {
 	PrepTime             int
 	CookTime             int
 	Servings             int
+	YieldAmount          float64
 	DefaultUnit          string
 	Density              float64 // grams per millilitre; 0 means unset
 	DensitySource        string  // "starter", "custom", or "none"
@@ -120,6 +125,7 @@ type Form struct {
 	PrepTime    int
 	CookTime    int
 	Servings    int
+	YieldAmount float64
 	DefaultUnit string
 	Density     float64 // grams per millilitre; 0 = fall back to the starter set
 	Version     int     // expected version for the optimistic-lock check (FR16)
@@ -210,7 +216,7 @@ func (s *Service) assemble(ctx context.Context, householdID uuid.UUID, rows []db
 	for _, r := range rows {
 		out = append(out, Food{
 			ID: r.ID, Name: r.Name, Description: r.Description,
-			PrepTime: int(r.PrepTimeMin), CookTime: int(r.CookTimeMin), Servings: int(r.Servings),
+			PrepTime: int(r.PrepTimeMin), CookTime: int(r.CookTimeMin), Servings: int(r.Servings), YieldAmount: r.YieldAmount,
 			DefaultUnit: r.DefaultUnit, Density: r.DensityGPerMl, DensitySource: r.DensitySource,
 			Version: int(r.Version), SourceURL: stringValue(r.SourceUrl),
 			SourceLastImportedAt: timestampPtr(r.SourceLastImportedAt),
@@ -246,7 +252,7 @@ func (s *Service) Get(ctx context.Context, householdID, id uuid.UUID) (*Food, er
 
 	food := &Food{
 		ID: r.ID, Name: r.Name, Description: r.Description,
-		PrepTime: int(r.PrepTimeMin), CookTime: int(r.CookTimeMin), Servings: int(r.Servings),
+		PrepTime: int(r.PrepTimeMin), CookTime: int(r.CookTimeMin), Servings: int(r.Servings), YieldAmount: r.YieldAmount,
 		DefaultUnit: r.DefaultUnit, Density: r.DensityGPerMl, DensitySource: r.DensitySource,
 		Version: int(r.Version), SourceURL: stringValue(r.SourceUrl),
 		SourceLastImportedAt: timestampPtr(r.SourceLastImportedAt),
@@ -334,6 +340,9 @@ func (s *Service) Save(ctx context.Context, householdID, actor uuid.UUID, id *uu
 	if form.Servings < 1 {
 		form.Servings = 1
 	}
+	if form.YieldAmount <= 0 {
+		form.YieldAmount = float64(form.Servings)
+	}
 	if strings.TrimSpace(form.DefaultUnit) == "" {
 		form.DefaultUnit = "g"
 	}
@@ -365,7 +374,7 @@ func (s *Service) Save(ctx context.Context, householdID, actor uuid.UUID, id *uu
 			HouseholdID: householdID,
 			Name:        form.Name, Description: form.Description,
 			PrepTimeMin: int32(form.PrepTime), CookTimeMin: int32(form.CookTime),
-			Servings: int32(form.Servings), DefaultUnit: form.DefaultUnit,
+			Servings: int32(form.Servings), YieldAmount: form.YieldAmount, DefaultUnit: form.DefaultUnit,
 			DensityGPerMl: density, DensitySource: source,
 			CreatedBy: byPtr(actor),
 		})
@@ -378,7 +387,7 @@ func (s *Service) Save(ctx context.Context, householdID, actor uuid.UUID, id *uu
 		rows, err := q.UpdateFood(ctx, db.UpdateFoodParams{
 			ID: foodID, HouseholdID: householdID, Name: form.Name, Description: form.Description,
 			PrepTimeMin: int32(form.PrepTime), CookTimeMin: int32(form.CookTime),
-			Servings: int32(form.Servings), DefaultUnit: form.DefaultUnit,
+			Servings: int32(form.Servings), YieldAmount: form.YieldAmount, DefaultUnit: form.DefaultUnit,
 			DensityGPerMl: density, DensitySource: source,
 			Version: int32(form.Version), UpdatedBy: byPtr(actor),
 		})
@@ -395,10 +404,19 @@ func (s *Service) Save(ctx context.Context, householdID, actor uuid.UUID, id *uu
 		return uuid.Nil, err
 	}
 	validIDs := make(map[uuid.UUID]struct{}, len(validFoods))
+	foodsByID := make(map[uuid.UUID]db.Food, len(validFoods))
 	for _, food := range validFoods {
 		validIDs[food.ID] = struct{}{}
+		foodsByID[food.ID] = food
 	}
 	if err := validateComponentIDs(form.Components, validIDs); err != nil {
+		return uuid.Nil, err
+	}
+	existingComponents, err := q.ListComponentsForFoods(ctx, householdID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if err := validateComponentYields(form.Components, foodsByID, existingComponents); err != nil {
 		return uuid.Nil, err
 	}
 	if form.SourceURL != nil {
@@ -482,6 +500,23 @@ func validateComponentIDs(comps []Component, valid map[uuid.UUID]struct{}) error
 		}
 		if _, ok := valid[component.ChildFoodID]; !ok {
 			return ErrInvalidComponent
+		}
+	}
+	return nil
+}
+
+func validateComponentYields(comps []Component, foodRows map[uuid.UUID]db.Food, all []db.FoodComponent) error {
+	recipes := make(map[uuid.UUID]bool)
+	for _, component := range all {
+		recipes[component.ParentFoodID] = true
+	}
+	for _, component := range comps {
+		child, ok := foodRows[component.ChildFoodID]
+		if !ok || !recipes[child.ID] || units.IsServing(component.Unit) {
+			continue
+		}
+		if _, ok := yieldFraction(component.Amount, component.Unit, child.DefaultUnit, child.YieldAmount, child.DensityGPerMl); !ok {
+			return ErrInvalidComponentYield
 		}
 	}
 	return nil
@@ -588,11 +623,16 @@ func DensityByName(list []Food) map[string]float64 {
 	return m
 }
 
-// LeafIngredients walks the component graph from a food and returns the scaled
-// atomic foods (leaves), mirroring the prototype's getLeafIngredients. Variants
-// on nested recipe usages are composed outer-to-inner with each leaf variant.
-func LeafIngredients(idx map[uuid.UUID]Food, foodID uuid.UUID, scale float64) []LeafIngredient {
-	return leafIngredients(idx, foodID, foodID, scale, "", map[uuid.UUID]bool{})
+// LeafIngredients walks a recipe graph and returns its atomic foods scaled to
+// requestedServings. A root recipe is one batch at Food.Servings; nested recipe
+// usages are fractions of either the child's servings or its physical/count
+// YieldAmount in DefaultUnit.
+func LeafIngredients(idx map[uuid.UUID]Food, foodID uuid.UUID, requestedServings float64) []LeafIngredient {
+	root, ok := idx[foodID]
+	if !ok || !root.IsRecipe() || root.Servings < 1 || requestedServings <= 0 {
+		return nil
+	}
+	return leafIngredients(idx, foodID, foodID, requestedServings/float64(root.Servings), "", map[uuid.UUID]bool{})
 }
 
 func leafIngredients(idx map[uuid.UUID]Food, recipeID, foodID uuid.UUID, scale float64, inheritedVariant string, visited map[uuid.UUID]bool) []LeafIngredient {
@@ -616,11 +656,10 @@ func leafIngredients(idx map[uuid.UUID]Food, recipeID, foodID uuid.UUID, scale f
 			continue
 		}
 		if child.IsRecipe() {
-			servings := float64(child.Servings)
-			if servings == 0 {
-				servings = 1
+			childScale, ok := ComponentRecipeScale(c, child, scale)
+			if !ok {
+				continue
 			}
-			childScale := c.Amount / servings * scale
 			out = append(out, leafIngredients(idx, recipeID, child.ID, childScale, composeVariants(inheritedVariant, c.Variant), visited)...)
 		} else {
 			amount := c.Amount * scale
@@ -639,6 +678,37 @@ func leafIngredients(idx map[uuid.UUID]Food, recipeID, foodID uuid.UUID, scale f
 		}
 	}
 	return out
+}
+
+// ComponentRecipeScale converts one nested recipe usage to child batch scale.
+// Serving usages use child.Servings. Other usages must be convertible to the
+// child's persisted YieldAmount and DefaultUnit.
+func ComponentRecipeScale(component Component, child Food, parentScale float64) (float64, bool) {
+	if units.IsServing(component.Unit) {
+		if child.Servings < 1 {
+			return 0, false
+		}
+		return component.Amount / float64(child.Servings) * parentScale, true
+	}
+	fraction, ok := yieldFraction(component.Amount, component.Unit, child.DefaultUnit, child.YieldAmount, child.Density)
+	return fraction * parentScale, ok
+}
+
+func yieldFraction(amount float64, unit, yieldUnit string, yieldAmount, density float64) (float64, bool) {
+	if amount < 0 || yieldAmount <= 0 || units.IsServing(yieldUnit) || !units.IsKnown(unit) || !units.IsKnown(yieldUnit) {
+		return 0, false
+	}
+	if units.TypeOf(unit) == units.Count || units.TypeOf(yieldUnit) == units.Count {
+		if units.TypeOf(unit) != units.TypeOf(yieldUnit) {
+			return 0, false
+		}
+		return units.Convert(amount, unit, yieldUnit) / yieldAmount, true
+	}
+	converted, ok := units.ConvertDensity(amount, unit, yieldUnit, density)
+	if !ok {
+		return 0, false
+	}
+	return converted / yieldAmount, true
 }
 
 // Aggregate merges leaf ingredients by food identity and compatible unit,

@@ -14,9 +14,10 @@ import (
 
 // SchemaVersion is the format written by this build. Version 2 adds G1-G6
 // metadata and relationships; version 3 adds the recurring-series optimistic
-// token. Versions 1 and 2 remain readable.
+// token; version 4 adds explicit recipe yield amounts. Older versions remain
+// readable.
 const (
-	SchemaVersion    = 3
+	SchemaVersion    = 4
 	minSchemaVersion = 1
 )
 
@@ -59,11 +60,6 @@ func (a *Archive) ValidateURLs() error {
 				return fmt.Errorf("meal_plans[%d].link_url: %w", i, err)
 			}
 		}
-		if meal.LinkImageURL != "" {
-			if _, err := weburl.ParseHTTP(meal.LinkImageURL); err != nil {
-				return fmt.Errorf("meal_plans[%d].link_image_url: %w", i, err)
-			}
-		}
 	}
 	return nil
 }
@@ -75,6 +71,7 @@ type Food struct {
 	PrepTimeMin          int32       `json:"prep_time_min"`
 	CookTimeMin          int32       `json:"cook_time_min"`
 	Servings             int32       `json:"servings"`
+	YieldAmount          float64     `json:"yield_amount"`
 	DefaultUnit          string      `json:"default_unit"`
 	DensityGPerMl        float64     `json:"density_g_per_ml"`
 	DensitySource        string      `json:"density_source"`
@@ -126,22 +123,20 @@ type MealSeries struct {
 }
 
 type MealPlan struct {
-	ID           uuid.UUID             `json:"id"`
-	PlanDate     time.Time             `json:"plan_date"`
-	PlanTime     string                `json:"plan_time"`
-	FoodID       uuid.UUID             `json:"food_id"`
-	Servings     int32                 `json:"servings"`
-	SeriesID     *uuid.UUID            `json:"series_id,omitempty"`
-	LinkURL      string                `json:"link_url,omitempty"`
-	LinkTitle    string                `json:"link_title,omitempty"`
-	LinkImageURL string                `json:"link_image_url,omitempty"`
-	Title        string                `json:"title,omitempty"`
-	Notes        string                `json:"notes,omitempty"`
-	Version      int32                 `json:"version"`
-	DeletedAt    *time.Time            `json:"deleted_at,omitempty"`
-	CreatedBy    *uuid.UUID            `json:"created_by,omitempty"`
-	UpdatedBy    *uuid.UUID            `json:"updated_by,omitempty"`
-	Recipes      []ScheduledMealRecipe `json:"scheduled_meal_recipes,omitempty"`
+	ID        uuid.UUID             `json:"id"`
+	PlanDate  time.Time             `json:"plan_date"`
+	PlanTime  string                `json:"plan_time"`
+	FoodID    uuid.UUID             `json:"food_id"`
+	Servings  int32                 `json:"servings"`
+	SeriesID  *uuid.UUID            `json:"series_id,omitempty"`
+	LinkURL   string                `json:"link_url,omitempty"`
+	Title     string                `json:"title,omitempty"`
+	Notes     string                `json:"notes,omitempty"`
+	Version   int32                 `json:"version"`
+	DeletedAt *time.Time            `json:"deleted_at,omitempty"`
+	CreatedBy *uuid.UUID            `json:"created_by,omitempty"`
+	UpdatedBy *uuid.UUID            `json:"updated_by,omitempty"`
+	Recipes   []ScheduledMealRecipe `json:"scheduled_meal_recipes,omitempty"`
 }
 
 // ScheduledMealRecipe's meal is implied by the meal plan that nests it.

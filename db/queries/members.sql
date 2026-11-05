@@ -70,6 +70,12 @@ SELECT count(*) FROM household_members WHERE household_id = $1;
 -- name: GetMembership :one
 SELECT * FROM household_members WHERE household_id = $1 AND account_id = $2;
 
+-- name: LockHouseholdMembers :many
+SELECT * FROM household_members
+WHERE household_id = $1
+ORDER BY account_id
+FOR UPDATE;
+
 -- name: ListHouseholdMembers :many
 SELECT m.id, m.household_id, m.account_id, m.role, m.initials, m.color, m.created_at,
        a.name AS account_name, a.email AS account_email
@@ -89,9 +95,13 @@ ORDER BY h.created_at;
 DELETE FROM household_members
 WHERE household_id = $1 AND account_id = $2 AND role <> 'owner';
 
--- name: SetMemberRole :exec
-UPDATE household_members SET role = $3
-WHERE household_id = $1 AND account_id = $2;
+-- name: PromoteMemberToOwner :execrows
+UPDATE household_members SET role = 'owner'
+WHERE household_id = $1 AND account_id = $2 AND role = 'member';
+
+-- name: DemoteOwnerToMember :execrows
+UPDATE household_members SET role = 'member'
+WHERE household_id = $1 AND account_id = $2 AND role = 'owner';
 
 -- Sessions: keyed on the account, carrying the active household.
 

@@ -131,6 +131,7 @@ func (s *Server) Router() *echo.Echo {
 	// Members may check/uncheck items on a shared list (FR3 AC3).
 	g.POST("/grocery/items/:id/toggle", s.handleGroceryToggle)
 	g.POST("/grocery/items/:id/convert", s.handleGroceryConvert, s.requireOwner)
+	g.POST("/grocery/items/:id/cost", s.handleGroceryItemCost, s.requireOwner)
 	g.POST("/grocery/items/:id/delete", s.handleGroceryDeleteItem, s.requireOwner)
 	g.GET("/grocery/generate", s.handleGroceryGenerate, s.requireOwner)
 	g.POST("/grocery/generate", s.handleGroceryGenerateCommit, s.requireOwner)

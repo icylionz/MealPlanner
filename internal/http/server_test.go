@@ -20,6 +20,7 @@ import (
 	"mealplanner/internal/foods"
 	"mealplanner/internal/households"
 	"mealplanner/internal/planner"
+	"mealplanner/internal/view/pages"
 )
 
 func newTestServer(env string) *Server {
@@ -32,10 +33,10 @@ func TestMealLeavesTracksMultiRecipeMeal(t *testing.T) {
 	primaryLine, extraLine := uuid.New(), uuid.New()
 	idx := map[uuid.UUID]foods.Food{
 		ingredientID: {ID: ingredientID, Name: "Salt"},
-		primaryID: {ID: primaryID, Name: "Soup", Components: []foods.Component{{
+		primaryID: {ID: primaryID, Name: "Soup", Servings: 4, YieldAmount: 1, DefaultUnit: "count", Components: []foods.Component{{
 			ID: primaryLine, ChildFoodID: ingredientID, Amount: 10, Unit: "g",
 		}}},
-		extraID: {ID: extraID, Name: "Bread", Components: []foods.Component{{
+		extraID: {ID: extraID, Name: "Bread", Servings: 6, YieldAmount: 1, DefaultUnit: "count", Components: []foods.Component{{
 			ID: extraLine, ChildFoodID: ingredientID, Amount: 20, Unit: "g",
 		}}},
 	}
@@ -47,7 +48,7 @@ func TestMealLeavesTracksMultiRecipeMeal(t *testing.T) {
 	if len(leaves) != 2 {
 		t.Fatalf("meal leaves = %+v, want primary and additional recipe", leaves)
 	}
-	want := map[uuid.UUID]float64{primaryID: 20, extraID: 60}
+	want := map[uuid.UUID]float64{primaryID: 5, extraID: 10}
 	for _, leaf := range leaves {
 		if len(leaf.Sources) != 1 || leaf.Sources[0].MealID == nil || *leaf.Sources[0].MealID != mealID {
 			t.Fatalf("meal provenance missing: %+v", leaf)
@@ -55,6 +56,23 @@ func TestMealLeavesTracksMultiRecipeMeal(t *testing.T) {
 		if leaf.Amount != want[leaf.Sources[0].RecipeID] {
 			t.Errorf("recipe %s amount = %v, want %v", leaf.Sources[0].RecipeID, leaf.Amount, want[leaf.Sources[0].RecipeID])
 		}
+	}
+}
+
+func TestEditorToFormPersistsRecipeYield(t *testing.T) {
+	form, err := editorToForm(pages.FoodEditData{
+		Name: "Stock", Servings: "4", YieldAmount: "1.5", DefaultUnit: "L",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if form.Servings != 4 || form.YieldAmount != 1.5 || form.DefaultUnit != "L" {
+		t.Fatalf("recipe yield form = %+v", form)
+	}
+	if _, err := editorToForm(pages.FoodEditData{
+		Name: "Stock", Servings: "4", YieldAmount: "0", DefaultUnit: "L",
+	}); err == nil {
+		t.Fatal("zero recipe yield was accepted")
 	}
 }
 

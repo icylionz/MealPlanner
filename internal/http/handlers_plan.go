@@ -10,7 +10,6 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"mealplanner/internal/foods"
-	"mealplanner/internal/linkpreview"
 	"mealplanner/internal/planner"
 	"mealplanner/internal/view"
 	"mealplanner/internal/view/pages"
@@ -322,8 +321,7 @@ func (s *Server) handleEditMealForm(c echo.Context) error {
 	return s.render(c, pages.EditMeal(d))
 }
 
-// editMealData builds the edit-meal view model from a meal, its food catalog,
-// and its stored link preview. Reused by the GET form and the link sub-actions.
+// editMealData builds the edit-meal view model from a meal and its food catalog.
 func (s *Server) editMealData(c echo.Context, m *planner.Meal, returnTo, search string) (pages.EditMealData, error) {
 	ctx := c.Request().Context()
 	all, err := s.foods.List(ctx, s.household(c))
@@ -371,12 +369,12 @@ func (s *Server) editMealData(c echo.Context, m *planner.Meal, returnTo, search 
 		Version: strconv.Itoa(m.Version), SeriesVersion: strconv.Itoa(m.SeriesVersion), Scope: planner.ScopeOne,
 		ReturnTo: returnTo, Active: active,
 		Recurring: m.SeriesID != nil, Series: series,
-		LinkURL: m.LinkURL, LinkTitle: m.LinkTitle, LinkImageURL: m.LinkImageURL,
+		LinkURL: m.LinkURL,
 	}, nil
 }
 
 // applyPostedMealData overlays every attempted editor field onto view data so a
-// conflict or link-preview sub-action never replaces the user's form state.
+// conflict never replaces the user's form state.
 func applyPostedMealData(c echo.Context, d *pages.EditMealData) {
 	d.Date = c.FormValue("date")
 	d.Time = c.FormValue("time")
@@ -392,8 +390,6 @@ func applyPostedMealData(c echo.Context, d *pages.EditMealData) {
 	d.Scope = planner.ParseScope(c.FormValue("scope"))
 	d.Recurring = c.FormValue("recurring") == "1"
 	d.LinkURL = strings.TrimSpace(c.FormValue("link_url"))
-	d.LinkTitle = strings.TrimSpace(c.FormValue("link_title"))
-	d.LinkImageURL = strings.TrimSpace(c.FormValue("link_image"))
 	d.Extras = map[string]string{}
 	for _, value := range c.Request().Form["extra"] {
 		d.Extras[value] = c.FormValue("override_" + value)
@@ -432,7 +428,7 @@ func (s *Server) renderMealConflict(c echo.Context, d pages.EditMealData, id uui
 		Version: current.Version, SeriesVersion: current.SeriesVersion,
 		Date: current.Date, Time: current.Time, Servings: current.Servings,
 		Title: current.Title, Notes: current.Notes, Recurring: current.IsRecurring(),
-		LinkURL: current.LinkURL, LinkTitle: current.LinkTitle, LinkImageURL: current.LinkImageURL,
+		LinkURL: current.LinkURL,
 	}
 	if food, ok := idx[current.FoodID]; ok {
 		conflict.FoodName = food.Name
@@ -470,13 +466,6 @@ func (s *Server) handleEditMeal(c echo.Context) error {
 	}
 	applyPostedMealData(c, &d)
 
-	// Link sub-actions re-render the modal instead of saving the whole meal, so
-	// the user can fetch/refresh a preview or enter fallback values (FR13).
-	action := c.FormValue("action")
-	if action == "refresh-link" || action == "remove-link" {
-		return s.handleMealLinkAction(c, id, action, d)
-	}
-
 	foodID, err := uuid.Parse(c.FormValue("food"))
 	if err != nil {
 		return s.redirect(c, returnTo)
@@ -489,22 +478,11 @@ func (s *Server) handleEditMeal(c echo.Context) error {
 	title, notes := strings.TrimSpace(c.FormValue("title")), strings.TrimSpace(c.FormValue("notes"))
 	extras := parseExtras(c, foodID)
 
-	// A new/changed URL with no manual title or image is auto-previewed; failures
-	// are non-fatal and the raw URL remains part of the atomic meal save.
 	url := strings.TrimSpace(c.FormValue("link_url"))
-	linkTitle := strings.TrimSpace(c.FormValue("link_title"))
-	image := strings.TrimSpace(c.FormValue("link_image"))
-	if url != "" && linkTitle == "" && image == "" {
-		if pv, ferr := linkpreview.Fetch(ctx, url); ferr == nil {
-			linkTitle, image = pv.Title, pv.ImageURL
-		} else {
-			s.logError(c, "meal_preview_fetch_failed", ferr)
-		}
-	}
 	err = s.planner.Update(ctx, s.household(c), s.actorID(c), id, planner.Form{
 		Date: c.FormValue("date"), Time: c.FormValue("time"), FoodID: foodID,
 		Servings: servings, Title: title, Notes: notes, Recipes: extras, Scope: scope,
-		LinkURL: url, LinkTitle: linkTitle, LinkImageURL: image,
+		LinkURL: url,
 		Version: formVersion(c.FormValue("version")), SeriesVersion: formVersion(c.FormValue("series_version")),
 	})
 	if errors.Is(err, planner.ErrConflict) {
@@ -516,55 +494,6 @@ func (s *Server) handleEditMeal(c echo.Context) error {
 	}
 	return s.redirect(c, returnTo)
 }
-
-// handleMealLinkAction fetches/refreshes or removes a meal's link preview and
-// re-renders the edit modal with the result (FR13.1–FR13.3).
-func (s *Server) handleMealLinkAction(c echo.Context, id uuid.UUID, action string, d pages.EditMealData) error {
-	ctx := c.Request().Context()
-	url := strings.TrimSpace(c.FormValue("link_url"))
-	title := strings.TrimSpace(c.FormValue("link_title"))
-	image := strings.TrimSpace(c.FormValue("link_image"))
-	var linkErr string
-
-	if action == "remove-link" {
-		url, title, image = "", "", ""
-	} else if url == "" {
-		linkErr = "Enter a URL first."
-	} else if pv, ferr := linkpreview.Fetch(ctx, url); ferr != nil {
-		s.logError(c, "meal_preview_fetch_failed", ferr)
-		linkErr = "Couldn’t fetch a preview: " + ferr.Error() + " You can enter a title and image manually below."
-	} else {
-		title, image = pv.Title, pv.ImageURL
-		if title == "" && image == "" {
-			linkErr = "No preview data found on that page — enter a title and image manually below."
-		}
-	}
-
-	// A refresh with no URL is validation-only and does not consume a version.
-	if action == "refresh-link" && url == "" {
-		d.LinkError = linkErr
-		return s.render(c, pages.EditMeal(d))
-	}
-	err := s.planner.SetLink(ctx, s.household(c), s.actorID(c), id,
-		formVersion(d.Version), formVersion(d.SeriesVersion), url, title, image)
-	if errors.Is(err, planner.ErrConflict) {
-		s.RecordMealConflict()
-		return s.renderMealConflict(c, d, id)
-	}
-	if err != nil {
-		return err
-	}
-	m, err := s.planner.Get(ctx, s.household(c), id)
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	d.Version = strconv.Itoa(m.Version)
-	d.SeriesVersion = strconv.Itoa(m.SeriesVersion)
-	d.LinkURL, d.LinkTitle, d.LinkImageURL = url, title, image
-	d.LinkError = linkErr
-	return s.render(c, pages.EditMeal(d))
-}
-
 func (s *Server) handleDeleteMeal(c echo.Context) error {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {

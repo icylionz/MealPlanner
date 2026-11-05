@@ -43,9 +43,7 @@ type Meal struct {
 	SeriesVersion int          // series-wide optimistic-lock version; 0 when detached
 	Recipes       []MealRecipe // additional recipes beyond the primary food (G4)
 	SeriesID      *uuid.UUID   // set when this meal belongs to a recurring series
-	LinkURL       string       // optional external link (FR13)
-	LinkTitle     string       // preview title (fetched or manual)
-	LinkImageURL  string       // preview image URL
+	LinkURL       string       // optional external link
 }
 
 // MealRecipe is one additional recipe attached to a scheduled meal.
@@ -66,8 +64,6 @@ type Form struct {
 	Recipes       []MealRecipe
 	Scope         Scope
 	LinkURL       string
-	LinkTitle     string
-	LinkImageURL  string
 	Version       int
 	SeriesVersion int
 }
@@ -80,9 +76,6 @@ func (r MealRecipe) ScaledServings(mealServings int) int {
 	}
 	return mealServings
 }
-
-// HasLink reports whether the meal carries an external link.
-func (m Meal) HasLink() bool { return m.LinkURL != "" }
 
 // IsRecurring reports whether the meal is part of a recurring series.
 func (m Meal) IsRecurring() bool { return m.SeriesID != nil }
@@ -414,7 +407,7 @@ func decodeWeekdays(s string) []time.Weekday {
 	return out
 }
 
-// Update edits a meal and all of its child/link state in one transaction. For
+// Update edits a meal and all of its child state in one transaction. For
 // series meals the selected occurrence and series tokens are both required.
 func (s *Service) Update(ctx context.Context, householdID, actor, id uuid.UUID, form Form) error {
 	d, err := time.Parse(DateFormat, form.Date)
@@ -451,8 +444,8 @@ func (s *Service) Update(ctx context.Context, householdID, actor, id uuid.UUID, 
 		if _, err := q.UpdateMeal(ctx, db.UpdateMealParams{
 			ID: id, HouseholdID: householdID, PlanDate: d, PlanTime: form.Time,
 			FoodID: form.FoodID, Servings: int32(form.Servings), Title: form.Title,
-			Notes: form.Notes, LinkUrl: form.LinkURL, LinkTitle: form.LinkTitle,
-			LinkImageUrl: form.LinkImageURL, Version: int32(form.Version), UpdatedBy: byPtr(actor),
+			Notes: form.Notes, LinkUrl: form.LinkURL,
+			Version: int32(form.Version), UpdatedBy: byPtr(actor),
 		}); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrConflict
@@ -471,7 +464,7 @@ func (s *Service) Update(ctx context.Context, householdID, actor, id uuid.UUID, 
 			Version: int32(form.Version), SeriesVersion: int32(form.SeriesVersion),
 			PlanDate: d, PlanTime: form.Time, FoodID: form.FoodID,
 			Servings: int32(form.Servings), Title: form.Title, Notes: form.Notes,
-			LinkUrl: form.LinkURL, LinkTitle: form.LinkTitle, LinkImageUrl: form.LinkImageURL,
+			LinkUrl:   form.LinkURL,
 			UpdatedBy: byPtr(actor),
 		}); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -494,7 +487,7 @@ func (s *Service) Update(ctx context.Context, householdID, actor, id uuid.UUID, 
 		FromDate: from, AllOccurrences: form.Scope == ScopeAll,
 		PlanTime: form.Time, FoodID: form.FoodID, Servings: int32(form.Servings),
 		Title: form.Title, Notes: form.Notes, LinkUrl: form.LinkURL,
-		LinkTitle: form.LinkTitle, LinkImageUrl: form.LinkImageURL, UpdatedBy: byPtr(actor),
+		UpdatedBy: byPtr(actor),
 	})
 	if err != nil {
 		return err
@@ -578,18 +571,16 @@ func (s *Service) GetSeries(ctx context.Context, householdID, id uuid.UUID) (*Se
 
 func fromRow(m db.MealPlan) Meal {
 	return Meal{
-		ID:           m.ID,
-		Date:         m.PlanDate.Format(DateFormat),
-		Time:         m.PlanTime,
-		FoodID:       m.FoodID,
-		Servings:     int(m.Servings),
-		Title:        m.Title,
-		Notes:        m.Notes,
-		Version:      int(m.Version),
-		SeriesID:     m.SeriesID,
-		LinkURL:      m.LinkUrl,
-		LinkTitle:    m.LinkTitle,
-		LinkImageURL: m.LinkImageUrl,
+		ID:       m.ID,
+		Date:     m.PlanDate.Format(DateFormat),
+		Time:     m.PlanTime,
+		FoodID:   m.FoodID,
+		Servings: int(m.Servings),
+		Title:    m.Title,
+		Notes:    m.Notes,
+		Version:  int(m.Version),
+		SeriesID: m.SeriesID,
+		LinkURL:  m.LinkUrl,
 	}
 }
 
@@ -601,38 +592,4 @@ func recipeFromRow(r db.ScheduledMealRecipe) MealRecipe {
 		override = &v
 	}
 	return MealRecipe{FoodID: r.FoodID, ServingsOverride: override, SortOrder: int(r.SortOrder)}
-}
-
-// SetLink stores (or clears) one occurrence's preview with the same optimistic
-// guards as the main editor. Attached occurrences also claim the series token.
-func (s *Service) SetLink(ctx context.Context, householdID, actor, id uuid.UUID, version, seriesVersion int, url, title, imageURL string) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	q := s.q.WithTx(tx)
-	m, err := q.GetMeal(ctx, db.GetMealParams{ID: id, HouseholdID: householdID})
-	if err != nil {
-		return err
-	}
-	if m.SeriesID == nil {
-		_, err = q.UpdateMealLink(ctx, db.UpdateMealLinkParams{
-			ID: id, HouseholdID: householdID, Version: int32(version),
-			LinkUrl: url, LinkTitle: title, LinkImageUrl: imageURL, UpdatedBy: byPtr(actor),
-		})
-	} else {
-		_, err = q.UpdateSeriesMealLink(ctx, db.UpdateSeriesMealLinkParams{
-			ID: id, HouseholdID: householdID, SeriesID: *m.SeriesID,
-			Version: int32(version), SeriesVersion: int32(seriesVersion),
-			LinkUrl: url, LinkTitle: title, LinkImageUrl: imageURL, UpdatedBy: byPtr(actor),
-		})
-	}
-	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrConflict
-	}
-	if err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
 }

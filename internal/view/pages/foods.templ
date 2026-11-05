@@ -2,6 +2,7 @@ package pages
 
 import (
 	"net/url"
+	"slices"
 
 	"mealplanner/internal/foods"
 
@@ -10,18 +11,44 @@ import (
 	"mealplanner/internal/view/layout"
 )
 
-func foodsHref(search, tag string) string {
+// foodsFilterHref rebuilds the /foods URL from the active filter state, with the
+// given tag dropped from the selection. It backs the removable tag chips so a
+// chip can be cleared without JavaScript while keeping every other filter.
+func foodsFilterHref(d FoodsData, dropTag string) string {
 	q := url.Values{}
-	if search != "" {
-		q.Set("q", search)
+	if d.Search != "" {
+		q.Set("q", d.Search)
 	}
-	if tag != "" && tag != "all" {
-		q.Set("tag", tag)
+	if d.PrepMin != "" {
+		q.Set("prep_min", d.PrepMin)
+	}
+	if d.PrepMax != "" {
+		q.Set("prep_max", d.PrepMax)
+	}
+	if d.CookMin != "" {
+		q.Set("cook_min", d.CookMin)
+	}
+	if d.CookMax != "" {
+		q.Set("cook_max", d.CookMax)
+	}
+	if d.TagMode == "or" {
+		q.Set("tag_mode", "or")
+	}
+	for _, t := range d.Tags {
+		if t != dropTag {
+			q.Add("tags", t)
+		}
 	}
 	if enc := q.Encode(); enc != "" {
 		return "/foods?" + enc
 	}
 	return "/foods"
+}
+
+// foodsHasFilter reports whether any filter is active, to show a Clear control.
+func foodsHasFilter(d FoodsData) bool {
+	return d.Search != "" || d.PrepMin != "" || d.PrepMax != "" ||
+		d.CookMin != "" || d.CookMax != "" || len(d.Tags) > 0
 }
 
 // Foods renders the recipe library screen.
@@ -39,23 +66,79 @@ templ Foods(d FoodsData) {
 				</a>
 			}
 		}
-		<div class="page-pad flex items-center flex-wrap" style="padding: 12px 28px; border-bottom: 1px solid var(--line); background: var(--paper); gap: 10px;">
-			<form method="get" action={ templ.URL(view.Href(ctx, "/foods")) } class="flex-1" style="max-width: 320px;">
-				if d.Tag != "" && d.Tag != "all" {
-					<input type="hidden" name="tag" value={ d.Tag }/>
-				}
-				<div class="search-wrap">
-					@icons.Icon("search", 14)
-					<input class="input input-sm" type="search" name="q" value={ d.Search } placeholder="Search recipes…"/>
+		<form method="get" action={ templ.URL(view.Href(ctx, "/foods")) } class="page-pad flex flex-col" style="padding: 14px 28px; border-bottom: 1px solid var(--line); background: var(--paper); gap: 12px;">
+			// Preserve the current tag selection so each Apply adds the newly
+			// picked tag rather than replacing the set (works without JS).
+			for _, t := range d.Tags {
+				<input type="hidden" name="tags" value={ t }/>
+			}
+			<div class="flex items-end flex-wrap" style="gap: 12px;">
+				<div class="flex-1" style="min-width: 220px; max-width: 340px;">
+					@FieldLabel("Search")
+					<div class="search-wrap">
+						@icons.Icon("search", 14)
+						<input class="input input-sm" type="search" name="q" value={ d.Search } placeholder="Name, ingredient, description…"/>
+					</div>
 				</div>
-			</form>
-			<div class="flex flex-wrap" style="gap: 6px;">
-				<a href={ templ.URL(view.Href(ctx, foodsHref(d.Search, "all"))) } class={ "chip", templ.KV("active", d.Tag == "" || d.Tag == "all") }>All</a>
-				for _, t := range d.AllTags {
-					<a href={ templ.URL(view.Href(ctx, foodsHref(d.Search, t))) } class={ "chip", templ.KV("active", d.Tag == t) }>{ t }</a>
+				<div>
+					@FieldLabel("Prep (min)")
+					<div class="flex items-center" style="gap: 6px;">
+						<input class="input input-sm" type="number" min="0" name="prep_min" value={ d.PrepMin } placeholder="min" style="width: 74px;"/>
+						<span style="color: var(--fg-3);">–</span>
+						<input class="input input-sm" type="number" min="0" name="prep_max" value={ d.PrepMax } placeholder="max" style="width: 74px;"/>
+					</div>
+				</div>
+				<div>
+					@FieldLabel("Cook (min)")
+					<div class="flex items-center" style="gap: 6px;">
+						<input class="input input-sm" type="number" min="0" name="cook_min" value={ d.CookMin } placeholder="min" style="width: 74px;"/>
+						<span style="color: var(--fg-3);">–</span>
+						<input class="input input-sm" type="number" min="0" name="cook_max" value={ d.CookMax } placeholder="max" style="width: 74px;"/>
+					</div>
+				</div>
+			</div>
+			<div class="flex items-end flex-wrap" style="gap: 12px;">
+				<div style="min-width: 200px;">
+					@FieldLabel("Add tag")
+					<select
+						class="select input-sm"
+						name="tags"
+						data-search-select="1"
+						data-search-select-placeholder="Search tags…"
+					>
+						<option value="" selected></option>
+						for _, t := range d.AllTags {
+							if !slices.Contains(d.Tags, t) {
+								<option value={ t }>{ t }</option>
+							}
+						}
+					</select>
+				</div>
+				<div>
+					@FieldLabel("Match")
+					<select class="select input-sm" name="tag_mode">
+						<option value="and" selected?={ d.TagMode != "or" }>All tags</option>
+						<option value="or" selected?={ d.TagMode == "or" }>Any tag</option>
+					</select>
+				</div>
+				<button type="submit" class="btn btn-sm">Apply</button>
+				if foodsHasFilter(d) {
+					<a class="btn btn-secondary btn-sm" href={ templ.URL(view.Href(ctx, "/foods")) }>Clear</a>
 				}
 			</div>
-		</div>
+			if len(d.Tags) > 0 {
+				<div class="flex flex-wrap items-center" style="gap: 6px;">
+					for _, t := range d.Tags {
+						<span class="tag tag-accent" style="gap: 5px; padding: 4px 8px;">
+							{ t }
+							<a class="icon-btn" style="color: var(--accent); padding: 0;" title="Remove tag" href={ templ.URL(view.Href(ctx, foodsFilterHref(d, t))) }>
+								@icons.Icon("x", 10)
+							</a>
+						</span>
+					}
+				</div>
+			}
+		</form>
 		<div class="page-pad flex-1" style="padding: 20px 28px;">
 			if len(d.Foods) == 0 {
 				@layout.Empty("utensils", "No foods found", emptyFoodsBody(d.Search)) {

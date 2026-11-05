@@ -138,6 +138,9 @@ templ groceryItemRow(listID string, item grocery.Item, owner bool) {
 				<span style="display: block; font-size: 11px; color: var(--danger); font-weight: 600;">{ item.Note }</span>
 			}
 		</span>
+		if item.Cost != nil {
+			<span class="tnum" style="font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); white-space: nowrap;" title="Cost paid">{ FormatCost(*item.Cost) }</span>
+		}
 		if item.SourceType == "generated" {
 			<a href={ templ.URL(view.Href(ctx, "/grocery/items/"+item.ID.String())) } class="icon-btn" title="Why this is here">
 				@icons.Icon("layers", 13)

@@ -101,3 +101,85 @@ App is full-page + `hx-boost` only.
 ## G13. Optimistic locking on meals
 PRD FR16 + ScheduledMeal.version. Only `foods` has versioning today.
 - [x] Add `version` to `meal_plan` (folds into G4) and apply the same conflict screen (mirror FR16 foods impl). (`meal_plan.version` arrived in 0011; 0018 adds a series token so overlapping recurrence-scope edits are atomic. Meal fields, extra recipes, and links share guarded transactions; stale attempts retain their fields and scope beside the current saved state.)
+
+## G14. Recipe yield and nested-component scaling
+PRD FR5 AC4/AC5, FR8 AC1/AC2, FR11 AC1-AC3, FR17 AC3.
+Current grocery and prep expansion passes requested servings as a direct
+multiplier, ignoring the root recipe yield. Nested component expansion divides
+the component amount by child servings even when the component unit is mass or
+volume. Existing tests encode the incorrect totals, contradicting G4's previous
+completion note.
+- [x] Scale root recipes by `requested servings / recipe servings`. (`LeafIngredients` scales the root by `requested / Food.Servings`.)
+- [x] Define and persist enough nested-recipe yield context to scale mass,
+  volume, count, and serving-based component usages without treating arbitrary
+  units as servings. (0019 adds `foods.yield_amount` in `default_unit`;
+  `ComponentRecipeScale` divides serving usages by child servings and other
+  usages by the converted yield, rejecting unrelated units on save. Food detail's
+  nested tree now uses the same scaling.)
+- [x] Update grocery, prep, provenance, and regression tests with realistic
+  expected quantities.
+
+## G15. Food import optimistic locking
+PRD FR15 and FR16.
+Archive import updates editable food state without advancing `foods.version`, so
+an editor opened before import can overwrite imported data without a conflict.
+- [x] Make every imported update to an existing food advance the local version.
+- [x] Keep the lock token local; imported archive versions must not replace it.
+- [x] Add integration coverage for import followed by a stale editor save. (`TRANSFER_TEST_DATABASE_URL`.)
+
+## G16. Food import graph validation
+PRD FR8 AC4 and §6.7 acyclic graph invariant.
+Archive import writes component relationships directly and bypasses the cycle
+check used by ordinary food saves.
+- [x] Validate the complete proposed imported component graph inside the import
+  transaction before replacing relationships.
+- [x] Reject direct and multi-node cycles with a clear import report/error.
+- [x] Add tests for cyclic archives and valid nested imports.
+
+## G17. Remove scheduled-meal link previews
+Product decision: remove link-preview fetching and preview metadata entirely,
+including the SSRF-prone server fetch path. Raw scheduled-meal links may remain
+only if documented and rendered without server-side fetching.
+- [x] Remove preview fetch/refresh behavior, preview title/image fields, handlers,
+  templates, tests, package code, and obsolete schema columns. (`internal/linkpreview`
+  deleted; 0020 drops `link_title`/`link_image_url`.)
+- [x] Remove rich-preview requirements and data-model fields from the PRD and
+  any other documentation.
+- [x] Preserve safe raw-link editing/display only if still part of the reconciled
+  product contract. (`link_url` kept, rendered as a plain external link.)
+
+## G18. Atomic ownership transfer
+PRD FR3 AC5 and architecture service-owned transaction rules.
+Ownership checks run before the transaction and role updates do not verify
+affected rows, allowing concurrent removal or transfer to leave zero or multiple
+owners.
+- [x] Lock the household and relevant memberships inside one transaction.
+- [x] Re-check caller ownership and target membership after locks are held.
+- [x] Require expected affected-row counts and preserve exactly one owner.
+- [x] Add concurrent/removal-race integration coverage. (`HOUSEHOLDS_TEST_DATABASE_URL`.)
+
+## G19. Grocery item cost and food cost estimation
+PRD FR19, §6.2 (derived food cost), §6.4 GroceryItem.
+No cost/price concept exists in the schema or app today. Owners need to record a
+per-line grocery cost, and food views need a derived estimated cost rolled up
+across the whole ingredient tree.
+- [x] Add reversible migration `0021_grocery_item_cost` adding nullable `cost`
+  (`CHECK cost IS NULL OR cost >= 0`) to `grocery_items`; no column on `foods`.
+  (Also adds `cost_recorded_at` — grocery items have no `updated_at`, so this
+  orders "latest" across lists.)
+- [x] Add `SetGroceryItemCost` and a household-scoped `ListLatestFoodCosts`
+  (latest priced item per `ingredient_id`) query; carry `cost` on item reads.
+  (Generation merges into a priced line scale its cost to keep the unit price.)
+- [x] Derive cost-per-base-unit from the line `amount`/`unit`; compute food
+  estimates with a cycle-guarded recursive walk that prefers a food's own
+  recorded cost and otherwise sums children (mass↔volume via density, count
+  mismatches left unpriced), reusing `units` conversion helpers.
+- [x] Surface per-line cost input on grocery item row/detail and a derived
+  estimate (total, per-serving, "N of M priced") on food detail that rescales
+  with the existing scale selector. (Owner-only cost form on item detail via
+  `POST /grocery/items/:id/cost`; rows show the recorded cost; food detail shows
+  an "Estimated cost" card. Currency is a fixed `£` — no per-household setting.)
+- [x] Add unit coverage for own-cost, rollup, prefer-own-on-nested-recipe,
+  cross-dimension, count-mismatch, partial-coverage, and cycle cases.
+  (`foods/cost_test.go`; DB lifecycle in `grocery/service_integration_test.go`
+  behind `GROCERY_TEST_DATABASE_URL`.)

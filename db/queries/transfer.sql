@@ -133,22 +133,23 @@ FROM prep_sessions ps JOIN requested r ON r.id = ps.id;
 -- contract. Updating an old archive must not clear newer local metadata.
 -- name: ImportFoodV1 :one
 INSERT INTO foods (id, household_id, name, description, prep_time_min, cook_time_min, servings,
-    default_unit, created_at, updated_at, density_g_per_ml, density_source)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    yield_amount, default_unit, created_at, updated_at, density_g_per_ml, density_source)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 ON CONFLICT (id) DO UPDATE SET
     name = excluded.name, description = excluded.description,
     prep_time_min = excluded.prep_time_min, cook_time_min = excluded.cook_time_min,
     servings = excluded.servings, default_unit = excluded.default_unit,
     updated_at = excluded.updated_at,
-    density_g_per_ml = excluded.density_g_per_ml, density_source = excluded.density_source
+    density_g_per_ml = excluded.density_g_per_ml, density_source = excluded.density_source,
+    version = foods.version + 1
 WHERE foods.household_id = excluded.household_id
 RETURNING (xmax = 0) AS inserted;
 
 -- name: ImportFoodV2 :one
 INSERT INTO foods (id, household_id, name, description, prep_time_min, cook_time_min, servings,
-    default_unit, created_at, updated_at, density_g_per_ml, density_source,
+    yield_amount, default_unit, created_at, updated_at, density_g_per_ml, density_source,
     source_url, source_last_imported_at, deleted_at, created_by, updated_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 ON CONFLICT (id) DO UPDATE SET
     name = excluded.name, description = excluded.description,
     prep_time_min = excluded.prep_time_min, cook_time_min = excluded.cook_time_min,
@@ -156,7 +157,25 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = excluded.updated_at,
     density_g_per_ml = excluded.density_g_per_ml, density_source = excluded.density_source,
     source_url = excluded.source_url, source_last_imported_at = excluded.source_last_imported_at,
-    deleted_at = excluded.deleted_at, created_by = excluded.created_by, updated_by = excluded.updated_by
+    deleted_at = excluded.deleted_at, created_by = excluded.created_by, updated_by = excluded.updated_by,
+    version = foods.version + 1
+WHERE foods.household_id = excluded.household_id
+RETURNING (xmax = 0) AS inserted;
+
+-- name: ImportFoodV4 :one
+INSERT INTO foods (id, household_id, name, description, prep_time_min, cook_time_min, servings,
+    yield_amount, default_unit, created_at, updated_at, density_g_per_ml, density_source,
+    source_url, source_last_imported_at, deleted_at, created_by, updated_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+ON CONFLICT (id) DO UPDATE SET
+    name = excluded.name, description = excluded.description,
+    prep_time_min = excluded.prep_time_min, cook_time_min = excluded.cook_time_min,
+    servings = excluded.servings, yield_amount = excluded.yield_amount,
+    default_unit = excluded.default_unit, updated_at = excluded.updated_at,
+    density_g_per_ml = excluded.density_g_per_ml, density_source = excluded.density_source,
+    source_url = excluded.source_url, source_last_imported_at = excluded.source_last_imported_at,
+    deleted_at = excluded.deleted_at, created_by = excluded.created_by, updated_by = excluded.updated_by,
+    version = foods.version + 1
 WHERE foods.household_id = excluded.household_id
 RETURNING (xmax = 0) AS inserted;
 
@@ -232,15 +251,14 @@ RETURNING (xmax = 0) AS inserted;
 
 -- name: ImportMealPlanV1 :one
 INSERT INTO meal_plan (id, household_id, plan_date, plan_time, food_id, servings, series_id,
-    link_url, link_title, link_image_url)
-SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+    link_url)
+SELECT $1, $2, $3, $4, $5, $6, $7, $8
 WHERE EXISTS (SELECT 1 FROM foods f WHERE f.id = $5 AND f.household_id = $2)
   AND ($7::uuid IS NULL OR EXISTS (SELECT 1 FROM meal_series ms WHERE ms.id = $7 AND ms.household_id = $2))
 ON CONFLICT (id) DO UPDATE SET
     plan_date = excluded.plan_date, plan_time = excluded.plan_time,
     food_id = excluded.food_id, servings = excluded.servings, series_id = excluded.series_id,
-    link_url = excluded.link_url, link_title = excluded.link_title,
-    link_image_url = excluded.link_image_url, version = meal_plan.version + 1
+    link_url = excluded.link_url, version = meal_plan.version + 1
 WHERE meal_plan.household_id = excluded.household_id
 RETURNING (xmax = 0) AS inserted;
 
@@ -251,15 +269,14 @@ WHERE id = sqlc.arg(id) AND household_id = sqlc.arg(household_id);
 
 -- name: ImportMealPlanV2 :one
 INSERT INTO meal_plan (id, household_id, plan_date, plan_time, food_id, servings, series_id,
-    link_url, link_title, link_image_url, title, notes, version, deleted_at, created_by, updated_by)
-SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+    link_url, title, notes, version, deleted_at, created_by, updated_by)
+SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
 WHERE EXISTS (SELECT 1 FROM foods f WHERE f.id = $5 AND f.household_id = $2)
   AND ($7::uuid IS NULL OR EXISTS (SELECT 1 FROM meal_series ms WHERE ms.id = $7 AND ms.household_id = $2))
 ON CONFLICT (id) DO UPDATE SET
     plan_date = excluded.plan_date, plan_time = excluded.plan_time,
     food_id = excluded.food_id, servings = excluded.servings, series_id = excluded.series_id,
-    link_url = excluded.link_url, link_title = excluded.link_title,
-    link_image_url = excluded.link_image_url, title = excluded.title, notes = excluded.notes,
+    link_url = excluded.link_url, title = excluded.title, notes = excluded.notes,
     version = meal_plan.version + 1, deleted_at = excluded.deleted_at,
     created_by = excluded.created_by, updated_by = excluded.updated_by
 WHERE meal_plan.household_id = excluded.household_id

@@ -49,6 +49,7 @@ templ FoodDetail(d FoodDetailData) {
 				}
 				if d.Food.IsRecipe() {
 					@layout.Tag("serves " + view.Itoa(d.Food.Servings))
+					@layout.Tag("yields " + FormatAmount(d.Food.YieldAmount) + " " + d.Food.DefaultUnit)
 				} else {
 					@layout.Tag("raw ingredient")
 				}
@@ -107,12 +108,16 @@ templ FoodDetail(d FoodDetailData) {
 						</span>
 					</div>
 				</div>
+				@foodCostCard(d)
 				<section style="margin-bottom: 28px;">
 					<div class="overline" style="letter-spacing: .08em; margin-bottom: 10px;">Components</div>
 					<div class="ing-tree">
 						@ingredientNodes(d, d.Tree)
 					</div>
 				</section>
+			}
+			if !d.Food.IsRecipe() {
+				@foodCostCard(d)
 			}
 			if len(d.Food.Steps) > 0 {
 				<section style="margin-bottom: 28px;">
@@ -129,6 +134,37 @@ templ FoodDetail(d FoodDetailData) {
 			}
 		</div>
 	}
+}
+
+// foodCostCard shows the FR19 derived cost estimate. Recipes show the batch
+// total at the selected scale, per serving, and ingredient coverage; atomic
+// foods show their latest recorded price.
+templ foodCostCard(d FoodDetailData) {
+	<div class="card" style="padding: 12px 14px; margin-bottom: 22px;">
+		<div class="overline" style="letter-spacing: .08em; margin-bottom: 6px;">Estimated cost</div>
+		if !d.Food.IsRecipe() {
+			if d.RecordedCost != nil {
+				<div class="flex items-center flex-wrap" style="gap: 8px;">
+					<span class="tnum" style="font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: var(--ink);">{ FormatCost(d.RecordedCost.Cost) }</span>
+					<span style="font-size: 13px; color: var(--fg-3);">{ "per " + FormatAmount(d.RecordedCost.Amount) + " " + d.RecordedCost.Unit } · latest grocery price</span>
+				</div>
+			} else {
+				<div style="font-size: 13px; color: var(--fg-3);">Not priced yet. Record a cost on a grocery item for this food.</div>
+			}
+		} else if d.Cost.HasCost() {
+			<div class="flex items-center flex-wrap" style="gap: 8px;">
+				<span class="tnum" style="font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: var(--ink);">{ FormatCost(d.Cost.Cost) }</span>
+				if d.Food.Servings > 0 {
+					<span style="font-size: 13px; color: var(--fg-3);">{ FormatCost(d.Cost.Cost / float64(d.Food.Servings*d.Scale)) } per serving</span>
+				}
+				if d.Cost.Partial() {
+					@layout.Tag(view.Itoa(d.Cost.Priced) + " of " + view.Itoa(d.Cost.Total) + " ingredients priced")
+				}
+			</div>
+		} else {
+			<div style="font-size: 13px; color: var(--fg-3);">No ingredients priced yet. Record costs on grocery items to estimate this recipe.</div>
+		}
+	</div>
 }
 
 func stepNum(i int) string {

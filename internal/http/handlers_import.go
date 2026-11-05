@@ -98,7 +98,7 @@ func (s *Server) importReconcileData(c echo.Context, parsed foods.Parsed) (pages
 	d := pages.ImportReconcileData{
 		Member: s.member(c), Name: parsed.Name, Description: parsed.Description,
 		Prep: strconv.Itoa(parsed.PrepTime), Cook: strconv.Itoa(parsed.CookTime),
-		Servings: strconv.Itoa(parsed.Servings), DefaultUnit: "g",
+		Servings: strconv.Itoa(parsed.Servings), YieldAmount: strconv.Itoa(parsed.Servings), DefaultUnit: "g",
 		Tags: parsed.Tags, Steps: parsed.Steps, AllFoods: all,
 	}
 	for _, line := range parsed.Lines {
@@ -152,6 +152,8 @@ func (s *Server) handleFoodReimport(c echo.Context) error {
 	}
 	d.TargetFoodID = food.ID.String()
 	d.Version = strconv.Itoa(food.Version)
+	d.YieldAmount = units2str(food.YieldAmount)
+	d.DefaultUnit = food.DefaultUnit
 	d.SourceURL = food.SourceURL
 	d.SourceState, err = s.signImportSource(c, importSourceState{
 		URL: food.SourceURL, TargetFoodID: food.ID.String(), HouseholdID: s.household(c).String(),
@@ -288,6 +290,7 @@ func (s *Server) parseReconcile(c echo.Context) (pages.ImportReconcileData, erro
 		Prep:           c.FormValue("imp_prep"),
 		Cook:           c.FormValue("imp_cook"),
 		Servings:       c.FormValue("imp_servings"),
+		YieldAmount:    c.FormValue("imp_yield_amount"),
 		DefaultUnit:    c.FormValue("imp_default_unit"),
 		TargetFoodID:   c.FormValue("target_food_id"),
 		Version:        c.FormValue("version"),
@@ -343,6 +346,7 @@ func reconcileToForm(d pages.ImportReconcileData) (foods.Form, error) {
 		PrepTime:    prep,
 		CookTime:    cook,
 		Servings:    servings,
+		YieldAmount: floatDefault(d.YieldAmount, float64(servings)),
 		DefaultUnit: d.DefaultUnit,
 		Version:     atoiDefault(d.Version, 0),
 		Aliases:     d.Aliases,

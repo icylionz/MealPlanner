@@ -24,19 +24,19 @@ func TestLeafIngredients_FlattenAndScale(t *testing.T) {
 	idx := map[uuid.UUID]Food{
 		flour: {ID: flour, Name: "Flour"},
 		water: {ID: water, Name: "Water"},
-		starter: {ID: starter, Name: "Starter", Servings: 1, Components: []Component{
+		starter: {ID: starter, Name: "Starter", Servings: 1, YieldAmount: 100, DefaultUnit: "g", Components: []Component{
 			{ChildFoodID: flour, Amount: 50, Unit: "g"},
 			{ChildFoodID: water, Amount: 50, Unit: "ml"},
 		}},
-		bread: {ID: bread, Name: "Bread", Servings: 2, Components: []Component{
+		bread: {ID: bread, Name: "Bread", Servings: 8, YieldAmount: 960, DefaultUnit: "g", Components: []Component{
 			{ChildFoodID: flour, Amount: 500, Unit: "g"},
 			{ChildFoodID: starter, Amount: 100, Unit: "g"}, // sub-recipe by mass
 		}},
 	}
 
-	// scale 1: starter contributes 100/1 * (50g flour, 50ml water) = 5000g? no —
-	// subScale = amount/servings*scale = 100/1*1 = 100, times starter's 50g = 5000.
-	leaves := LeafIngredients(idx, bread, 1)
+	// Four requested servings are half the bread batch. Its 100g starter line is
+	// one full starter batch, then is also halved by the root scale.
+	leaves := LeafIngredients(idx, bread, 4)
 	if leaves[0].Sources[0].LineRecipe != "" {
 		t.Errorf("direct root line marked as nested: %+v", leaves[0].Sources[0])
 	}
@@ -44,21 +44,53 @@ func TestLeafIngredients_FlattenAndScale(t *testing.T) {
 	for _, l := range leaves {
 		got[l.Name+"|"+l.Unit] += l.Amount
 	}
-	// Flour: 500 (direct) + 5000 (via starter 100x) = 5500g.
-	if got["Flour|g"] != 5500 {
-		t.Errorf("flour = %v, want 5500", got["Flour|g"])
+	// Flour: 250 direct + 25 through starter.
+	if got["Flour|g"] != 275 {
+		t.Errorf("flour = %v, want 275", got["Flour|g"])
 	}
-	if got["Water|ml"] != 5000 {
-		t.Errorf("water = %v, want 5000", got["Water|ml"])
+	if got["Water|ml"] != 25 {
+		t.Errorf("water = %v, want 25", got["Water|ml"])
 	}
 
-	// scale 2 doubles every leaf.
+	// A full eight-serving batch doubles the four-serving quantities.
 	scaled := map[string]float64{}
-	for _, l := range LeafIngredients(idx, bread, 2) {
+	for _, l := range LeafIngredients(idx, bread, 8) {
 		scaled[l.Name+"|"+l.Unit] += l.Amount
 	}
-	if scaled["Flour|g"] != 11000 {
-		t.Errorf("scaled flour = %v, want 11000", scaled["Flour|g"])
+	if scaled["Flour|g"] != 550 {
+		t.Errorf("scaled flour = %v, want 550", scaled["Flour|g"])
+	}
+}
+
+func TestComponentRecipeScaleSupportsVolumeCountAndServings(t *testing.T) {
+	tests := []struct {
+		name      string
+		component Component
+		child     Food
+		want      float64
+	}{
+		{"volume", Component{Amount: 250, Unit: "ml"}, Food{YieldAmount: 500, DefaultUnit: "ml"}, 0.5},
+		{"converted volume", Component{Amount: 1, Unit: "L"}, Food{YieldAmount: 500, DefaultUnit: "ml"}, 2},
+		{"count", Component{Amount: 1, Unit: "count"}, Food{YieldAmount: 2, DefaultUnit: "count"}, 0.5},
+		{"servings", Component{Amount: 2, Unit: "serving"}, Food{Servings: 4, YieldAmount: 500, DefaultUnit: "ml"}, 0.5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := ComponentRecipeScale(tt.component, tt.child, 1)
+			if !ok || got != tt.want {
+				t.Fatalf("ComponentRecipeScale() = %v, %v, want %v, true", got, ok, tt.want)
+			}
+		})
+	}
+}
+
+func TestComponentRecipeScaleRejectsUnrelatedYieldUnit(t *testing.T) {
+	if got, ok := ComponentRecipeScale(
+		Component{Amount: 100, Unit: "g"},
+		Food{Servings: 4, YieldAmount: 2, DefaultUnit: "count"},
+		1,
+	); ok {
+		t.Fatalf("mass usage was treated as a serving/count scale: %v", got)
 	}
 }
 
@@ -70,10 +102,10 @@ func TestLeafIngredients_PreservesNestedProvenance(t *testing.T) {
 	breadLine := mkID(5)
 	idx := map[uuid.UUID]Food{
 		flour: {ID: flour, Name: "Flour"},
-		starter: {ID: starter, Name: "Starter", Servings: 2, Components: []Component{
+		starter: {ID: starter, Name: "Starter", Servings: 2, YieldAmount: 100, DefaultUnit: "g", Components: []Component{
 			{ID: starterLine, ChildFoodID: flour, Amount: 50, Unit: "g", Variant: "  stone   ground "},
 		}},
-		bread: {ID: bread, Name: "Bread", Components: []Component{
+		bread: {ID: bread, Name: "Bread", Servings: 6, YieldAmount: 1, DefaultUnit: "count", Components: []Component{
 			{ID: breadLine, ChildFoodID: starter, Amount: 2, Unit: "serving"},
 		}},
 	}
@@ -89,8 +121,8 @@ func TestLeafIngredients_PreservesNestedProvenance(t *testing.T) {
 	if source.ComponentID != starterLine {
 		t.Errorf("source line = %s, want nested leaf line %s", source.ComponentID, starterLine)
 	}
-	if source.Amount != 150 || source.Unit != "g" {
-		t.Errorf("source quantity = %v %s, want 150 g", source.Amount, source.Unit)
+	if source.Amount != 25 || source.Unit != "g" {
+		t.Errorf("source quantity = %v %s, want 25 g", source.Amount, source.Unit)
 	}
 	if leaves[0].Variant != "stone ground" || source.Variant != "stone ground" {
 		t.Errorf("variant was not propagated: leaf=%q source=%q", leaves[0].Variant, source.Variant)
@@ -105,13 +137,13 @@ func TestLeafIngredients_ComposesNestedRecipeAndLeafVariants(t *testing.T) {
 	leafLine := mkID(5)
 	idx := map[uuid.UUID]Food{
 		flour: {ID: flour, Name: "Flour"},
-		filling: {ID: filling, Name: "Filling", Servings: 1, Components: []Component{{
+		filling: {ID: filling, Name: "Filling", Servings: 1, YieldAmount: 1, DefaultUnit: "count", Components: []Component{{
 			ID: leafLine, ChildFoodID: flour, Amount: 10, Unit: "g", Variant: "  finely   sifted ",
 		}}},
-		pastry: {ID: pastry, Name: "Pastry", Servings: 1, Components: []Component{{
+		pastry: {ID: pastry, Name: "Pastry", Servings: 1, YieldAmount: 1, DefaultUnit: "count", Components: []Component{{
 			ChildFoodID: filling, Amount: 1, Unit: "serving", Variant: " chilled ",
 		}}},
-		pie: {ID: pie, Name: "Pie", Components: []Component{{
+		pie: {ID: pie, Name: "Pie", Servings: 1, YieldAmount: 1, DefaultUnit: "count", Components: []Component{{
 			ChildFoodID: pastry, Amount: 1, Unit: "serving", Variant: " gluten-free ",
 		}}},
 	}
@@ -265,6 +297,22 @@ func TestValidateComponentIDsRejectsOtherHouseholdAndDeletedFoods(t *testing.T) 
 		{ChildFoodID: otherHouseholdID},
 	}, valid); err != ErrInvalidComponent {
 		t.Fatalf("out-of-scope component error = %v, want ErrInvalidComponent", err)
+	}
+}
+
+func TestValidateComponentYieldsRejectsMismatchedNestedUnit(t *testing.T) {
+	child := mkID(1)
+	leaf := mkID(2)
+	rows := map[uuid.UUID]db.Food{
+		child: {ID: child, Servings: 4, YieldAmount: 2, DefaultUnit: "count"},
+	}
+	graph := []db.FoodComponent{{ParentFoodID: child, ChildFoodID: leaf}}
+
+	if err := validateComponentYields([]Component{{ChildFoodID: child, Amount: 100, Unit: "g"}}, rows, graph); err != ErrInvalidComponentYield {
+		t.Fatalf("mismatched nested yield error = %v, want ErrInvalidComponentYield", err)
+	}
+	if err := validateComponentYields([]Component{{ChildFoodID: child, Amount: 2, Unit: "serving"}}, rows, graph); err != nil {
+		t.Fatalf("serving-based nested usage rejected: %v", err)
 	}
 }
 
