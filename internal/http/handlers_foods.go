@@ -15,12 +15,20 @@ import (
 	"mealplanner/internal/view/pages"
 )
 
+// foodsPageSize caps how many foods the library renders per page; the seeded
+// catalog alone is ~800 foods.
+const foodsPageSize = 50
+
 func (s *Server) handleFoods(c echo.Context) error {
 	ctx := c.Request().Context()
 	search := c.QueryParam("q")
 	tagMode := "and"
 	if c.QueryParam("tag_mode") == "or" {
 		tagMode = "or"
+	}
+	kind := c.QueryParam("kind")
+	if kind != "recipes" && kind != "ingredients" {
+		kind = ""
 	}
 	selTags := normalizeFilterTags(c.QueryParams()["tags"])
 	prepMin, prepMax := parseRange(c.QueryParam("prep_min"), c.QueryParam("prep_max"))
@@ -34,6 +42,7 @@ func (s *Server) handleFoods(c echo.Context) error {
 
 	tagSet := map[string]bool{}
 	var filtered []foods.Food
+	recipeCount, ingredientCount := 0, 0
 	for _, r := range all {
 		for _, t := range r.Tags {
 			tagSet[t] = true
@@ -47,6 +56,16 @@ func (s *Server) handleFoods(c echo.Context) error {
 		if !matchTags(r.Tags, selTags, tagMode) {
 			continue
 		}
+		// Kind counts are taken before the kind filter so each chip shows how
+		// many foods it would reveal under the other active filters.
+		if r.IsRecipe() {
+			recipeCount++
+		} else {
+			ingredientCount++
+		}
+		if (kind == "recipes" && !r.IsRecipe()) || (kind == "ingredients" && r.IsRecipe()) {
+			continue
+		}
 		filtered = append(filtered, r)
 	}
 	allTags := make([]string, 0, len(tagSet))
@@ -55,13 +74,31 @@ func (s *Server) handleFoods(c echo.Context) error {
 	}
 	sort.Strings(allTags)
 
+	page, pageCount := clampPage(c.QueryParam("page"), len(filtered), foodsPageSize)
+	start := (page - 1) * foodsPageSize
+	end := min(start+foodsPageSize, len(filtered))
+
 	return s.render(c, pages.Foods(pages.FoodsData{
 		Member: s.member(c), Search: search,
-		Tags: selTags, TagMode: tagMode,
+		Tags: selTags, TagMode: tagMode, Kind: kind,
 		PrepMin: c.QueryParam("prep_min"), PrepMax: c.QueryParam("prep_max"),
 		CookMin: c.QueryParam("cook_min"), CookMax: c.QueryParam("cook_max"),
-		AllTags: allTags, Foods: filtered,
+		AllTags: allTags, Foods: filtered[start:end],
+		Total: len(all), Matched: len(filtered), Offset: start,
+		RecipeCount: recipeCount, IngredientCount: ingredientCount,
+		Page: page, PageCount: pageCount,
 	}))
+}
+
+// clampPage parses a 1-based page number and clamps it to the pages available
+// for n items; an empty result still has one (empty) page.
+func clampPage(raw string, n, size int) (page, count int) {
+	count = max(1, (n+size-1)/size)
+	page, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || page < 1 {
+		page = 1
+	}
+	return min(page, count), count
 }
 
 // parseRange parses optional min/max minute bounds. A blank or non-numeric

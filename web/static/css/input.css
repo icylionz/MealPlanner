@@ -269,6 +269,58 @@
   .chip:hover { color: var(--fg-2); border-color: var(--line-strong); }
   .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
   .chip.active:hover { color: #fff; }
+  .chip-count { font-family: var(--font-mono); font-size: 10.5px; opacity: .7; font-variant-numeric: tabular-nums; }
+
+  /* ── Ledger (plate-ledger.jsx) ─────────────────────────────── */
+  .ltoolbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex-shrink: 0;
+    padding: 12px 28px; border-bottom: 1px solid var(--line); background: var(--paper);
+  }
+  .lmeta {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--fg-3); font-variant-numeric: tabular-nums;
+  }
+  .lrow { display: flex; border-bottom: 1px solid var(--line); transition: background var(--dur-1) var(--ease); }
+  .lrow:hover { background: var(--surface); }
+  .lrow-gutter { width: 72px; flex-shrink: 0; padding: 15px 12px 15px 0; border-right: 1px solid var(--line); }
+  .lrow-gutter-main { font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .lrow-gutter-sub {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--fg-4); margin-top: 3px;
+  }
+  .lrow-main { flex: 1; min-width: 0; padding: 15px 16px; display: flex; align-items: center; gap: 14px; color: inherit; }
+  .lrow-main > svg { color: var(--fg-4); flex-shrink: 0; }
+  .lrow-title { font-weight: 600; font-size: 15.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lrow-sub {
+    font-size: 13px; color: var(--fg-3); margin-top: 3px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .lrow-col {
+    font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; color: var(--fg-3);
+    font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right;
+  }
+  .lrow-action {
+    display: flex; align-items: center; padding: 0 14px; border-left: 1px solid var(--line);
+    color: var(--fg-4); flex-shrink: 0;
+    transition: color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+  }
+  .lrow-action:hover { color: var(--accent); background: var(--surface); }
+  /* Ingredient rows are the bulk of the catalog: tighter, like the prototype's compact density. */
+  .lrow-compact .lrow-gutter { padding-top: 11px; padding-bottom: 11px; }
+  .lrow-compact .lrow-gutter-main { font-size: 13px; }
+  .lrow-compact .lrow-main { padding-top: 11px; padding-bottom: 11px; }
+  .lrow-compact .lrow-title { font-size: 14px; }
+  .licon-btn {
+    width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper);
+    color: var(--fg-2); flex-shrink: 0; transition: background var(--dur-1) var(--ease);
+  }
+  .licon-btn:hover { background: var(--surface-2); }
+  .licon-btn[aria-disabled="true"] { opacity: .4; pointer-events: none; }
+  @media (max-width: 679px) {
+    .ltoolbar { padding-left: 16px; padding-right: 16px; }
+    .lrow-col.hide-sm { display: none; }
+  }
 
   /* ── Inputs ────────────────────────────────────────────────── */
   .input, .select, .textarea {

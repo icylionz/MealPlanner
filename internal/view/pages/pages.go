@@ -130,8 +130,17 @@ type FoodsData struct {
 	PrepMax string
 	CookMin string
 	CookMax string
+	Kind    string // "" (all), "recipes", or "ingredients"
 	AllTags []string
-	Foods   []foods.Food
+	Foods   []foods.Food // the current page only
+
+	Total           int // foods in the household, unfiltered
+	Matched         int // foods matching every filter, across all pages
+	Offset          int // index of Foods[0] within the matched set
+	RecipeCount     int // matches per kind, ignoring the kind filter
+	IngredientCount int
+	Page            int // 1-based
+	PageCount       int
 }
 
 // SubCount returns how many components of a food are themselves recipes.

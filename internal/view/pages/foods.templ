@@ -11,10 +11,10 @@ import (
 	"mealplanner/internal/view/layout"
 )
 
-// foodsFilterHref rebuilds the /foods URL from the active filter state, with the
-// given tag dropped from the selection. It backs the removable tag chips so a
-// chip can be cleared without JavaScript while keeping every other filter.
-func foodsFilterHref(d FoodsData, dropTag string) string {
+// foodsQuery rebuilds the /foods query from the active filter state. Every
+// link on the page (tag chip removal, kind chips, pager) derives from it so
+// following one keeps every other filter, without JavaScript.
+func foodsQuery(d FoodsData) url.Values {
 	q := url.Values{}
 	if d.Search != "" {
 		q.Set("q", d.Search)
@@ -34,15 +34,52 @@ func foodsFilterHref(d FoodsData, dropTag string) string {
 	if d.TagMode == "or" {
 		q.Set("tag_mode", "or")
 	}
+	if d.Kind != "" {
+		q.Set("kind", d.Kind)
+	}
+	for _, t := range d.Tags {
+		q.Add("tags", t)
+	}
+	return q
+}
+
+func foodsHref(q url.Values) string {
+	if enc := q.Encode(); enc != "" {
+		return "/foods?" + enc
+	}
+	return "/foods"
+}
+
+// foodsFilterHref is the current filter URL with one tag dropped, backing the
+// removable tag chips.
+func foodsFilterHref(d FoodsData, dropTag string) string {
+	q := foodsQuery(d)
+	q.Del("tags")
 	for _, t := range d.Tags {
 		if t != dropTag {
 			q.Add("tags", t)
 		}
 	}
-	if enc := q.Encode(); enc != "" {
-		return "/foods?" + enc
+	return foodsHref(q)
+}
+
+// foodsKindHref switches the kind filter, returning to page one.
+func foodsKindHref(d FoodsData, kind string) string {
+	q := foodsQuery(d)
+	q.Del("kind")
+	if kind != "" {
+		q.Set("kind", kind)
 	}
-	return "/foods"
+	return foodsHref(q)
+}
+
+// foodsPageHref is the current filter URL at the given page.
+func foodsPageHref(d FoodsData, page int) string {
+	q := foodsQuery(d)
+	if page > 1 {
+		q.Set("page", view.Itoa(page))
+	}
+	return foodsHref(q)
 }
 
 // foodsHasFilter reports whether any filter is active, to show a Clear control.
@@ -66,7 +103,22 @@ templ Foods(d FoodsData) {
 				</a>
 			}
 		}
-		<form method="get" action={ templ.URL(view.Href(ctx, "/foods")) } class="page-pad flex flex-col" style="padding: 14px 28px; border-bottom: 1px solid var(--line); background: var(--paper); gap: 12px;">
+		// With JS, any non-search control change re-runs the filter immediately
+		// (full page, swapped by htmx); Apply remains the no-JS path.
+		<form
+			method="get"
+			action={ templ.URL(view.Href(ctx, "/foods")) }
+			class="page-pad flex flex-col"
+			style="padding: 14px 28px; border-bottom: 1px solid var(--line); background: var(--paper); gap: 12px;"
+			hx-get={ view.Href(ctx, "/foods") }
+			hx-trigger="submit, change[target.type!='search']"
+			hx-target="body"
+			hx-swap="innerHTML"
+			hx-push-url="true"
+		>
+			if d.Kind != "" {
+				<input type="hidden" name="kind" value={ d.Kind }/>
+			}
 			// Preserve the current tag selection so each Apply adds the newly
 			// picked tag rather than replacing the set (works without JS).
 			for _, t := range d.Tags {
@@ -77,7 +129,22 @@ templ Foods(d FoodsData) {
 					@FieldLabel("Search")
 					<div class="search-wrap">
 						@icons.Icon("search", 14)
-						<input class="input input-sm" type="search" name="q" value={ d.Search } placeholder="Name, ingredient, description…"/>
+						// Typing swaps only the results region so the input keeps focus.
+						<input
+							class="input input-sm"
+							type="search"
+							name="q"
+							value={ d.Search }
+							placeholder="Name, ingredient, description…"
+							autocomplete="off"
+							hx-get={ view.Href(ctx, "/foods") }
+							hx-trigger="input changed delay:250ms, search"
+							hx-include="closest form"
+							hx-target="#foods-results"
+							hx-select="#foods-results"
+							hx-swap="outerHTML"
+							hx-push-url="true"
+						/>
 					</div>
 				</div>
 				<div>
@@ -139,22 +206,33 @@ templ Foods(d FoodsData) {
 				</div>
 			}
 		</form>
-		<div class="page-pad flex-1" style="padding: 20px 28px;">
-			if len(d.Foods) == 0 {
-				@layout.Empty("utensils", "No foods found", emptyFoodsBody(d.Search)) {
-					if d.Member.IsOwner() {
-						<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/foods/new")) }>
-							@icons.Icon("plus", 14)
-							New food
-						</a>
+		<div id="foods-results" class="flex flex-col flex-1">
+			<div class="ltoolbar">
+				@kindChip(d, "", "All", d.RecipeCount+d.IngredientCount)
+				@kindChip(d, "recipes", "Recipes", d.RecipeCount)
+				@kindChip(d, "ingredients", "Ingredients", d.IngredientCount)
+				<span class="lmeta" style="margin-left: auto;">{ view.Itoa(d.Matched) } of { view.Itoa(d.Total) }</span>
+			</div>
+			<div class="flex-1" style="background: var(--paper);">
+				if len(d.Foods) == 0 {
+					@layout.Empty("utensils", "No foods found", emptyFoodsBody(d.Search)) {
+						if d.Member.IsOwner() {
+							<a class="btn btn-sm" href={ templ.URL(view.Href(ctx, "/foods/new")) }>
+								@icons.Icon("plus", 14)
+								New food
+							</a>
+						}
 					}
+				} else {
+					<div class="page-pad" style="padding: 0 0 0 28px;">
+						for _, r := range d.Foods {
+							@foodRow(r, d.Member.IsOwner())
+						}
+					</div>
 				}
-			} else {
-				<div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px;">
-					for _, r := range d.Foods {
-						@foodCard(r, d.Member.IsOwner())
-					}
-				</div>
+			</div>
+			if d.PageCount > 1 {
+				@foodsPager(d)
 			}
 		</div>
 	}
@@ -167,38 +245,97 @@ func emptyFoodsBody(search string) string {
 	return "Add your first recipe to get started."
 }
 
-templ foodCard(r foods.Food, owner bool) {
-	<div class="card card-hover flex flex-col" style="gap: 8px;">
-		<div class="flex items-start justify-between" style="gap: 8px;">
-			<a href={ templ.URL(view.Href(ctx, "/foods/"+r.ID.String())) } style="font-family: var(--font-display); font-weight: 700; font-size: 15px; color: var(--ink); line-height: 1.3;">{ r.Name }</a>
-			if owner {
-				<a href={ templ.URL(view.Href(ctx, "/foods/"+r.ID.String()+"/edit")) } class="icon-btn flex-none" title="Edit food">
-					@icons.Icon("pencil", 13)
-				</a>
+templ kindChip(d FoodsData, kind string, label string, count int) {
+	<a class={ "chip", templ.KV("active", d.Kind == kind) } href={ templ.URL(view.Href(ctx, foodsKindHref(d, kind))) }>
+		{ label }
+		<span class="chip-count">{ view.Itoa(count) }</span>
+	</a>
+}
+
+// foodRow is the prototype's RecipeRow ledger row. Recipes carry the
+// ×servings gutter and ingredient/sub/time columns; atomic ingredients use
+// the compact density with their default unit in the gutter.
+templ foodRow(r foods.Food, owner bool) {
+	<div class={ "lrow", templ.KV("lrow-compact", !r.IsRecipe()) }>
+		<div class="lrow-gutter">
+			if r.IsRecipe() {
+				<div class="lrow-gutter-main">×{ view.Itoa(r.Servings) }</div>
+				<div class="lrow-gutter-sub">serves</div>
+			} else {
+				<div class="lrow-gutter-main">{ foodUnit(r) }</div>
+				<div class="lrow-gutter-sub">unit</div>
 			}
 		</div>
-		if r.Description != "" {
-			<div style="font-size: 12px; color: var(--fg-3); line-height: 1.45; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">{ r.Description }</div>
+		<a class="lrow-main" href={ templ.URL(view.Href(ctx, "/foods/"+r.ID.String())) }>
+			<div class="flex-1 min-w-0">
+				<div class="lrow-title">{ r.Name }</div>
+				if r.Description != "" {
+					<div class="lrow-sub">{ r.Description }</div>
+				}
+				if len(r.Tags) > 0 {
+					<div style="margin-top: 6px;">
+						@RecipeTags(r.Tags, 4)
+					</div>
+				}
+			</div>
+			if r.IsRecipe() {
+				<div class="lrow-col">{ view.Itoa(len(r.Components)) } ing</div>
+				if SubCount(r) > 0 {
+					<div class="lrow-col hide-sm" style="color: var(--accent);">{ view.Itoa(SubCount(r)) } sub</div>
+				}
+				if r.PrepTime+r.CookTime > 0 {
+					<div class="lrow-col hide-sm">{ view.Itoa(r.PrepTime + r.CookTime) } min</div>
+				}
+			} else if r.HasDensity() {
+				<div class="lrow-col hide-sm">{ FormatDensity(r.Density) } g/ml</div>
+			}
+			@icons.Icon("chevron-right", 14)
+		</a>
+		if owner {
+			<a class="lrow-action" aria-label="Edit food" title="Edit food" href={ templ.URL(view.Href(ctx, "/foods/"+r.ID.String()+"/edit")) }>
+				@icons.Icon("pencil", 14)
+			</a>
 		}
-		@RecipeTags(r.Tags, 4)
-		<div class="flex items-center" style="border-top: 1px solid var(--line); padding-top: 8px; gap: 14px;">
-			if r.PrepTime+r.CookTime > 0 {
-				<span class="flex items-center overline" style="gap: 4px; letter-spacing: .05em;">
-					@icons.Icon("clock", 12)
-					{ view.Itoa(r.PrepTime + r.CookTime) } min
-				</span>
-			}
-			<span class="flex items-center overline" style="gap: 4px; letter-spacing: .05em;">
-				@icons.Icon("list", 12)
-				{ view.Itoa(len(r.Components)) } comp.
-			</span>
-			if SubCount(r) > 0 {
-				<span class="flex items-center overline" style="gap: 4px; letter-spacing: .05em; color: var(--accent);">
-					@icons.Icon("layers", 12)
-					{ view.Itoa(SubCount(r)) } sub
-				</span>
-			}
-			<span class="overline" style="margin-left: auto; letter-spacing: .05em;">× { view.Itoa(r.Servings) }</span>
-		</div>
 	</div>
+}
+
+func foodUnit(r foods.Food) string {
+	if r.DefaultUnit != "" {
+		return r.DefaultUnit
+	}
+	return "—"
+}
+
+templ foodsPager(d FoodsData) {
+	<nav class="ltoolbar" aria-label="Pagination" style="border-top: 1px solid var(--line); border-bottom: none;">
+		<span class="lmeta">
+			{ view.Itoa(d.Offset + 1) }–{ view.Itoa(d.Offset + len(d.Foods)) } of { view.Itoa(d.Matched) }
+		</span>
+		<div class="flex items-center" style="margin-left: auto; gap: 8px;">
+			<a
+				class="licon-btn"
+				aria-label="Previous page"
+				href={ templ.URL(view.Href(ctx, foodsPageHref(d, d.Page-1))) }
+				aria-disabled={ boolAttr(d.Page <= 1) }
+			>
+				@icons.Icon("chevron-left", 15)
+			</a>
+			<span class="lmeta">Page { view.Itoa(d.Page) } / { view.Itoa(d.PageCount) }</span>
+			<a
+				class="licon-btn"
+				aria-label="Next page"
+				href={ templ.URL(view.Href(ctx, foodsPageHref(d, d.Page+1))) }
+				aria-disabled={ boolAttr(d.Page >= d.PageCount) }
+			>
+				@icons.Icon("chevron-right", 15)
+			</a>
+		</div>
+	</nav>
+}
+
+func boolAttr(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
 }
