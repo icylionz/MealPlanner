@@ -1,441 +1,237 @@
-// Package httpserver wires the Echo router, middleware, and handlers.
-package httpserver
+// Package http wires Echo routes to thin handlers that call services and
+// render full templ pages (docs/architecture.md request contract).
+package http
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"log/slog"
-	"net"
 	"net/http"
-	"net/netip"
-	"net/url"
-	"os"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/a-h/templ"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"mealplanner/internal/auth"
-	"mealplanner/internal/config"
-	"mealplanner/internal/foods"
-	"mealplanner/internal/grocery"
-	"mealplanner/internal/households"
-	"mealplanner/internal/observability"
-	"mealplanner/internal/planner"
-	"mealplanner/internal/prep"
-	"mealplanner/internal/transfer"
-	"mealplanner/internal/view"
+	"github.com/icylionz/mealplanner/internal/assets"
+	"github.com/icylionz/mealplanner/internal/config"
+	"github.com/icylionz/mealplanner/internal/observability"
+	"github.com/icylionz/mealplanner/internal/platform/database"
+	"github.com/icylionz/mealplanner/internal/service"
+	"github.com/icylionz/mealplanner/internal/view"
 )
 
-// Server bundles the services the handlers need.
+type Services struct {
+	Auth     *service.AuthService
+	House    *service.HouseholdService
+	Foods    *service.FoodService
+	Planner  *service.PlannerService
+	Grocery  *service.GroceryService
+	Prep     *service.PrepService
+	Import   *service.ImportService
+	Transfer *service.TransferService
+}
+
 type Server struct {
-	cfg         *config.Config
-	households  *households.Service
-	login       loginService
-	foods       *foods.Service
-	planner     *planner.Service
-	grocery     *grocery.Service
-	prep        *prep.Service
-	transfer    *transfer.Service
-	metrics     *observability.Metrics
-	metricsOnce sync.Once
-	logger      *slog.Logger
+	cfg     config.Config
+	db      *database.DB
+	svc     Services
+	metrics *observability.Metrics
+	echo    *echo.Echo
 }
 
-type loginService interface {
-	Login(context.Context, string, string, string) (*households.Account, error)
-}
-
-// New constructs the HTTP server wrapper.
-func New(cfg *config.Config, hh *households.Service, login *auth.Service, fs *foods.Service, ps *planner.Service, gs *grocery.Service, pr *prep.Service, ts *transfer.Service) *Server {
-	return &Server{
-		cfg: cfg, households: hh, login: login, foods: fs, planner: ps,
-		grocery: gs, prep: pr, transfer: ts,
-		metrics: &observability.Metrics{},
-		logger:  slog.New(slog.NewJSONHandler(os.Stdout, nil)),
-	}
-}
-
-// Router builds the Echo instance with all routes mounted under BASE_PATH.
-func (s *Server) Router() *echo.Echo {
+func New(cfg config.Config, d *database.DB, svc Services, m *observability.Metrics) *Server {
+	view.BasePath = cfg.BasePath
 	e := echo.New()
 	e.HideBanner = true
-	e.IPExtractor = clientIPExtractor(s.cfg.TrustedProxyCIDRs)
-	e.Use(s.requestIDMiddleware)
-	e.Use(s.requestLoggerMiddleware())
-	e.Use(s.recoverMiddleware())
-
-	g := e.Group(s.cfg.BasePath)
-	g.Use(s.csrfMiddleware)
-	g.Use(s.sessionMiddleware)
-	g.GET("/metrics", s.handleMetrics)
-
-	if _, err := os.Stat("web/static"); err == nil {
-		g.Static("/static", "web/static")
-		g.GET("/manifest.webmanifest", func(c echo.Context) error {
-			c.Response().Header().Set(echo.HeaderContentType, "application/manifest+json")
-			return c.File("web/static/manifest.webmanifest")
-		})
-		g.GET("/service-worker.js", func(c echo.Context) error {
-			c.Response().Header().Set(echo.HeaderCacheControl, "no-cache")
-			return c.File("web/static/service-worker.js")
-		})
+	e.HidePort = true
+	if len(cfg.TrustedProxies) > 0 {
+		var opts []echo.TrustOption
+		opts = append(opts, echo.TrustLoopback(false), echo.TrustLinkLocal(false), echo.TrustPrivateNet(false))
+		for _, n := range cfg.TrustedProxies {
+			opts = append(opts, echo.TrustIPRange(n))
+		}
+		e.IPExtractor = echo.ExtractIPFromXFFHeader(opts...)
+	} else {
+		e.IPExtractor = echo.ExtractIPDirect()
 	}
-
-	g.GET("/login", s.handleLoginForm)
-	g.POST("/login", s.handleLogin)
-	g.GET("/register", s.handleRegisterForm)
-	g.POST("/register", s.handleRegister)
-	g.POST("/logout", s.handleLogout)
-
-	// Household onboarding and switching (require an account, not an active
-	// household).
-	g.GET("/onboarding", s.handleOnboarding)
-	g.POST("/households", s.handleCreateHousehold)
-	g.POST("/households/join", s.handleJoinHousehold)
-	g.POST("/households/switch", s.handleSwitchHousehold)
-
-	g.GET("/", func(c echo.Context) error { return s.redirect(c, "/today") })
-	g.GET("/today", s.handleToday)
-	g.GET("/plan", s.handlePlan)
-
-	// Editing household data (meals, foods, grocery lists, prep, imports) is
-	// owner-only (FR3 AC1/AC2). Members keep read access plus the grocery
-	// check/uncheck below.
-	g.GET("/meals/new", s.handleAddMealForm, s.requireOwner)
-	g.POST("/meals", s.handleAddMeal, s.requireOwner)
-	g.GET("/meals/:id/edit", s.handleEditMealForm, s.requireOwner)
-	g.POST("/meals/:id/edit", s.handleEditMeal, s.requireOwner)
-	g.POST("/meals/:id/delete", s.handleDeleteMeal, s.requireOwner)
-
-	g.GET("/foods", s.handleFoods)
-	g.GET("/foods/new", s.handleFoodNew, s.requireOwner)
-	g.POST("/foods/new", s.handleFoodEditPost, s.requireOwner)
-	g.GET("/foods/:id", s.handleFoodDetail)
-	g.GET("/foods/:id/edit", s.handleFoodEdit, s.requireOwner)
-	g.POST("/foods/:id/edit", s.handleFoodEditPost, s.requireOwner)
-	g.POST("/foods/:id/delete", s.handleFoodDelete, s.requireOwner)
-	g.POST("/foods/:id/reimport", s.handleFoodReimport, s.requireOwner)
-	g.GET("/import", s.handleImportForm, s.requireOwner)
-	g.POST("/import", s.handleImportPost, s.requireOwner)
-	g.POST("/import/reconcile", s.handleImportReconcile, s.requireOwner)
-
-	g.GET("/grocery", s.handleGrocery)
-	g.GET("/grocery/items/:id", s.handleGroceryItemDetail)
-	g.POST("/grocery/lists", s.handleGroceryNewList, s.requireOwner)
-	g.POST("/grocery/lists/:id/rename", s.handleGroceryRename, s.requireOwner)
-	g.POST("/grocery/lists/:id/delete", s.handleGroceryDeleteList, s.requireOwner)
-	g.POST("/grocery/lists/:id/clear-checked", s.handleGroceryClearChecked, s.requireOwner)
-	// Members may check/uncheck items on a shared list (FR3 AC3).
-	g.POST("/grocery/items/:id/toggle", s.handleGroceryToggle)
-	g.POST("/grocery/items/:id/convert", s.handleGroceryConvert, s.requireOwner)
-	g.POST("/grocery/items/:id/cost", s.handleGroceryItemCost, s.requireOwner)
-	g.POST("/grocery/items/:id/delete", s.handleGroceryDeleteItem, s.requireOwner)
-	g.GET("/grocery/generate", s.handleGroceryGenerate, s.requireOwner)
-	g.POST("/grocery/generate", s.handleGroceryGenerateCommit, s.requireOwner)
-
-	g.GET("/prep", s.handlePrep)
-	g.POST("/prep/sessions", s.handlePrepNewSession, s.requireOwner)
-	g.POST("/prep/:id/update", s.handlePrepUpdate, s.requireOwner)
-	g.POST("/prep/:id/delete", s.handlePrepDelete, s.requireOwner)
-	g.POST("/prep/:id/meals", s.handlePrepAddMeal, s.requireOwner)
-	g.POST("/prep/:id/meals/:rid/remove", s.handlePrepRemoveMeal, s.requireOwner)
-	g.POST("/prep/:id/meals/:rid/servings", s.handlePrepServings, s.requireOwner)
-	g.GET("/prep/:id/print", s.handlePrepPrint)
-
-	g.GET("/data", s.handleData)
-	g.GET("/data/export", s.handleDataExport)
-	g.POST("/data/import", s.handleDataImport, s.requireOwner)
-
-	g.GET("/settings", s.handleSettings)
-	g.POST("/settings/profile", s.handleSettingsProfile)
-	g.POST("/settings/password", s.handleSettingsPassword)
-
-	g.GET("/household", s.handleHousehold)
-	g.POST("/household/members", s.handleHouseholdAdd)
-	g.POST("/household/remove", s.handleHouseholdRemove)
-	g.POST("/household/transfer", s.handleHouseholdTransfer)
-	g.POST("/household/invite/regenerate", s.handleHouseholdRegenerateInvite)
-	g.POST("/household/invite/revoke", s.handleHouseholdRevokeInvite)
-
-	return e
+	s := &Server{cfg: cfg, db: d, svc: svc, metrics: m, echo: e}
+	e.HTTPErrorHandler = s.errorHandler
+	e.Use(s.requestLog, s.recoverer, s.securityHeaders)
+	s.routes()
+	return s
 }
 
-// clientIPExtractor accepts X-Forwarded-For only when every hop between the
-// application and the selected client is in an explicitly trusted CIDR.
-func clientIPExtractor(trusted []netip.Prefix) echo.IPExtractor {
-	return func(r *http.Request) string {
-		peer, ok := remoteIP(r.RemoteAddr)
-		if !ok || len(trusted) == 0 || !ipInPrefixes(peer, trusted) {
-			if !ok {
-				return ""
-			}
-			return peer.String()
-		}
+func (s *Server) Handler() http.Handler { return s.echo }
 
-		values := r.Header.Values(echo.HeaderXForwardedFor)
-		if len(values) == 0 {
-			return peer.String()
-		}
-		chain := strings.Split(strings.Join(values, ","), ",")
-		for i := len(chain) - 1; i >= 0; i-- {
-			addr, err := netip.ParseAddr(strings.Trim(strings.TrimSpace(chain[i]), "[]"))
-			if err != nil {
-				return peer.String()
-			}
-			addr = addr.Unmap().WithZone("")
-			if !ipInPrefixes(addr, trusted) || i == 0 {
-				return addr.String()
-			}
-		}
-		return peer.String()
-	}
-}
+func (s *Server) routes() {
+	e := s.echo
+	base := s.cfg.BasePath
+	g := e.Group(base)
 
-func remoteIP(remoteAddr string) (netip.Addr, bool) {
-	host, _, err := net.SplitHostPort(remoteAddr)
-	if err != nil {
-		host = remoteAddr
-	}
-	addr, err := netip.ParseAddr(strings.Trim(strings.TrimSpace(host), "[]"))
-	if err != nil {
-		return netip.Addr{}, false
-	}
-	return addr.Unmap().WithZone(""), true
-}
-
-func ipInPrefixes(addr netip.Addr, prefixes []netip.Prefix) bool {
-	for _, prefix := range prefixes {
-		if prefix.Contains(addr) {
-			return true
-		}
-	}
-	return false
-}
-
-const (
-	accountCtxKey       = "account"
-	memberCtxKey        = "member"
-	householdCtxKey     = "household"
-	householdNameCtxKey = "householdName"
-	tokenCtxKey         = "sessionToken"
-)
-
-// csrfMiddleware blocks cross-site state-changing requests by verifying that the
-// Origin (or, failing that, Referer) of every unsafe request matches the host
-// being served. For a same-origin, cookie-authenticated SSR app this is the
-// OWASP-recommended header defense and needs no per-form token; the SameSite=Lax
-// session cookie is a second layer. Requests with neither header are allowed
-// only in development so that curl/tests still work.
-func (s *Server) csrfMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		switch c.Request().Method {
-		case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
-			return next(c)
-		}
-		if !s.sameOrigin(c.Request()) {
-			return echo.NewHTTPError(http.StatusForbidden, "cross-origin request rejected")
-		}
-		return next(c)
-	}
-}
-
-// requireOwner rejects a request unless the active membership carries the owner
-// role. It runs after sessionMiddleware, so the membership is resolved (FR3).
-func (s *Server) requireOwner(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		if !s.member(c).IsOwner() {
-			return echo.ErrForbidden
-		}
-		return next(c)
-	}
-}
-
-// sameOrigin reports whether the request's Origin/Referer host matches the host
-// being served.
-func (s *Server) sameOrigin(r *http.Request) bool {
-	for _, header := range []string{"Origin", "Referer"} {
-		if v := r.Header.Get(header); v != "" {
-			u, err := url.Parse(v)
-			if err != nil || u.Host == "" {
-				return false
-			}
-			return u.Host == r.Host
-		}
-	}
-	// No Origin or Referer present at all.
-	return s.cfg.IsDevelopment()
-}
-
-// sessionMiddleware resolves the account and active household from the session
-// cookie and stores them on the request context. Three tiers of route access:
-//   - public: no account needed (login/register/static)
-//   - account-only: an account but no active household (onboarding/switch/logout)
-//   - household: an account with an active household (everything else)
-//
-// Requests missing the needed tier are redirected to /login or /onboarding.
-func (s *Server) sessionMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		ctx := c.Request().Context()
-		var token string
-		if cookie, err := c.Cookie(s.cfg.SessionCookieName); err == nil {
-			token = cookie.Value
-		}
-		sess, err := s.households.ResolveSession(ctx, token)
-		if err != nil {
-			return err
-		}
-		if sess == nil {
-			if s.isPublicPath(c) {
-				return next(c)
-			}
-			return s.redirect(c, "/login")
-		}
-
-		c.Set(accountCtxKey, &sess.Account)
-		c.Set(tokenCtxKey, token)
-
-		// Resolve the active household membership, if the session has one and it
-		// is still valid.
-		if sess.ActiveHouseholdID != nil {
-			member, err := s.households.GetMembership(ctx, *sess.ActiveHouseholdID, sess.Account.ID)
-			if err != nil {
-				return err
-			}
-			if member != nil {
-				c.Set(memberCtxKey, member)
-				c.Set(householdCtxKey, *sess.ActiveHouseholdID)
-				if hh, err := s.households.GetHousehold(ctx, *sess.ActiveHouseholdID); err == nil {
-					c.Set(householdNameCtxKey, hh.Name)
-				}
-			}
-		}
-
-		if s.isPublicPath(c) || s.isAccountOnlyPath(c) {
-			return next(c)
-		}
-		if c.Get(householdCtxKey) == nil {
-			return s.redirect(c, "/onboarding")
-		}
-		return next(c)
-	}
-}
-
-// isPublicPath reports whether a route is reachable without an account.
-func (s *Server) isPublicPath(c echo.Context) bool {
-	rel := strings.TrimPrefix(c.Request().URL.Path, s.cfg.BasePath)
-	switch rel {
-	case "/login", "/register", "/logout", "/manifest.webmanifest", "/service-worker.js", "/metrics":
-		return true
-	}
-	return strings.HasPrefix(rel, "/static")
-}
-
-// isAccountOnlyPath reports whether a route needs an account but not yet an
-// active household (the onboarding and switching flow).
-func (s *Server) isAccountOnlyPath(c echo.Context) bool {
-	rel := strings.TrimPrefix(c.Request().URL.Path, s.cfg.BasePath)
-	switch rel {
-	case "/onboarding", "/households", "/households/join", "/households/switch":
-		return true
-	}
-	return false
-}
-
-// setSessionCookie writes the session cookie for a freshly minted token.
-func (s *Server) setSessionCookie(c echo.Context, token string) {
-	c.SetCookie(&http.Cookie{
-		Name:     s.cfg.SessionCookieName,
-		Value:    token,
-		Path:     pathOrRoot(s.cfg.BasePath),
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   !s.cfg.IsDevelopment(),
-		Expires:  time.Now().Add(households.SessionTTL),
+	static, _ := fs.Sub(assets.Static, "static")
+	fileServer := http.StripPrefix(base+"/static/", http.FileServer(http.FS(static)))
+	g.GET("/static/*", func(c echo.Context) error {
+		c.Response().Header().Set("Cache-Control", "public, max-age=86400")
+		fileServer.ServeHTTP(c.Response(), c.Request())
+		return nil
 	})
-}
+	g.GET("/healthz", s.health)
+	g.GET("/metrics", s.metricsHandler)
+	g.GET("/manifest.webmanifest", s.manifest)
+	g.GET("/sw.js", s.serviceWorker)
 
-// clearSessionCookie expires the session cookie on logout.
-func (s *Server) clearSessionCookie(c echo.Context) {
-	c.SetCookie(&http.Cookie{
-		Name:     s.cfg.SessionCookieName,
-		Value:    "",
-		Path:     pathOrRoot(s.cfg.BasePath),
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   !s.cfg.IsDevelopment(),
-		MaxAge:   -1,
-	})
-}
-
-func pathOrRoot(basePath string) string {
-	if basePath == "" {
-		return "/"
+	app := g.Group("", s.csrf, s.session)
+	if base != "" {
+		e.GET(base, func(c echo.Context) error { return c.Redirect(http.StatusFound, base+"/") })
 	}
-	return basePath
+	app.GET("/", func(c echo.Context) error { return s.redirect(c, "/today") })
+
+	app.GET("/login", s.loginPage)
+	app.POST("/login", s.login)
+	app.GET("/register", s.registerPage)
+	app.POST("/register", s.register)
+	app.POST("/logout", s.logout)
+	app.GET("/join/:code", s.joinLink)
+
+	authed := app.Group("", s.requireAuth)
+	authed.GET("/onboarding", s.onboardingPage)
+	authed.POST("/onboarding/create", s.onboardingCreate)
+	authed.POST("/onboarding/join", s.onboardingJoin)
+	authed.GET("/settings", s.settingsPage, s.requireHousehold)
+	authed.POST("/settings/profile", s.settingsProfile, s.requireHousehold)
+	authed.POST("/settings/password", s.settingsPassword, s.requireHousehold)
+
+	h := authed.Group("", s.requireHousehold)
+	owner := s.requireOwner
+
+	h.GET("/today", s.today)
+	h.GET("/plan", s.plan)
+	h.GET("/plan/new", s.newMealStep, owner)
+	h.GET("/plan/new/meal", s.newMealEditor, owner)
+	h.POST("/plan/new/meal", s.saveNewMeal, owner)
+	h.GET("/meals/:id", s.mealDetail)
+	h.GET("/meals/:id/edit", s.editMeal, owner)
+	h.POST("/meals/:id/edit", s.saveMeal, owner)
+	h.POST("/meals/:id/delete", s.deleteMeal, owner)
+
+	h.GET("/foods", s.foods)
+	h.GET("/foods/new", s.newFood, owner)
+	h.POST("/foods/new", s.saveFood, owner)
+	h.GET("/foods/import", s.importPage, owner)
+	h.POST("/foods/import", s.importFetch, owner)
+	h.POST("/foods/import/save", s.importSave, owner)
+	h.GET("/foods/:id", s.foodDetail)
+	h.GET("/foods/:id/edit", s.editFood, owner)
+	h.POST("/foods/:id/edit", s.saveFood, owner)
+	h.POST("/foods/:id/delete", s.deleteFood, owner)
+	h.POST("/foods/:id/reimport", s.reimport, owner)
+
+	h.GET("/grocery", s.groceryLists)
+	h.POST("/grocery", s.createList, owner)
+	h.GET("/grocery/generate", s.generatePage, owner)
+	h.POST("/grocery/generate", s.generate, owner)
+	h.GET("/grocery/items/:id", s.groceryItem)
+	h.POST("/grocery/items/:id/check", s.checkItem)
+	h.POST("/grocery/items/:id/edit", s.editItem, owner)
+	h.POST("/grocery/items/:id/convert", s.convertItem, owner)
+	h.POST("/grocery/items/:id/cost", s.costItem, owner)
+	h.POST("/grocery/items/:id/delete", s.deleteItem, owner)
+	h.GET("/grocery/:id", s.groceryList)
+	h.POST("/grocery/:id/items", s.addItem, owner)
+	h.POST("/grocery/:id/rename", s.renameList, owner)
+	h.POST("/grocery/:id/delete", s.deleteList, owner)
+
+	h.GET("/prep", s.prepList)
+	h.POST("/prep", s.createPrep, owner)
+	h.GET("/prep/:id", s.prepDetail)
+	h.GET("/prep/:id/print", s.prepPrint)
+	h.POST("/prep/:id", s.updatePrep, owner)
+	h.POST("/prep/:id/delete", s.deletePrep, owner)
+	h.POST("/prep/:id/foods", s.setPrepFood, owner)
+	h.POST("/prep/:id/foods/:food/remove", s.removePrepFood, owner)
+
+	h.GET("/data", s.dataPage)
+	h.GET("/data/export", s.export, owner)
+	h.POST("/data/import", s.importData, owner)
+
+	h.GET("/household", s.householdPage)
+	h.POST("/household/switch", s.switchHousehold)
+	h.POST("/household/rename", s.renameHousehold, owner)
+	h.POST("/household/invites", s.createInvite, owner)
+	h.POST("/household/invites/:id/revoke", s.revokeInvite, owner)
+	h.POST("/household/members/:id/remove", s.removeMember, owner)
+	h.POST("/household/transfer", s.transfer, owner)
+	h.POST("/household/leave", s.leave)
 }
 
-func (s *Server) member(c echo.Context) *households.Member {
-	m, _ := c.Get(memberCtxKey).(*households.Member)
-	return m
-}
-
-func (s *Server) account(c echo.Context) *households.Account {
-	a, _ := c.Get(accountCtxKey).(*households.Account)
-	return a
-}
-
-// actorID returns the id of the account making the request, or uuid.Nil if none
-// (services record it as created_by/updated_by, G2).
-func (s *Server) actorID(c echo.Context) uuid.UUID {
-	if a := s.account(c); a != nil {
-		return a.ID
+func (s *Server) health(c echo.Context) error {
+	if err := s.db.Pool.Ping(c.Request().Context()); err != nil {
+		return c.String(http.StatusServiceUnavailable, "db unavailable")
 	}
-	return uuid.Nil
+	return c.String(http.StatusOK, "ok")
 }
 
-// household returns the active household id for the request (uuid.Nil if none).
-func (s *Server) household(c echo.Context) uuid.UUID {
-	h, _ := c.Get(householdCtxKey).(uuid.UUID)
-	return h
+func (s *Server) metricsHandler(c echo.Context) error {
+	c.Response().Header().Set("Content-Type", "text/plain; version=0.0.4")
+	s.metrics.Write(c.Response())
+	return nil
 }
 
-func (s *Server) token(c echo.Context) string {
-	t, _ := c.Get(tokenCtxKey).(string)
-	return t
-}
-
-// render writes a templ component with the base path and active household name
-// installed in context.
-func (s *Server) render(c echo.Context, comp templ.Component) error {
-	return s.renderStatus(c, http.StatusOK, comp)
-}
-
-func (s *Server) renderStatus(c echo.Context, status int, comp templ.Component) error {
-	ctx := view.WithBasePath(c.Request().Context(), s.cfg.BasePath)
-	if name, _ := c.Get(householdNameCtxKey).(string); name != "" {
-		ctx = view.WithActiveHousehold(ctx, name)
-	}
+// render writes a complete page; boosted and direct requests get the same HTML.
+func (s *Server) render(c echo.Context, status int, comp templ.Component) error {
 	c.Response().Header().Set(echo.HeaderContentType, echo.MIMETextHTMLCharsetUTF8)
 	c.Response().WriteHeader(status)
-	return comp.Render(ctx, c.Response().Writer)
+	return comp.Render(c.Request().Context(), c.Response())
 }
 
-// redirect sends a 303 to an app-absolute path, honoring BASE_PATH.
+func (s *Server) ok(c echo.Context, comp templ.Component) error {
+	return s.render(c, http.StatusOK, comp)
+}
+
+// redirect is Post/Redirect/Get to an app-local path.
 func (s *Server) redirect(c echo.Context, path string) error {
+	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+		path = "/today"
+	}
 	return c.Redirect(http.StatusSeeOther, s.cfg.BasePath+path)
 }
 
-// safeReturn keeps redirect targets app-local.
-func safeReturn(v, fallback string) string {
-	if v == "" || v[0] != '/' || (len(v) > 1 && v[1] == '/') {
-		return fallback
+func (s *Server) errorHandler(err error, c echo.Context) {
+	if c.Response().Committed {
+		return
 	}
-	return v
+	status := http.StatusInternalServerError
+	title, body := "Something went wrong", "Please try again in a moment."
+	var he *echo.HTTPError
+	switch {
+	case errors.Is(err, service.ErrNotFound):
+		status, title, body = http.StatusNotFound, "Not found", "That page or record doesn't exist in this household."
+	case errors.Is(err, service.ErrForbidden):
+		status, title, body = http.StatusForbidden, "Not allowed", "Only household owners can do that."
+	case errors.As(err, &he):
+		status = he.Code
+		switch status {
+		case http.StatusNotFound:
+			title, body = "Not found", "That page doesn't exist."
+		case http.StatusForbidden:
+			title, body = "Not allowed", "That request was rejected. Reload the page and try again."
+		case http.StatusMethodNotAllowed:
+			title, body = "Not allowed", "That action isn't supported here."
+		case http.StatusRequestEntityTooLarge:
+			title, body = "Too large", "That upload is too large."
+		}
+	}
+	if status >= 500 {
+		slog.ErrorContext(c.Request().Context(), "request failed", "err", err, "path", c.Request().URL.Path,
+			"request_id", observability.RequestID(c.Request().Context()))
+	}
+	if c.Request().Method == http.MethodHead {
+		_ = c.NoContent(status)
+		return
+	}
+	_ = s.render(c, status, view.ErrorPage(status, title, body))
 }
 
-func todayStr() string {
-	return time.Now().Format(view.DateFormat)
-}
+// Shutdown stops the server gracefully.
+func (s *Server) Shutdown(ctx context.Context) error { return s.echo.Shutdown(ctx) }

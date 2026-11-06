@@ -1,290 +1,189 @@
-package httpserver
+package http
 
 import (
-	"strconv"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"mealplanner/internal/foods"
-	"mealplanner/internal/households"
-	"mealplanner/internal/prep"
-	"mealplanner/internal/view/pages"
+	"github.com/icylionz/mealplanner/internal/service"
+	"github.com/icylionz/mealplanner/internal/view"
 )
 
-func (s *Server) prepData(c echo.Context) (pages.PrepData, error) {
-	ctx := c.Request().Context()
-	hh := s.household(c)
-
-	sessions, err := s.prep.ListAll(ctx, hh)
-	if err != nil {
-		return pages.PrepData{}, err
-	}
-	all, err := s.foods.List(ctx, hh)
-	if err != nil {
-		return pages.PrepData{}, err
-	}
-	// Picker (d.Foods below) uses live foods only; the display/aggregate index
-	// includes soft-deleted foods so a session meal whose food was removed still
-	// renders its name (G1).
-	withDeleted, err := s.foods.ListWithDeleted(ctx, hh)
-	if err != nil {
-		return pages.PrepData{}, err
-	}
-	idx := foods.Index(withDeleted)
-
-	d := pages.PrepData{
-		Member:     s.member(c),
-		AddingMeal: c.QueryParam("add") == "1",
-		FoodSearch: c.QueryParam("q"),
-	}
-	for _, r := range all {
-		if r.Matches(d.FoodSearch) {
-			d.Foods = append(d.Foods, r)
-		}
-	}
-
-	want := c.QueryParam("session")
-	if want == "" {
-		want = c.Param("id")
-	}
-	for _, sess := range sessions {
-		vm := s.prepSessionVM(sess, idx)
-		d.Sessions = append(d.Sessions, vm)
-		if sess.ID.String() == want {
-			active := vm
-			d.Active = &active
-		}
-	}
-	if d.Active == nil && len(d.Sessions) > 0 {
-		active := d.Sessions[0]
-		d.Active = &active
-	}
-
-	if d.Active != nil {
-		var leaves []foods.LeafIngredient
-		for _, m := range d.Active.Meals {
-			leaves = append(leaves, foods.LeafIngredients(idx, m.Food.ID, float64(m.Servings))...)
-		}
-		for _, ing := range foods.Aggregate(leaves, foods.DensityMap(idx)) {
-			d.Aggregate = append(d.Aggregate, pages.GenPreviewItem{Name: foods.IngredientDisplayName(ing.Name, ing.Variant), Amount: ing.Amount, Unit: ing.Unit})
-		}
-	}
-	return d, nil
-}
-
-func (s *Server) prepSessionVM(sess prep.Session, idx map[uuid.UUID]foods.Food) pages.PrepSessionVM {
-	var meals []pages.PrepMealVM
-	for _, m := range sess.Meals {
-		r, ok := idx[m.FoodID]
-		if !ok {
-			continue
-		}
-		var breakdown []pages.GenPreviewItem
-		for _, ing := range foods.Aggregate(foods.LeafIngredients(idx, r.ID, float64(m.Servings)), foods.DensityMap(idx)) {
-			breakdown = append(breakdown, pages.GenPreviewItem{Name: foods.IngredientDisplayName(ing.Name, ing.Variant), Amount: ing.Amount, Unit: ing.Unit})
-		}
-		meals = append(meals, pages.PrepMealVM{Food: r, Servings: m.Servings, Breakdown: breakdown})
-	}
-	return pages.NewPrepSessionVM(sess.ID.String(), sess.Name, sess.Date, meals)
-}
-
-func (s *Server) handlePrep(c echo.Context) error {
-	d, err := s.prepData(c)
+func (s *Server) prepListView(c echo.Context, status int, errs []string) error {
+	sessions, err := s.svc.Prep.Sessions(c.Request().Context(), actor(c).HouseholdID)
 	if err != nil {
 		return err
 	}
-	return s.render(c, pages.Prep(d))
+	return s.render(c, status, view.PrepListPage(sessions, s.today0(), errs))
 }
 
-func (s *Server) handlePrepPrint(c echo.Context) error {
-	d, err := s.prepData(c)
+func (s *Server) prepList(c echo.Context) error { return s.prepListView(c, http.StatusOK, nil) }
+
+func (s *Server) createPrep(c echo.Context) error {
+	date, _ := parseDate(c.FormValue("date"))
+	id, err := s.svc.Prep.Create(c.Request().Context(), actor(c), c.FormValue("name"), date)
+	if msgs, ok := problems(err); ok {
+		return s.prepListView(c, http.StatusUnprocessableEntity, msgs)
+	}
 	if err != nil {
 		return err
 	}
-	if d.Active == nil {
-		return s.redirect(c, "/prep")
-	}
-	return s.render(c, pages.PrepPrint(pages.PrepPrintData{
-		Member: d.Member, Session: *d.Active, Aggregate: d.Aggregate,
-	}))
+	return s.redirect(c, "/prep/"+id.String())
 }
 
-func (s *Server) handlePrepNewSession(c echo.Context) error {
-	id, err := s.prep.Create(c.Request().Context(), s.household(c), "Prep session", todayStr())
+func (s *Server) prepView(c echo.Context, status int, id uuid.UUID, errs []string) error {
+	d, err := s.svc.Prep.Detail(c.Request().Context(), actor(c).HouseholdID, id)
 	if err != nil {
 		return err
 	}
-	return s.redirect(c, "/prep?session="+id.String())
+	return s.render(c, status, view.PrepDetailPage(view.PrepPage{D: d, Options: foodOptions(d.Catalog, ""), Errors: errs}))
 }
 
-func (s *Server) handlePrepUpdate(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
+func (s *Server) prepDetail(c echo.Context) error {
+	id, err := parseID(c, "id")
 	if err != nil {
-		return echo.ErrNotFound
-	}
-	if err := s.prep.Update(c.Request().Context(), s.household(c), id, c.FormValue("name"), c.FormValue("date")); err != nil {
 		return err
 	}
-	return s.redirect(c, "/prep?session="+id.String())
+	return s.prepView(c, http.StatusOK, id, nil)
 }
 
-func (s *Server) handlePrepDelete(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
+func (s *Server) prepPrint(c echo.Context) error {
+	id, err := parseID(c, "id")
 	if err != nil {
-		return echo.ErrNotFound
-	}
-	if err := s.prep.Delete(c.Request().Context(), s.household(c), id); err != nil {
 		return err
 	}
+	d, err := s.svc.Prep.Detail(c.Request().Context(), actor(c).HouseholdID, id)
+	if err != nil {
+		return err
+	}
+	return s.ok(c, view.PrepPrintPage(d))
+}
+
+func (s *Server) prepResult(c echo.Context, id uuid.UUID, err error, msg string) error {
+	if msgs, ok := problems(err); ok {
+		return s.prepView(c, http.StatusUnprocessableEntity, id, msgs)
+	}
+	if err != nil {
+		return err
+	}
+	if msg != "" {
+		s.flash(c, "ok", msg)
+	}
+	return s.redirect(c, "/prep/"+id.String())
+}
+
+func (s *Server) updatePrep(c echo.Context) error {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return err
+	}
+	date, _ := parseDate(c.FormValue("date"))
+	return s.prepResult(c, id, s.svc.Prep.Update(c.Request().Context(), actor(c), id, c.FormValue("name"), date), "Session saved.")
+}
+
+func (s *Server) deletePrep(c echo.Context) error {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return err
+	}
+	if err := s.svc.Prep.Delete(c.Request().Context(), actor(c), id); err != nil {
+		return err
+	}
+	s.flash(c, "ok", "Prep session deleted.")
 	return s.redirect(c, "/prep")
 }
 
-func (s *Server) handlePrepAddMeal(c echo.Context) error {
-	hh := s.household(c)
-	sessionID, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	foodID, err := uuid.Parse(c.QueryParam("food"))
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	r, err := s.foods.Get(c.Request().Context(), hh, foodID)
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	if err := s.prep.AddMeal(c.Request().Context(), hh, sessionID, foodID, r.Servings); err != nil {
-		return err
-	}
-	return s.redirect(c, "/prep?session="+sessionID.String())
-}
-
-func (s *Server) handlePrepRemoveMeal(c echo.Context) error {
-	sessionID, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	foodID, err := uuid.Parse(c.Param("rid"))
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	if err := s.prep.RemoveMeal(c.Request().Context(), s.household(c), sessionID, foodID); err != nil {
-		return err
-	}
-	return s.redirect(c, "/prep?session="+sessionID.String())
-}
-
-func (s *Server) handlePrepServings(c echo.Context) error {
-	sessionID, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	foodID, err := uuid.Parse(c.Param("rid"))
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	delta, err := strconv.Atoi(c.QueryParam("delta"))
-	if err != nil || (delta != 1 && delta != -1) {
-		return echo.ErrBadRequest
-	}
-	if err := s.prep.AdjustServings(c.Request().Context(), s.household(c), sessionID, foodID, delta); err != nil {
-		return err
-	}
-	return s.redirect(c, "/prep?session="+sessionID.String())
-}
-
-func (s *Server) handleHousehold(c echo.Context) error {
-	return s.renderHousehold(c, "")
-}
-
-func (s *Server) renderHousehold(c echo.Context, errMsg string) error {
-	ctx := c.Request().Context()
-	hh := s.household(c)
-	household, err := s.households.GetHousehold(ctx, hh)
+func (s *Server) setPrepFood(c echo.Context) error {
+	id, err := parseID(c, "id")
 	if err != nil {
 		return err
 	}
-	members, err := s.households.ListMembers(ctx, hh)
-	if err != nil {
-		return err
-	}
-	var invite *households.Invite
-	if s.member(c).IsOwner() {
-		invite, err = s.households.GetLatestInvite(ctx, hh)
+	servings, _ := parseFloat(c.FormValue("servings"))
+	foodID, perr := uuid.Parse(c.FormValue("food_id"))
+	if perr != nil {
+		cat, err := s.catalog(c)
 		if err != nil {
 			return err
 		}
+		f := cat.FindByName(c.FormValue("food_name"))
+		if f == nil {
+			return s.prepView(c, http.StatusUnprocessableEntity, id, []string{"Choose a food from the suggestions."})
+		}
+		foodID = f.ID
 	}
-	all, err := s.households.ListForAccount(ctx, s.account(c).ID)
+	return s.prepResult(c, id, s.svc.Prep.SetFood(c.Request().Context(), actor(c), id, foodID, servings), "")
+}
+
+func (s *Server) removePrepFood(c echo.Context) error {
+	id, err := parseID(c, "id")
 	if err != nil {
 		return err
 	}
-	return s.render(c, pages.Household(pages.HouseholdData{
-		Member:     s.member(c),
-		Household:  household,
-		Invite:     invite,
-		Members:    members,
-		Households: all,
-		ShowInvite: c.QueryParam("invite") == "1",
-		Error:      errMsg,
-	}))
-}
-
-func (s *Server) handleHouseholdAdd(c echo.Context) error {
-	if !s.member(c).IsOwner() {
-		return echo.ErrForbidden
-	}
-	if err := s.households.AddMemberByEmail(c.Request().Context(), s.household(c), c.FormValue("email")); err != nil {
-		return s.renderHousehold(c, err.Error())
-	}
-	return s.redirect(c, "/household")
-}
-
-func (s *Server) handleHouseholdRemove(c echo.Context) error {
-	if !s.member(c).IsOwner() {
-		return echo.ErrForbidden
-	}
-	accountID, err := uuid.Parse(c.QueryParam("member"))
+	foodID, err := parseID(c, "food")
 	if err != nil {
-		return echo.ErrNotFound
-	}
-	if err := s.households.RemoveMember(c.Request().Context(), s.household(c), accountID); err != nil {
 		return err
 	}
-	return s.redirect(c, "/household")
+	return s.prepResult(c, id, s.svc.Prep.RemoveFood(c.Request().Context(), actor(c), id, foodID), "")
 }
 
-func (s *Server) handleHouseholdTransfer(c echo.Context) error {
-	if !s.member(c).IsOwner() {
-		return echo.ErrForbidden
+// Data import/export ---------------------------------------------------------
+
+func (s *Server) dataPage(c echo.Context) error {
+	return s.ok(c, view.DataPageView(view.DataPage{}))
+}
+
+func (s *Server) export(c echo.Context) error {
+	sections := c.QueryParams()["section"]
+	if len(sections) == 0 {
+		sections = service.AllSections
 	}
-	target, err := uuid.Parse(c.QueryParam("member"))
+	f, err := s.svc.Transfer.Export(c.Request().Context(), actor(c), sections)
 	if err != nil {
-		return echo.ErrNotFound
-	}
-	if err := s.households.TransferOwnership(c.Request().Context(), s.household(c), s.actorID(c), target); err != nil {
-		return s.renderHousehold(c, err.Error())
-	}
-	return s.redirect(c, "/household")
-}
-
-func (s *Server) handleHouseholdRegenerateInvite(c echo.Context) error {
-	if !s.member(c).IsOwner() {
-		return echo.ErrForbidden
-	}
-	if _, err := s.households.RegenerateInvite(c.Request().Context(), s.household(c), s.actorID(c)); err != nil {
 		return err
 	}
-	return s.redirect(c, "/household")
+	name := fmt.Sprintf("mealplanner-export-%s.json", time.Now().In(s.cfg.Timezone).Format("20060102"))
+	c.Response().Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	c.Response().Header().Set(echo.HeaderContentType, echo.MIMEApplicationJSONCharsetUTF8)
+	c.Response().WriteHeader(http.StatusOK)
+	enc := json.NewEncoder(c.Response())
+	enc.SetIndent("", "  ")
+	return enc.Encode(f)
 }
 
-func (s *Server) handleHouseholdRevokeInvite(c echo.Context) error {
-	if !s.member(c).IsOwner() {
-		return echo.ErrForbidden
+func (s *Server) importData(c echo.Context) error {
+	c.Request().Body = http.MaxBytesReader(c.Response(), c.Request().Body, 32<<20)
+	fh, err := c.FormFile("file")
+	if err != nil {
+		return s.render(c, http.StatusUnprocessableEntity, view.DataPageView(view.DataPage{Errors: []string{"Choose an export file to import."}}))
 	}
-	if err := s.households.RevokeInvite(c.Request().Context(), s.household(c)); err != nil {
+	file, err := fh.Open()
+	if err != nil {
 		return err
 	}
-	return s.redirect(c, "/household")
+	defer file.Close()
+	f, err := service.ParseExport(file)
+	if msgs, ok := problems(err); ok {
+		s.metrics.Inc("mealplanner_import_failures_total", "kind", "json")
+		return s.render(c, http.StatusUnprocessableEntity, view.DataPageView(view.DataPage{Errors: msgs}))
+	}
+	if err != nil {
+		return err
+	}
+	form, _ := c.MultipartForm()
+	var sections []string
+	if form != nil {
+		sections = form.Value["section"]
+	}
+	rep, err := s.svc.Transfer.Import(c.Request().Context(), actor(c), f, sections)
+	if msgs, ok := problems(err); ok {
+		return s.render(c, http.StatusUnprocessableEntity, view.DataPageView(view.DataPage{Errors: msgs}))
+	}
+	if err != nil {
+		return err
+	}
+	return s.ok(c, view.DataPageView(view.DataPage{Report: &rep}))
 }

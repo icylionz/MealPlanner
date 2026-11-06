@@ -1,7 +1,8 @@
-package httpserver
+package http
 
 import (
 	"errors"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -9,503 +10,349 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"mealplanner/internal/foods"
-	"mealplanner/internal/planner"
-	"mealplanner/internal/view"
-	"mealplanner/internal/view/pages"
+	"github.com/icylionz/mealplanner/internal/service"
+	"github.com/icylionz/mealplanner/internal/units"
+	"github.com/icylionz/mealplanner/internal/view"
 )
 
-// mondayOf returns the Monday of the ISO week containing t.
-func mondayOf(t time.Time) time.Time {
-	offset := int(t.Weekday())
-	if offset == 0 {
-		offset = 7
-	}
-	return t.AddDate(0, 0, -(offset - 1))
+func dateOnly(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 }
 
-func (s *Server) mealVMs(c echo.Context, meals []planner.Meal, idx map[uuid.UUID]foods.Food, markNext bool) []pages.MealVM {
-	now := time.Now()
-	nowHHMM := now.Format("15:04")
-	today := todayStr()
+func (s *Server) today0() time.Time { return dateOnly(time.Now().In(s.cfg.Timezone)) }
 
-	out := make([]pages.MealVM, 0, len(meals))
-	nextAssigned := false
+func parseDate(v string) (time.Time, bool) {
+	t, err := time.Parse("2006-01-02", strings.TrimSpace(v))
+	return t, err == nil
+}
+
+func parseFloat(v string) (float64, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0, false
+	}
+	return units.ParseAmount(v)
+}
+
+func optFloat(v string) *float64 {
+	if f, ok := parseFloat(v); ok {
+		return &f
+	}
+	return nil
+}
+
+func parseID(c echo.Context, name string) (uuid.UUID, error) {
+	id, err := uuid.Parse(c.Param(name))
+	if err != nil {
+		return uuid.Nil, service.ErrNotFound
+	}
+	return id, nil
+}
+
+// foodOptions builds datalist entries for name and alias search.
+func foodOptions(cat *service.Catalog, kind string) []view.FoodOption {
+	var out []view.FoodOption
+	for _, f := range cat.Search(service.FoodFilter{Kind: kind}) {
+		label := "Ingredient"
+		if f.IsRecipe() {
+			label = "Recipe"
+		}
+		out = append(out, view.FoodOption{ID: f.ID, Name: f.Name, Label: label})
+		for _, a := range f.Aliases {
+			out = append(out, view.FoodOption{ID: f.ID, Name: a, Label: "→ " + f.Name})
+		}
+	}
+	return out
+}
+
+func (s *Server) catalog(c echo.Context) (*service.Catalog, error) {
+	return s.svc.Foods.Catalog(c.Request().Context(), actor(c).HouseholdID)
+}
+
+func (s *Server) today(c echo.Context) error {
+	cat, err := s.catalog(c)
+	if err != nil {
+		return err
+	}
+	day := s.today0()
+	meals, err := s.svc.Planner.Range(c.Request().Context(), actor(c).HouseholdID, cat, day, day.AddDate(0, 0, 6))
+	if err != nil {
+		return err
+	}
+	d := view.TodayData{Date: day}
+	byDay := map[string][]service.MealView{}
 	for _, m := range meals {
-		r, ok := idx[m.FoodID]
-		if !ok {
-			continue
-		}
-		vm := pages.MealVM{Meal: m, Food: r}
-		for _, ex := range m.Recipes {
-			ef, ok := idx[ex.FoodID]
-			if !ok {
-				continue
+		k := view.ISODate(m.Meal.PlanDate)
+		byDay[k] = append(byDay[k], m)
+	}
+	d.Meals = byDay[view.ISODate(day)]
+	d.Next = service.NextIndex(d.Meals, time.Now().In(s.cfg.Timezone))
+	for i := 1; i <= 6; i++ {
+		dd := day.AddDate(0, 0, i)
+		d.Upcoming = append(d.Upcoming, view.DayMeals{Date: dd, Meals: byDay[view.ISODate(dd)]})
+	}
+	return s.ok(c, view.TodayPage(d))
+}
+
+func (s *Server) plan(c echo.Context) error {
+	cat, err := s.catalog(c)
+	if err != nil {
+		return err
+	}
+	date, ok := parseDate(c.QueryParam("date"))
+	if !ok {
+		date = s.today0()
+	}
+	mode := c.QueryParam("view")
+	if mode != "week" {
+		mode = "day"
+	}
+	d := view.PlanData{View: mode, Date: date, Today: s.today0()}
+	from, to := date, date
+	if mode == "week" {
+		offset := (int(date.Weekday()) + 6) % 7 // weeks start Monday
+		from = date.AddDate(0, 0, -offset)
+		to = from.AddDate(0, 0, 6)
+		d.Prev, d.Next = date.AddDate(0, 0, -7), date.AddDate(0, 0, 7)
+	} else {
+		d.Prev, d.Next = date.AddDate(0, 0, -1), date.AddDate(0, 0, 1)
+	}
+	meals, err := s.svc.Planner.Range(c.Request().Context(), actor(c).HouseholdID, cat, from, to)
+	if err != nil {
+		return err
+	}
+	for day := from; !day.After(to); day = day.AddDate(0, 0, 1) {
+		dm := view.DayMeals{Date: day}
+		for _, m := range meals {
+			if m.Meal.PlanDate.Equal(day) {
+				dm.Meals = append(dm.Meals, m)
 			}
-			vm.Extras = append(vm.Extras, pages.MealExtraVM{Food: ef, Servings: ex.ScaledServings(m.Servings)})
 		}
-		if markNext && m.Date == today {
-			vm.IsPast = m.Time < nowHHMM
-			if !vm.IsPast && !nextAssigned {
-				vm.IsNext = true
-				nextAssigned = true
-			}
-		}
-		out = append(out, vm)
+		d.Days = append(d.Days, dm)
 	}
-	return out
+	return s.ok(c, view.PlanPage(d))
 }
 
-func (s *Server) handleToday(c echo.Context) error {
-	ctx := c.Request().Context()
-	today := todayStr()
-
-	meals, err := s.planner.ListBetween(ctx, s.household(c), today, today)
-	if err != nil {
-		return err
-	}
-	// Include soft-deleted foods so a meal whose food was removed still renders
-	// its name (G1).
-	all, err := s.foods.ListWithDeleted(ctx, s.household(c))
-	if err != nil {
-		return err
-	}
-	idx := foods.Index(all)
-
-	return s.render(c, pages.Today(pages.TodayData{
-		Member:    s.member(c),
-		Date:      today,
-		DateLabel: view.DayLabelLong(today),
-		Meals:     s.mealVMs(c, meals, idx, true),
-	}))
-}
-
-func (s *Server) handlePlan(c echo.Context) error {
-	ctx := c.Request().Context()
-	today := todayStr()
-
-	selected := c.QueryParam("date")
-	if _, err := time.Parse(view.DateFormat, selected); err != nil {
-		selected = today
-	}
-	layout := "list"
-	if c.QueryParam("layout") == "calendar" {
-		layout = "calendar"
-	}
-
-	selT := view.ParseDate(selected)
-	monthAnchor := time.Date(selT.Year(), selT.Month(), 1, 0, 0, 0, 0, time.UTC)
-	if m := c.QueryParam("month"); m != "" {
-		if t, err := time.Parse("2006-01", m); err == nil {
-			monthAnchor = t
-		}
-	}
-
-	weekMon := mondayOf(selT)
-	weekDates := make([]string, 7)
-	for i := range weekDates {
-		weekDates[i] = weekMon.AddDate(0, 0, i).Format(view.DateFormat)
-	}
-
-	// One range covering both the visible month and the selected week.
-	monthEnd := monthAnchor.AddDate(0, 1, -1)
-	rangeFrom, rangeTo := monthAnchor.Format(view.DateFormat), monthEnd.Format(view.DateFormat)
-	if weekDates[0] < rangeFrom {
-		rangeFrom = weekDates[0]
-	}
-	if weekDates[6] > rangeTo {
-		rangeTo = weekDates[6]
-	}
-
-	weekMeals, err := s.planner.ListBetween(ctx, s.household(c), weekDates[0], weekDates[6])
-	if err != nil {
-		return err
-	}
-	hasMeals, err := s.planner.DatesWithMeals(ctx, s.household(c), rangeFrom, rangeTo)
-	if err != nil {
-		return err
-	}
-	// Include soft-deleted foods so meals referencing a removed food still render
-	// their name (G1).
-	all, err := s.foods.ListWithDeleted(ctx, s.household(c))
-	if err != nil {
-		return err
-	}
-	idx := foods.Index(all)
-
-	dayAbbr := []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
-	mealCount := map[string]int{}
-	weekVMs := map[string][]pages.MealVM{}
-	for _, m := range weekMeals {
-		mealCount[m.Date]++
-	}
-	for _, m := range s.mealVMs(c, weekMeals, idx, false) {
-		weekVMs[m.Meal.Date] = append(weekVMs[m.Meal.Date], m)
-	}
-
-	weekDays := make([]pages.PlanDay, 7)
-	for i, d := range weekDates {
-		weekDays[i] = pages.PlanDay{
-			Date:      d,
-			DayAbbr:   dayAbbr[i],
-			DayNum:    strconv.Itoa(view.ParseDate(d).Day()),
-			MealCount: mealCount[d],
-			IsToday:   d == today,
-			IsSel:     d == selected,
-		}
-	}
-
-	// Mini calendar cells, Monday-based.
-	firstDow := int(monthAnchor.Weekday())
-	lead := firstDow - 1
-	if firstDow == 0 {
-		lead = 6
-	}
-	cells := make([]pages.CalCell, 0, lead+31)
-	for i := 0; i < lead; i++ {
-		cells = append(cells, pages.CalCell{})
-	}
-	for d := monthAnchor; d.Month() == monthAnchor.Month(); d = d.AddDate(0, 0, 1) {
-		ds := d.Format(view.DateFormat)
-		cells = append(cells, pages.CalCell{
-			Date: ds, DayNum: strconv.Itoa(d.Day()),
-			HasMeals: hasMeals[ds], IsToday: ds == today, IsSel: ds == selected,
-		})
-	}
-
-	return s.render(c, pages.Plan(pages.PlanData{
-		Member:        s.member(c),
-		SelectedDate:  selected,
-		SelectedLabel: view.DayLabelMedium(selected),
-		IsSelToday:    selected == today,
-		Layout:        layout,
-		MonthLabel:    monthAnchor.Format("January 2006"),
-		PrevMonth:     monthAnchor.AddDate(0, -1, 0).Format("2006-01"),
-		NextMonth:     monthAnchor.AddDate(0, 1, 0).Format("2006-01"),
-		CalCells:      cells,
-		WeekDays:      weekDays,
-		DayMeals:      weekVMs[selected],
-		WeekMeals:     weekVMs,
-	}))
-}
-
-func (s *Server) handleAddMealForm(c echo.Context) error {
-	ctx := c.Request().Context()
-
+func (s *Server) newMealStep(c echo.Context) error {
 	date := c.QueryParam("date")
-	if _, err := time.Parse(view.DateFormat, date); err != nil {
-		date = todayStr()
+	if _, ok := parseDate(date); !ok {
+		date = view.ISODate(s.today0())
 	}
-	timeOfDay := c.QueryParam("time")
-	if timeOfDay == "" {
-		timeOfDay = "12:00"
-	}
-	servings, err := strconv.Atoi(c.QueryParam("servings"))
-	if err != nil || servings < 1 {
-		servings = 2
-	}
-	search := c.QueryParam("q")
-	selected := c.QueryParam("food")
-	returnTo := safeReturn(c.QueryParam("return"), "/today")
+	return s.ok(c, view.NewMealStepPage(view.NewMealStep{Date: date, Time: "18:30"}))
+}
 
-	all, err := s.foods.List(ctx, s.household(c))
+func (s *Server) newMealEditor(c echo.Context) error {
+	date, okD := parseDate(c.QueryParam("date"))
+	tm := c.QueryParam("time")
+	if !okD || tm == "" {
+		return s.render(c, http.StatusUnprocessableEntity, view.NewMealStepPage(view.NewMealStep{
+			Date: c.QueryParam("date"), Time: tm, Errors: []string{"Choose a date and time first."},
+		}))
+	}
+	cat, err := s.catalog(c)
 	if err != nil {
 		return err
 	}
-	var filtered []foods.Food
-	var selectedFood *foods.Food
-	for _, r := range all {
-		if r.Matches(search) {
-			filtered = append(filtered, r)
-		}
-		if r.ID.String() == selected {
-			rc := r
-			selectedFood = &rc
-		}
-	}
-
-	active := "today"
-	if strings.HasPrefix(returnTo, "/plan") {
-		active = "plan"
-	} else if strings.HasPrefix(returnTo, "/foods") {
-		active = "foods"
-	}
-
-	return s.render(c, pages.AddMeal(pages.AddMealData{
-		Member: s.member(c), Date: date, Time: timeOfDay, Servings: servings,
-		Search: search, Foods: filtered, Selected: selected,
-		SelectedFood: selectedFood, Title: c.QueryParam("title"), Notes: c.QueryParam("notes"),
-		Extras: map[string]string{}, ReturnTo: returnTo, Active: active,
-	}))
+	in := service.MealInput{Date: date, Time: tm, Servings: 2, Title: c.QueryParam("title")}
+	return s.renderMealEditor(c, http.StatusOK, cat, view.MealEditor{Input: in, Creating: true})
 }
 
-// parseExtras reads the additional-recipe selection from the submitted form:
-// each checked "extra" food id, with an optional per-recipe servings override
-// posted as "override_<foodid>". The primary food is skipped so it is never
-// double-counted (G4).
-func parseExtras(c echo.Context, primary uuid.UUID) []planner.MealRecipe {
-	var out []planner.MealRecipe
-	seen := map[uuid.UUID]bool{primary: true}
-	for _, v := range c.Request().Form["extra"] {
-		fid, err := uuid.Parse(v)
-		if err != nil || seen[fid] {
+func (s *Server) renderMealEditor(c echo.Context, status int, cat *service.Catalog, e view.MealEditor) error {
+	e.Names = map[uuid.UUID]string{}
+	for _, f := range e.Input.Foods {
+		e.Names[f.FoodID] = cat.Name(f.FoodID)
+	}
+	e.Options = foodOptions(cat, "")
+	return s.render(c, status, view.MealEditorPage(e))
+}
+
+// readMealForm parses the editor form, including in-progress rows.
+func readMealForm(c echo.Context) service.MealInput {
+	in := service.MealInput{Time: c.FormValue("time"), Title: c.FormValue("title"), Notes: c.FormValue("notes"),
+		Link: c.FormValue("link"), Freq: c.FormValue("freq"), Scope: c.FormValue("scope")}
+	in.Date, _ = parseDate(c.FormValue("date"))
+	in.Servings, _ = parseFloat(c.FormValue("servings"))
+	if v, err := strconv.Atoi(c.FormValue("version")); err == nil {
+		in.Version = int32(v)
+	}
+	if v, err := strconv.Atoi(c.FormValue("series_version")); err == nil {
+		in.SeriesVersion = int32(v)
+	}
+	if u, ok := parseDate(c.FormValue("until")); ok {
+		in.Until = &u
+	}
+	form, _ := c.FormParams()
+	ids, overrides := form["food_id"], form["override"]
+	for i, raw := range ids {
+		id, err := uuid.Parse(raw)
+		if err != nil {
 			continue
 		}
-		seen[fid] = true
-		mr := planner.MealRecipe{FoodID: fid}
-		if n, err := strconv.Atoi(c.FormValue("override_" + v)); err == nil && n >= 1 {
-			mr.ServingsOverride = &n
+		f := service.MealFoodInput{FoodID: id}
+		if i < len(overrides) {
+			f.Override = optFloat(overrides[i])
 		}
-		out = append(out, mr)
+		in.Foods = append(in.Foods, f)
 	}
-	return out
+	for _, w := range form["weekday"] {
+		if n, err := strconv.Atoi(w); err == nil && n >= 0 && n <= 6 {
+			in.Weekdays = append(in.Weekdays, n)
+		}
+	}
+	if in.Scope == "" {
+		in.Scope = "this"
+	}
+	return in
 }
 
-func (s *Server) handleAddMeal(c echo.Context) error {
-	returnTo := safeReturn(c.FormValue("return"), "/today")
-	foodID, err := uuid.Parse(c.FormValue("food"))
-	if err != nil {
-		return s.redirect(c, returnTo)
-	}
-	servings, err := strconv.Atoi(c.FormValue("servings"))
-	if err != nil {
-		servings = 2
-	}
-	date, timeOfDay := c.FormValue("date"), c.FormValue("time")
-	title, notes := strings.TrimSpace(c.FormValue("title")), strings.TrimSpace(c.FormValue("notes"))
-	extras := parseExtras(c, foodID)
-
-	if c.FormValue("repeat") == "on" {
-		rec := planner.Recurrence{
-			Freq:     c.FormValue("freq"),
-			Weekdays: parseWeekdays(c.Request().Form["weekday"]),
-			Until:    c.FormValue("until"),
+// mealEditorOp applies a non-save editor action. It returns true when the
+// form should be re-rendered instead of saved.
+func mealEditorOp(op string, e *view.MealEditor, cat *service.Catalog, pick string) bool {
+	switch {
+	case op == "add" || (op == "refresh" && strings.TrimSpace(pick) != ""):
+		f := cat.FindByName(pick)
+		if f == nil {
+			e.Pick = pick
+			e.Errors = []string{"No food or recipe named \"" + strings.TrimSpace(pick) + "\". Pick one from the suggestions."}
+			return true
 		}
-		if err := s.planner.AddRecurring(c.Request().Context(), s.household(c), s.actorID(c), date, timeOfDay, foodID, servings, title, notes, extras, rec); err != nil {
-			return err
+		for _, x := range e.Input.Foods {
+			if x.FoodID == f.ID {
+				e.Errors = []string{f.Name + " is already on this meal."}
+				return true
+			}
 		}
-		return s.redirect(c, returnTo)
+		e.Input.Foods = append(e.Input.Foods, service.MealFoodInput{FoodID: f.ID})
+		return true
+	case strings.HasPrefix(op, "remove:"):
+		if i, err := strconv.Atoi(strings.TrimPrefix(op, "remove:")); err == nil && i >= 0 && i < len(e.Input.Foods) {
+			e.Input.Foods = append(e.Input.Foods[:i], e.Input.Foods[i+1:]...)
+		}
+		return true
+	case op == "save":
+		return false
 	}
-
-	if err := s.planner.Add(c.Request().Context(), s.household(c), s.actorID(c), date, timeOfDay, foodID, servings, title, notes, extras); err != nil {
-		return err
-	}
-	return s.redirect(c, returnTo)
+	return true
 }
 
-// parseWeekdays converts submitted weekday values (0=Sun..6=Sat) to time.Weekday.
-func parseWeekdays(vals []string) []time.Weekday {
-	var out []time.Weekday
-	for _, v := range vals {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 6 {
-			out = append(out, time.Weekday(n))
-		}
-	}
-	return out
-}
-
-func (s *Server) handleEditMealForm(c echo.Context) error {
-	ctx := c.Request().Context()
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	m, err := s.planner.Get(ctx, s.household(c), id)
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	d, err := s.editMealData(c, m, safeReturn(c.QueryParam("return"), "/today"), c.QueryParam("q"))
+func (s *Server) saveNewMeal(c echo.Context) error {
+	cat, err := s.catalog(c)
 	if err != nil {
 		return err
 	}
-	return s.render(c, pages.EditMeal(d))
-}
-
-// editMealData builds the edit-meal view model from a meal and its food catalog.
-func (s *Server) editMealData(c echo.Context, m *planner.Meal, returnTo, search string) (pages.EditMealData, error) {
-	ctx := c.Request().Context()
-	all, err := s.foods.List(ctx, s.household(c))
-	if err != nil {
-		return pages.EditMealData{}, err
+	e := view.MealEditor{Input: readMealForm(c), Creating: true}
+	if mealEditorOp(c.FormValue("op"), &e, cat, c.FormValue("pick")) {
+		return s.renderMealEditor(c, http.StatusOK, cat, e)
 	}
-	var filtered []foods.Food
-	var selectedFood *foods.Food
-	for _, r := range all {
-		if r.Matches(search) {
-			filtered = append(filtered, r)
-		}
-		if r.ID == m.FoodID {
-			rc := r
-			selectedFood = &rc
-		}
-	}
-
-	active := "today"
-	if strings.HasPrefix(returnTo, "/plan") {
-		active = "plan"
-	} else if strings.HasPrefix(returnTo, "/foods") {
-		active = "foods"
-	}
-
-	var series *planner.Series
-	if m.SeriesID != nil {
-		series, _ = s.planner.GetSeries(ctx, s.household(c), *m.SeriesID)
-	}
-
-	extras := map[string]string{}
-	for _, r := range m.Recipes {
-		ov := ""
-		if r.ServingsOverride != nil {
-			ov = strconv.Itoa(*r.ServingsOverride)
-		}
-		extras[r.FoodID.String()] = ov
-	}
-
-	return pages.EditMealData{
-		Member: s.member(c), MealID: m.ID.String(),
-		Date: m.Date, Time: m.Time, Servings: m.Servings,
-		Search: search, Foods: filtered, Selected: m.FoodID.String(),
-		SelectedFood: selectedFood, Title: m.Title, Notes: m.Notes, Extras: extras,
-		Version: strconv.Itoa(m.Version), SeriesVersion: strconv.Itoa(m.SeriesVersion), Scope: planner.ScopeOne,
-		ReturnTo: returnTo, Active: active,
-		Recurring: m.SeriesID != nil, Series: series,
-		LinkURL: m.LinkURL,
-	}, nil
-}
-
-// applyPostedMealData overlays every attempted editor field onto view data so a
-// conflict never replaces the user's form state.
-func applyPostedMealData(c echo.Context, d *pages.EditMealData) {
-	d.Date = c.FormValue("date")
-	d.Time = c.FormValue("time")
-	if servings, err := strconv.Atoi(c.FormValue("servings")); err == nil {
-		d.Servings = servings
-	}
-	d.Title = strings.TrimSpace(c.FormValue("title"))
-	d.Notes = strings.TrimSpace(c.FormValue("notes"))
-	d.Search = c.FormValue("q")
-	d.Selected = c.FormValue("food")
-	d.Version = c.FormValue("version")
-	d.SeriesVersion = c.FormValue("series_version")
-	d.Scope = planner.ParseScope(c.FormValue("scope"))
-	d.Recurring = c.FormValue("recurring") == "1"
-	d.LinkURL = strings.TrimSpace(c.FormValue("link_url"))
-	d.Extras = map[string]string{}
-	for _, value := range c.Request().Form["extra"] {
-		d.Extras[value] = c.FormValue("override_" + value)
-	}
-	for i := range d.Foods {
-		if d.Foods[i].ID.String() == d.Selected {
-			d.SelectedFood = &d.Foods[i]
-			break
-		}
-	}
-}
-
-func formVersion(value string) int {
-	version, err := strconv.Atoi(value)
-	if err != nil || version < 1 {
-		return 0
-	}
-	return version
-}
-
-// renderMealConflict loads the current household-scoped aggregate while leaving
-// all attempted fields in d untouched. The hidden tokens advance explicitly so
-// a deliberate re-save can succeed if no newer write lands first.
-func (s *Server) renderMealConflict(c echo.Context, d pages.EditMealData, id uuid.UUID) error {
-	ctx := c.Request().Context()
-	current, err := s.planner.Get(ctx, s.household(c), id)
-	if err != nil {
-		return err
-	}
-	all, err := s.foods.ListWithDeleted(ctx, s.household(c))
-	if err != nil {
-		return err
-	}
-	idx := foods.Index(all)
-	conflict := &pages.MealConflict{
-		Version: current.Version, SeriesVersion: current.SeriesVersion,
-		Date: current.Date, Time: current.Time, Servings: current.Servings,
-		Title: current.Title, Notes: current.Notes, Recurring: current.IsRecurring(),
-		LinkURL: current.LinkURL,
-	}
-	if food, ok := idx[current.FoodID]; ok {
-		conflict.FoodName = food.Name
-	}
-	for _, recipe := range current.Recipes {
-		if food, ok := idx[recipe.FoodID]; ok {
-			conflict.Extras = append(conflict.Extras, pages.MealConflictExtra{
-				Name: food.Name, Servings: recipe.ScaledServings(current.Servings),
-			})
-		}
-	}
-	d.Version = strconv.Itoa(current.Version)
-	d.SeriesVersion = strconv.Itoa(current.SeriesVersion)
-	d.Conflict = conflict
-	d.Error = "This meal was changed by someone else since you opened it. Review the current version below, then save again to overwrite it."
-	return s.render(c, pages.EditMeal(d))
-}
-
-func (s *Server) handleEditMeal(c echo.Context) error {
-	ctx := c.Request().Context()
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	returnTo := safeReturn(c.FormValue("return"), "/today")
-	current, err := s.planner.Get(ctx, s.household(c), id)
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	// Render the full catalog after a POST so selected extras remain represented
-	// even when the submitted search text only matched a subset.
-	d, err := s.editMealData(c, current, returnTo, "")
-	if err != nil {
-		return err
-	}
-	applyPostedMealData(c, &d)
-
-	foodID, err := uuid.Parse(c.FormValue("food"))
-	if err != nil {
-		return s.redirect(c, returnTo)
-	}
-	servings, err := strconv.Atoi(c.FormValue("servings"))
-	if err != nil {
-		servings = 2
-	}
-	scope := planner.ParseScope(c.FormValue("scope"))
-	title, notes := strings.TrimSpace(c.FormValue("title")), strings.TrimSpace(c.FormValue("notes"))
-	extras := parseExtras(c, foodID)
-
-	url := strings.TrimSpace(c.FormValue("link_url"))
-	err = s.planner.Update(ctx, s.household(c), s.actorID(c), id, planner.Form{
-		Date: c.FormValue("date"), Time: c.FormValue("time"), FoodID: foodID,
-		Servings: servings, Title: title, Notes: notes, Recipes: extras, Scope: scope,
-		LinkURL: url,
-		Version: formVersion(c.FormValue("version")), SeriesVersion: formVersion(c.FormValue("series_version")),
-	})
-	if errors.Is(err, planner.ErrConflict) {
-		s.RecordMealConflict()
-		return s.renderMealConflict(c, d, id)
+	id, err := s.svc.Planner.Create(c.Request().Context(), actor(c), e.Input)
+	if msgs, ok := problems(err); ok {
+		e.Errors = msgs
+		return s.renderMealEditor(c, http.StatusUnprocessableEntity, cat, e)
 	}
 	if err != nil {
 		return err
 	}
-	return s.redirect(c, returnTo)
+	s.flash(c, "ok", "Meal scheduled.")
+	return s.redirect(c, "/meals/"+id.String())
 }
-func (s *Server) handleDeleteMeal(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
+
+func (s *Server) loadMeal(c echo.Context) (*service.Catalog, service.MealView, error) {
+	id, err := parseID(c, "id")
 	if err != nil {
-		return echo.ErrNotFound
+		return nil, service.MealView{}, err
 	}
-	scope := planner.ParseScope(c.FormValue("scope"))
-	if err := s.planner.Delete(c.Request().Context(), s.household(c), s.actorID(c), id, scope); err != nil {
+	cat, err := s.catalog(c)
+	if err != nil {
+		return nil, service.MealView{}, err
+	}
+	m, err := s.svc.Planner.Get(c.Request().Context(), actor(c).HouseholdID, cat, id)
+	return cat, m, err
+}
+
+func (s *Server) mealDetail(c echo.Context) error {
+	cat, m, err := s.loadMeal(c)
+	if err != nil {
 		return err
 	}
-	returnTo := c.FormValue("return")
-	if returnTo == "" {
-		returnTo = c.QueryParam("return")
+	d := view.MealDetail{Meal: m, Leaves: cat.Aggregate(m.Leaves(cat))}
+	for _, f := range m.Foods {
+		e := cat.EstimateServings(f.FoodID, f.Servings)
+		d.Estimate.Total += e.Total
+		d.Estimate.Priced += e.Priced
+		d.Estimate.Leaves += e.Leaves
 	}
-	return s.redirect(c, safeReturn(returnTo, "/today"))
+	return s.ok(c, view.MealDetailPage(d))
+}
+
+func (s *Server) editMeal(c echo.Context) error {
+	cat, m, err := s.loadMeal(c)
+	if err != nil {
+		return err
+	}
+	if m.Meal.DeletedAt != nil {
+		return service.ErrNotFound
+	}
+	return s.renderMealEditor(c, http.StatusOK, cat, view.MealEditor{Input: m.Input(), IsSeries: m.Series != nil})
+}
+
+func mealRows(cat *service.Catalog, in service.MealInput) [][2]string {
+	var foods []string
+	for _, f := range in.Foods {
+		name := cat.Name(f.FoodID)
+		if f.Override != nil {
+			name += " (" + view.Num(*f.Override) + " servings)"
+		}
+		foods = append(foods, name)
+	}
+	return [][2]string{
+		{"Date", view.ISODate(in.Date)}, {"Time", in.Time}, {"Servings", view.Num(in.Servings)},
+		{"Foods", strings.Join(foods, ", ")}, {"Title", in.Title}, {"Notes", in.Notes}, {"Link", in.Link},
+	}
+}
+
+func (s *Server) saveMeal(c echo.Context) error {
+	cat, m, err := s.loadMeal(c)
+	if err != nil {
+		return err
+	}
+	if m.Meal.DeletedAt != nil {
+		return service.ErrNotFound
+	}
+	e := view.MealEditor{Input: readMealForm(c), IsSeries: m.Series != nil}
+	e.Input.ID = m.Meal.ID
+	if mealEditorOp(c.FormValue("op"), &e, cat, c.FormValue("pick")) {
+		return s.renderMealEditor(c, http.StatusOK, cat, e)
+	}
+	err = s.svc.Planner.Update(c.Request().Context(), actor(c), e.Input)
+	if errors.Is(err, service.ErrConflict) {
+		_, cur, gerr := s.loadMeal(c)
+		if gerr != nil {
+			return gerr
+		}
+		saved := cur.Input()
+		e.Conflict = &view.Conflict{Saved: mealRows(cat, saved), Mine: mealRows(cat, e.Input)}
+		e.Input.Version, e.Input.SeriesVersion = saved.Version, saved.SeriesVersion
+		return s.renderMealEditor(c, http.StatusConflict, cat, e)
+	}
+	if msgs, ok := problems(err); ok {
+		e.Errors = msgs
+		return s.renderMealEditor(c, http.StatusUnprocessableEntity, cat, e)
+	}
+	if err != nil {
+		return err
+	}
+	s.flash(c, "ok", "Meal saved.")
+	return s.redirect(c, "/meals/"+m.Meal.ID.String())
+}
+
+func (s *Server) deleteMeal(c echo.Context) error {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return err
+	}
+	if err := s.svc.Planner.Delete(c.Request().Context(), actor(c), id, c.FormValue("scope")); err != nil {
+		return err
+	}
+	s.flash(c, "ok", "Meal deleted.")
+	return s.redirect(c, "/plan")
 }

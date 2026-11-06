@@ -1,9 +1,9 @@
 .env
 tmp
-go.sum
-
-*_templ*
-internal/database/db
+.cache/
+*_templ.go
+internal/repo/db/
+internal/assets/static/app.css
 bin/
 *.exe
 *.out

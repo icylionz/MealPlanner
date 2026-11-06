@@ -1,67 +1,57 @@
 package units
 
 import (
+	"errors"
 	"math"
 	"testing"
 )
 
-func approx(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
+func near(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
 
-func TestConvertDensity_SameDimension(t *testing.T) {
-	got, ok := ConvertDensity(1000, "g", "kg", 0)
-	if !ok || !approx(got, 1) {
-		t.Errorf("1000 g -> kg = %v ok=%v, want 1", got, ok)
+func TestConvertSameDimension(t *testing.T) {
+	v, err := Convert(2, "kg", "grams", nil)
+	if err != nil || !near(v, 2000) {
+		t.Fatalf("kg->g = %v, %v", v, err)
+	}
+	v, err = Convert(3, "tsp", "tbsp", nil)
+	if err != nil || !near(v, 1) {
+		t.Fatalf("tsp->tbsp = %v, %v", v, err)
 	}
 }
 
-func TestConvertDensity_VolumeToMass(t *testing.T) {
-	// 100 ml water at 1.0 g/ml = 100 g.
-	got, ok := ConvertDensity(100, "ml", "g", 1.0)
-	if !ok || !approx(got, 100) {
-		t.Errorf("100 ml -> g = %v ok=%v, want 100", got, ok)
+func TestConvertDensity(t *testing.T) {
+	d := 0.5
+	v, err := Convert(100, "ml", "g", &d)
+	if err != nil || !near(v, 50) {
+		t.Fatalf("ml->g = %v, %v", v, err)
 	}
-	// 250 ml oil at 0.92 g/ml = 230 g.
-	got, ok = ConvertDensity(250, "ml", "g", 0.92)
-	if !ok || !approx(got, 230) {
-		t.Errorf("250 ml oil -> g = %v, want 230", got)
+	v, err = Convert(50, "g", "ml", &d)
+	if err != nil || !near(v, 100) {
+		t.Fatalf("g->ml = %v, %v", v, err)
 	}
-}
-
-func TestConvertDensity_MassToVolume(t *testing.T) {
-	// 230 g oil at 0.92 g/ml = 250 ml.
-	got, ok := ConvertDensity(230, "g", "ml", 0.92)
-	if !ok || !approx(got, 250) {
-		t.Errorf("230 g oil -> ml = %v, want 250", got)
+	if _, err := Convert(1, "cup", "g", nil); !errors.Is(err, ErrNeedsDensity) {
+		t.Fatalf("want ErrNeedsDensity, got %v", err)
+	}
+	if _, err := Convert(1, "clove", "g", &d); !errors.Is(err, ErrIncompatible) {
+		t.Fatalf("want ErrIncompatible, got %v", err)
 	}
 }
 
-func TestConvertDensity_MissingDensityFails(t *testing.T) {
-	if _, ok := ConvertDensity(100, "ml", "g", 0); ok {
-		t.Error("cross-dimension convert with no density should fail")
+func TestParseAmount(t *testing.T) {
+	cases := map[string]float64{"1.5": 1.5, "1/2": 0.5, "1 1/2": 1.5, "½": 0.5, "2½": 2.5, "0,25": 0.25}
+	for in, want := range cases {
+		got, ok := ParseAmount(in)
+		if !ok || !near(got, want) {
+			t.Errorf("ParseAmount(%q) = %v,%v want %v", in, got, ok, want)
+		}
+	}
+	if _, ok := ParseAmount("abc"); ok {
+		t.Error("abc should not parse")
 	}
 }
 
-func TestConvertDensity_CountNotConvertible(t *testing.T) {
-	if _, ok := ConvertDensity(2, "count", "g", 1.0); ok {
-		t.Error("count -> mass should fail")
-	}
-}
-
-func TestCrossTargets(t *testing.T) {
-	if got := CrossTargets("ml", 0); got != nil {
-		t.Errorf("no density should yield nil cross targets, got %v", got)
-	}
-	got := CrossTargets("ml", 0.92)
-	if len(got) == 0 || TypeOf(got[0]) != Mass {
-		t.Errorf("volume unit should cross to mass targets, got %v", got)
-	}
-}
-
-func TestStarterDensity(t *testing.T) {
-	if d, ok := StarterDensity("Olive Oil"); !ok || d != 0.918 {
-		t.Errorf("olive oil starter = %v ok=%v, want 0.918", d, ok)
-	}
-	if _, ok := StarterDensity("unobtanium"); ok {
-		t.Error("unknown ingredient should have no starter density")
+func TestNormalize(t *testing.T) {
+	if Normalize("Tablespoons") != "tbsp" || Normalize("") != "each" || Normalize("Cloves") != "clove" {
+		t.Fatal("normalize aliases")
 	}
 }

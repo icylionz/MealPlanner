@@ -1,0 +1,275 @@
+package view
+
+import (
+	"time"
+
+	"github.com/icylionz/mealplanner/internal/repo/db"
+	"github.com/icylionz/mealplanner/internal/service"
+)
+
+type DataPage struct {
+	Report *service.ImportReport
+	Errors []string
+}
+
+templ sectionChecks(name string) {
+	<div class="flex flex-wrap gap-2">
+		for _, s := range [][2]string{{"foods", "Foods"}, {"plans", "Plans"}, {"grocery", "Grocery lists"}, {"prep", "Prep sessions"}} {
+			<label class="mp-day-check">
+				<input type="checkbox" name={ name } value={ s[0] } checked/>
+				<span>{ s[1] }</span>
+			</label>
+		}
+	</div>
+}
+
+templ DataPageView(p DataPage) {
+	@Shell(Meta{Title: "Data", Active: "data"}) {
+		@PageHeader("Household", "Import and export", "Move household data in and out as a versioned JSON file.") {
+		}
+		@Errors(p.Errors)
+		if p.Report != nil {
+			<section class="rh-card space-y-3">
+				<h2 class="text-base font-semibold">Import report</h2>
+				<div class="rh-table-wrap">
+					<table class="rh-table">
+						<thead><tr><th>Section</th><th class="num">Imported</th><th class="num">Already here</th><th class="num">Skipped</th></tr></thead>
+						<tbody>
+							for _, s := range p.Report.Sections {
+								<tr><td class="font-semibold capitalize">{ s.Section }</td><td class="num">{ Itoa(s.Imported) }</td><td class="num">{ Itoa(s.Existing) }</td><td class="num">{ Itoa(len(s.Conflicts)) }</td></tr>
+							}
+						</tbody>
+					</table>
+				</div>
+				for _, s := range p.Report.Sections {
+					if len(s.Conflicts) > 0 {
+						<details class="text-sm">
+							<summary class="cursor-pointer font-semibold capitalize">{ s.Section }: skipped or conflicted</summary>
+							<ul class="mt-2 list-disc pl-5 text-slate-600">
+								for _, c := range s.Conflicts {
+									<li>{ c }</li>
+								}
+							</ul>
+						</details>
+					}
+				}
+			</section>
+		}
+		if !IsOwner(ctx) {
+			<div class="mp-flash">@Icon("lock", 16) Only household owners can import or export data.</div>
+		} else {
+			<div class="grid gap-4 lg:grid-cols-2">
+				<form method="get" action={ URL("/data/export") } class="rh-card space-y-4" hx-boost="false">
+					<div class="flex items-center gap-2">@Icon("download", 18)<h2 class="text-base font-semibold">Export</h2></div>
+					<p class="text-sm text-slate-600">Download the selected sections with stable IDs and a <code>schema_version</code>.</p>
+					@sectionChecks("section")
+					<button class="rh-btn rh-btn-primary" type="submit">Download JSON</button>
+				</form>
+				<form method="post" action={ URL("/data/import") } enctype="multipart/form-data" class="rh-card space-y-4">
+					@CSRFField()
+					<div class="flex items-center gap-2">@Icon("upload", 18)<h2 class="text-base font-semibold">Import</h2></div>
+					<p class="text-sm text-slate-600">Merges by ID. Records already in this household are kept; IDs owned by another household are skipped and reported.</p>
+					<input class="block w-full text-sm" type="file" name="file" accept="application/json,.json" required/>
+					@sectionChecks("section")
+					<button class="rh-btn rh-btn-primary" type="submit">Import file</button>
+				</form>
+			</div>
+		}
+	}
+}
+
+type HouseholdPage struct {
+	O       service.HouseholdOverview
+	Me      string
+	BaseURL string
+	Errors  []string
+	NewCode string
+}
+
+func inviteStatus(i db.Invite, now time.Time) (string, string) {
+	switch {
+	case i.RevokedAt != nil:
+		return "Revoked", "rh-chip-danger"
+	case now.After(i.ExpiresAt):
+		return "Expired", ""
+	case i.MaxUses != nil && i.UseCount >= *i.MaxUses:
+		return "Used up", ""
+	}
+	return "Active", "rh-chip-success"
+}
+
+func usesLabel(i db.Invite) string {
+	if i.MaxUses == nil {
+		return I32(i.UseCount) + " uses"
+	}
+	return I32(i.UseCount) + " / " + I32(*i.MaxUses) + " uses"
+}
+
+templ HouseholdPageView(p HouseholdPage) {
+	@Shell(Meta{Title: "Household", Active: "household"}) {
+		@PageHeader("Household", p.O.Household.Name, "Members, roles and invites.") {
+			<a class="rh-btn rh-btn-secondary" href={ URL("/onboarding") }>@Icon("plus", 16) Create or join another</a>
+		}
+		@Errors(p.Errors)
+		if p.NewCode != "" {
+			<section class="mp-flash">
+				@Icon("link", 16)
+				<div class="min-w-0">
+					<p class="font-semibold">Invite created</p>
+					<p class="break-all text-sm">Code <code class="font-semibold">{ p.NewCode }</code> · link <code>{ p.BaseURL + Path("/join/"+p.NewCode) }</code></p>
+				</div>
+			</section>
+		}
+		<div class="grid gap-4 lg:grid-cols-[3fr_2fr]">
+			<section class="rh-card space-y-3">
+				<h2 class="text-base font-semibold">Members</h2>
+				<ul class="divide-y divide-slate-200">
+					for _, m := range p.O.Members {
+						<li class="flex flex-wrap items-center gap-3 py-3">
+							<span class="app-user-avatar" style={ templ.SafeCSS("background:" + m.Color) }>{ m.Initials }</span>
+							<div class="min-w-0 flex-1">
+								<p class="font-semibold">
+									{ m.Name }
+									if m.AccountID.String() == p.Me {
+										<span class="text-xs font-normal text-slate-500">(you)</span>
+									}
+								</p>
+								<p class="truncate text-xs text-slate-500">{ m.Email }</p>
+							</div>
+							<span class={ "rh-chip " + If(m.Role == "owner", "rh-chip-cat", "") }>
+								if m.Role == "owner" {
+									@Icon("crown", 11)
+								}
+								{ m.Role }
+							</span>
+							if IsOwner(ctx) && m.AccountID.String() != p.Me {
+								<div class="flex w-full flex-wrap gap-2 sm:w-auto">
+									if m.Role == "member" {
+										<form method="post" action={ URL("/household/transfer") } class="flex items-center gap-2" data-confirm="Make this member an owner?">
+											@CSRFField()
+											<input type="hidden" name="account_id" value={ m.AccountID.String() }/>
+											<label class="flex items-center gap-1 text-xs text-slate-600"><input type="checkbox" name="demote" value="1" checked/> step down</label>
+											<button class="rh-btn rh-btn-secondary rh-btn-xs" type="submit">Transfer ownership</button>
+										</form>
+									}
+									<form method="post" action={ URL("/household/members/" + m.AccountID.String() + "/remove") } data-confirm="Remove this member? They lose access immediately.">
+										@CSRFField()
+										<button class="rh-btn rh-btn-danger rh-btn-xs" type="submit">Remove</button>
+									</form>
+								</div>
+							}
+						</li>
+					}
+				</ul>
+				<form method="post" action={ URL("/household/leave") } class="border-t border-slate-200 pt-3" data-confirm="Leave this household?">
+					@CSRFField()
+					<button class="rh-btn rh-btn-ghost rh-btn-sm" type="submit">@Icon("log-out", 14) Leave household</button>
+				</form>
+			</section>
+			if IsOwner(ctx) {
+				<div class="space-y-4">
+					<section class="rh-card space-y-3">
+						<h2 class="text-base font-semibold">Invite someone</h2>
+						<form method="post" action={ URL("/household/invites") } class="space-y-3">
+							@CSRFField()
+							<div class="grid grid-cols-2 gap-2">
+								<label class="rh-field">
+									<span class="rh-label">Expires in</span>
+									<select class="rh-select" name="hours">
+										<option value="24">1 day</option>
+										<option value="168" selected>7 days</option>
+										<option value="720">30 days</option>
+									</select>
+								</label>
+								<label class="rh-field">
+									<span class="rh-label">Max uses</span>
+									<input class="rh-input" type="number" min="1" name="max_uses" placeholder="Unlimited"/>
+								</label>
+							</div>
+							<button class="rh-btn rh-btn-primary" type="submit">@Icon("user-plus", 16) Create invite</button>
+						</form>
+						if len(p.O.Invites) > 0 {
+							<ul class="divide-y divide-slate-200 border-t border-slate-200">
+								for _, inv := range p.O.Invites {
+									{{ label, cls := inviteStatus(inv, Req(ctx).Now) }}
+									<li class="flex flex-wrap items-center gap-2 py-2.5 text-sm">
+										<code class="font-semibold">{ inv.Code }</code>
+										<span class={ "rh-chip " + cls }>{ label }</span>
+										<span class="flex-1 text-xs text-slate-500">{ usesLabel(inv) } · expires { ShortDate(inv.ExpiresAt) }</span>
+										if label == "Active" {
+											<form method="post" action={ URL("/household/invites/" + inv.ID.String() + "/revoke") }>
+												@CSRFField()
+												<button class="rh-btn rh-btn-ghost rh-btn-xs" type="submit">Revoke</button>
+											</form>
+										}
+									</li>
+								}
+							</ul>
+						}
+					</section>
+					<section class="rh-card space-y-3">
+						<h2 class="text-base font-semibold">Name</h2>
+						<form method="post" action={ URL("/household/rename") } class="flex items-end gap-2">
+							@CSRFField()
+							<label class="rh-field flex-1"><span class="rh-label">Household name</span><input class="rh-input" type="text" name="name" value={ p.O.Household.Name } required/></label>
+							<button class="rh-btn rh-btn-secondary" type="submit">Save</button>
+						</form>
+					</section>
+				</div>
+			}
+		</div>
+	}
+}
+
+type SettingsPage struct {
+	Name    string
+	Email   string
+	Errors  []string
+	PwdErrs []string
+}
+
+templ SettingsPageView(p SettingsPage) {
+	@Shell(Meta{Title: "Settings", Active: "settings"}) {
+		@PageHeader("Account", "Settings", "Your profile and sign-in details.") {
+		}
+		<div class="grid gap-4 lg:grid-cols-2">
+			<form method="post" action={ URL("/settings/profile") } class="rh-card space-y-4">
+				@CSRFField()
+				<h2 class="text-base font-semibold">Profile</h2>
+				@Errors(p.Errors)
+				@field("Display name", "name", "text", p.Name, "name", true)
+				@field("Sign-in email", "email", "email", p.Email, "email", true)
+				<button class="rh-btn rh-btn-primary" type="submit">Save profile</button>
+			</form>
+			<form method="post" action={ URL("/settings/password") } class="rh-card space-y-4">
+				@CSRFField()
+				<h2 class="text-base font-semibold">Password</h2>
+				@Errors(p.PwdErrs)
+				@field("Current password", "current", "password", "", "current-password", true)
+				@field("New password", "new", "password", "", "new-password", true)
+				<p class="rh-label-hint">At least 8 characters.</p>
+				<button class="rh-btn rh-btn-primary" type="submit">Change password</button>
+			</form>
+		</div>
+		<form method="post" action={ URL("/logout") } class="lg:hidden">
+			@CSRFField()
+			<button class="rh-btn rh-btn-secondary w-full justify-center" type="submit">@Icon("log-out", 16) Sign out</button>
+		</form>
+	}
+}
+
+templ JoinPage(code string, errors []string) {
+	@Bare("Join household") {
+		<section class="rh-card space-y-4">
+			<h1 class="rh-h1">Join household</h1>
+			@Errors(errors)
+			<form method="post" action={ URL("/onboarding/join") } class="space-y-3">
+				@CSRFField()
+				<input type="hidden" name="code" value={ code }/>
+				<p class="text-sm text-slate-600">You've been invited with code <code class="font-semibold">{ code }</code>.</p>
+				<button class="rh-btn rh-btn-primary w-full justify-center" type="submit">Join as { UserName(ctx) }</button>
+			</form>
+			<a class="rh-btn rh-btn-ghost w-full justify-center" href={ URL("/today") }>Not now</a>
+		</section>
+	}
+}

@@ -1,587 +1,431 @@
-package httpserver
+package http
 
 import (
 	"errors"
-	"sort"
+	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 
-	"mealplanner/internal/foods"
-	"mealplanner/internal/units"
-	"mealplanner/internal/view/pages"
+	"github.com/icylionz/mealplanner/internal/service"
+	"github.com/icylionz/mealplanner/internal/units"
+	"github.com/icylionz/mealplanner/internal/view"
 )
 
-// foodsPageSize caps how many foods the library renders per page; the seeded
-// catalog alone is ~800 foods.
-const foodsPageSize = 50
+const foodsPerPage = 50
 
-func (s *Server) handleFoods(c echo.Context) error {
-	ctx := c.Request().Context()
-	search := c.QueryParam("q")
-	tagMode := "and"
-	if c.QueryParam("tag_mode") == "or" {
-		tagMode = "or"
-	}
-	kind := c.QueryParam("kind")
-	if kind != "recipes" && kind != "ingredients" {
-		kind = ""
-	}
-	selTags := normalizeFilterTags(c.QueryParams()["tags"])
-	prepMin, prepMax := parseRange(c.QueryParam("prep_min"), c.QueryParam("prep_max"))
-	cookMin, cookMax := parseRange(c.QueryParam("cook_min"), c.QueryParam("cook_max"))
-
-	all, err := s.foods.List(ctx, s.household(c))
+func (s *Server) foods(c echo.Context) error {
+	cat, err := s.catalog(c)
 	if err != nil {
 		return err
 	}
-	idx := foods.Index(all)
-
-	tagSet := map[string]bool{}
-	var filtered []foods.Food
-	recipeCount, ingredientCount := 0, 0
-	for _, r := range all {
-		for _, t := range r.Tags {
-			tagSet[t] = true
-		}
-		if !foods.MatchSearch(idx, r, search) {
-			continue
-		}
-		if !inRange(r.PrepTime, prepMin, prepMax) || !inRange(r.CookTime, cookMin, cookMax) {
-			continue
-		}
-		if !matchTags(r.Tags, selTags, tagMode) {
-			continue
-		}
-		// Kind counts are taken before the kind filter so each chip shows how
-		// many foods it would reveal under the other active filters.
-		if r.IsRecipe() {
-			recipeCount++
-		} else {
-			ingredientCount++
-		}
-		if (kind == "recipes" && !r.IsRecipe()) || (kind == "ingredients" && r.IsRecipe()) {
-			continue
-		}
-		filtered = append(filtered, r)
+	f := service.FoodFilter{Query: c.QueryParam("q"), Tag: c.QueryParam("tag"), Kind: c.QueryParam("kind")}
+	all := cat.Search(f)
+	page, _ := strconv.Atoi(c.QueryParam("page"))
+	pages := (len(all) + foodsPerPage - 1) / foodsPerPage
+	if pages == 0 {
+		pages = 1
 	}
-	allTags := make([]string, 0, len(tagSet))
-	for t := range tagSet {
-		allTags = append(allTags, t)
-	}
-	sort.Strings(allTags)
-
-	page, pageCount := clampPage(c.QueryParam("page"), len(filtered), foodsPageSize)
-	start := (page - 1) * foodsPageSize
-	end := min(start+foodsPageSize, len(filtered))
-
-	return s.render(c, pages.Foods(pages.FoodsData{
-		Member: s.member(c), Search: search,
-		Tags: selTags, TagMode: tagMode, Kind: kind,
-		PrepMin: c.QueryParam("prep_min"), PrepMax: c.QueryParam("prep_max"),
-		CookMin: c.QueryParam("cook_min"), CookMax: c.QueryParam("cook_max"),
-		AllTags: allTags, Foods: filtered[start:end],
-		Total: len(all), Matched: len(filtered), Offset: start,
-		RecipeCount: recipeCount, IngredientCount: ingredientCount,
-		Page: page, PageCount: pageCount,
-	}))
-}
-
-// clampPage parses a 1-based page number and clamps it to the pages available
-// for n items; an empty result still has one (empty) page.
-func clampPage(raw string, n, size int) (page, count int) {
-	count = max(1, (n+size-1)/size)
-	page, err := strconv.Atoi(strings.TrimSpace(raw))
-	if err != nil || page < 1 {
+	if page < 1 {
 		page = 1
 	}
-	return min(page, count), count
+	if page > pages {
+		page = pages
+	}
+	start := (page - 1) * foodsPerPage
+	end := start + foodsPerPage
+	if end > len(all) {
+		end = len(all)
+	}
+	l := view.FoodsList{Filter: f, Tags: cat.Tags(), Total: len(all), Page: page, Pages: pages}
+	for _, food := range all[start:end] {
+		l.Rows = append(l.Rows, view.FoodRow{Food: food, Estimate: cat.EstimateServings(food.ID, food.Servings)})
+	}
+	return s.ok(c, view.FoodsPage(l))
 }
 
-// parseRange parses optional min/max minute bounds. A blank or non-numeric
-// bound is returned as -1, meaning unbounded on that side.
-func parseRange(minStr, maxStr string) (int, int) {
-	lo, hi := -1, -1
-	if n, err := strconv.Atoi(strings.TrimSpace(minStr)); err == nil && n >= 0 {
-		lo = n
+func (s *Server) foodDetail(c echo.Context) error {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return err
 	}
-	if n, err := strconv.Atoi(strings.TrimSpace(maxStr)); err == nil && n >= 0 {
-		hi = n
+	servings, _ := parseFloat(c.QueryParam("servings"))
+	d, err := s.svc.Foods.Detail(c.Request().Context(), actor(c).HouseholdID, id, servings)
+	if err != nil {
+		return err
 	}
-	return lo, hi
-}
-
-// inRange reports whether v falls within [lo, hi]; a bound of -1 is unbounded.
-func inRange(v, lo, hi int) bool {
-	if lo >= 0 && v < lo {
-		return false
-	}
-	if hi >= 0 && v > hi {
-		return false
-	}
-	return true
-}
-
-// matchTags reports whether a food's tags satisfy the selected tags under mode
-// "and" (all present) or "or" (any present). No selection matches everything.
-func matchTags(foodTags, want []string, mode string) bool {
-	if len(want) == 0 {
-		return true
-	}
-	if mode == "or" {
-		for _, t := range want {
-			if contains(foodTags, t) {
-				return true
+	p := view.FoodPage{D: d}
+	if !d.Food.IsRecipe() {
+		p.Unit = c.QueryParam("unit")
+		if p.Unit == "" {
+			p.Unit = d.Food.DefaultUnit
+			if r, ok := d.Catalog.Cost(id); ok {
+				p.Unit = r.Unit
 			}
 		}
-		return false
-	}
-	for _, t := range want {
-		if !contains(foodTags, t) {
-			return false
+		if p.Unit == "" {
+			p.Unit = "each"
 		}
+		p.Amount, _ = parseFloat(c.QueryParam("amount"))
+		if p.Amount <= 0 {
+			p.Amount = 1
+			if r, ok := d.Catalog.Cost(id); ok && units.Normalize(r.Unit) == units.Normalize(p.Unit) {
+				p.Amount = r.Amount
+			}
+		}
+		p.AmountE = d.Catalog.EstimateAmount(id, p.Amount, p.Unit)
 	}
-	return true
+	return s.ok(c, view.FoodDetailPage(p))
 }
 
-// normalizeFilterTags lowercases, trims, dedupes, and drops empty/"all" values
-// from the repeated tags query params.
-func normalizeFilterTags(raw []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, t := range raw {
-		t = strings.ToLower(strings.TrimSpace(t))
-		if t == "" || t == "all" || seen[t] {
+func (s *Server) renderFoodEditor(c echo.Context, status int, cat *service.Catalog, e view.FoodEditor) error {
+	e.Names = map[uuid.UUID]string{}
+	e.Recipes = map[uuid.UUID]bool{}
+	for _, cp := range e.Input.Components {
+		e.Names[cp.ChildID] = cat.Name(cp.ChildID)
+		if f := cat.Get(cp.ChildID); f != nil && f.IsRecipe() {
+			e.Recipes[cp.ChildID] = true
+		}
+	}
+	for _, o := range foodOptions(cat, "") {
+		if o.ID != e.Input.ID {
+			e.Options = append(e.Options, o)
+		}
+	}
+	if e.Pick.Unit == "" {
+		e.Pick.Unit = "g"
+	}
+	return s.render(c, status, view.FoodEditorPage(e))
+}
+
+func (s *Server) newFood(c echo.Context) error {
+	cat, err := s.catalog(c)
+	if err != nil {
+		return err
+	}
+	return s.renderFoodEditor(c, http.StatusOK, cat, view.FoodEditor{Input: service.FoodInput{Servings: 1, DefaultUnit: "g"}})
+}
+
+func (s *Server) editFood(c echo.Context) error {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return err
+	}
+	d, err := s.svc.Foods.Detail(c.Request().Context(), actor(c).HouseholdID, id, 0)
+	if err != nil {
+		return err
+	}
+	if d.Food.Deleted() {
+		return service.ErrNotFound
+	}
+	return s.renderFoodEditor(c, http.StatusOK, d.Catalog, view.FoodEditor{Input: service.InputFromFood(d.Food, d.Steps)})
+}
+
+func splitList(v string) []string { return strings.Split(v, ",") }
+
+func readFoodForm(c echo.Context) (service.FoodInput, view.ComponentPick) {
+	in := service.FoodInput{
+		Name: c.FormValue("name"), Description: c.FormValue("description"), DefaultUnit: c.FormValue("default_unit"),
+		Aliases: splitList(c.FormValue("aliases")), Tags: splitList(c.FormValue("tags")), SourceURL: c.FormValue("source_url"),
+	}
+	in.Servings, _ = parseFloat(c.FormValue("servings"))
+	in.YieldAmount = optFloat(c.FormValue("yield_amount"))
+	in.Density = optFloat(c.FormValue("density"))
+	if v, err := strconv.Atoi(c.FormValue("prep_time")); err == nil && v >= 0 {
+		in.PrepTimeMin = int32(v)
+	}
+	if v, err := strconv.Atoi(c.FormValue("cook_time")); err == nil && v >= 0 {
+		in.CookTimeMin = int32(v)
+	}
+	if v, err := strconv.Atoi(c.FormValue("version")); err == nil {
+		in.Version = int32(v)
+	}
+	form, _ := c.FormParams()
+	ids, amts, unitsF, vars := form["comp_food"], form["comp_amount"], form["comp_unit"], form["comp_variant"]
+	for i, raw := range ids {
+		id, err := uuid.Parse(raw)
+		if err != nil {
 			continue
 		}
-		seen[t] = true
-		out = append(out, t)
-	}
-	return out
-}
-
-func contains(list []string, v string) bool {
-	for _, x := range list {
-		if x == v {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *Server) handleFoodDetail(c echo.Context) error {
-	ctx := c.Request().Context()
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.ErrNotFound
-	}
-
-	all, err := s.foods.List(ctx, s.household(c))
-	if err != nil {
-		return err
-	}
-	idx := foods.Index(all)
-
-	food, err := s.foods.Get(ctx, s.household(c), id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return echo.ErrNotFound
-		}
-		return err
-	}
-
-	scale, err := strconv.Atoi(c.QueryParam("scale"))
-	if err != nil || scale < 1 || scale > 4 {
-		scale = 1
-	}
-
-	tree := s.buildIngTree(c, idx, food.Components, float64(scale), 0, map[uuid.UUID]bool{food.ID: true})
-
-	costs, err := s.grocery.LatestFoodCosts(ctx, s.household(c))
-	if err != nil {
-		return err
-	}
-	var recorded *foods.RecordedCost
-	if rc, ok := costs[food.ID]; ok {
-		recorded = &rc
-	}
-
-	return s.render(c, pages.FoodDetail(pages.FoodDetailData{
-		Member:       s.member(c),
-		Food:         *food,
-		Scale:        scale,
-		Tree:         tree,
-		BaseURL:      foodDetailBaseURL(c.Request().URL.RequestURI(), s.cfg.BasePath),
-		Cost:         foods.BatchCost(idx, costs, food.ID).Scale(float64(scale)),
-		RecordedCost: recorded,
-	}))
-}
-
-// foodDetailBaseURL returns an app-absolute URL because the template applies
-// BASE_PATH when it builds scale and unit-conversion links.
-func foodDetailBaseURL(requestURI, basePath string) string {
-	if basePath != "" && (requestURI == basePath || strings.HasPrefix(requestURI, basePath+"/") || strings.HasPrefix(requestURI, basePath+"?")) {
-		return strings.TrimPrefix(requestURI, basePath)
-	}
-	return requestURI
-}
-
-// buildIngTree resolves component lines into display nodes, applying scale,
-// per-line display-unit overrides (?u<componentID>=unit), and cycle-safe
-// recursion. A component whose child food is itself a recipe expands.
-func (s *Server) buildIngTree(c echo.Context, idx map[uuid.UUID]foods.Food, comps []foods.Component, scale float64, depth int, visited map[uuid.UUID]bool) []pages.IngNode {
-	var nodes []pages.IngNode
-	for _, comp := range comps {
-		scaled := comp.Amount * scale
-		child, ok := idx[comp.ChildFoodID]
-		if ok && child.IsRecipe() {
-			if visited[child.ID] {
-				continue
-			}
-			subScale, ok := foods.ComponentRecipeScale(comp, child, scale)
-			if !ok {
-				subScale = 0
-			}
-			visited[child.ID] = true
-			children := s.buildIngTree(c, idx, child.Components, subScale, depth+1, visited)
-			delete(visited, child.ID)
-			subCopy := child
-			nodes = append(nodes, pages.IngNode{
-				Component: comp, Amount: scaled, Unit: comp.Unit,
-				SubFood: &subCopy, SubScale: subScale, Children: children, Depth: depth,
-			})
-			continue
-		}
-
-		key := "u" + strings.ReplaceAll(comp.ID.String(), "-", "")
-		unit := comp.Unit
-		amount := scaled
-		if want := c.QueryParam(key); want != "" && want != unit &&
-			units.TypeOf(want) == units.TypeOf(unit) && units.TypeOf(want) != units.Count {
-			amount = units.Convert(scaled, unit, want)
-			unit = want
-		}
-		nodes = append(nodes, pages.IngNode{
-			Component: comp, Amount: amount, Unit: unit, Depth: depth, ConvertKey: key,
-		})
-	}
-	return nodes
-}
-
-// editorData parses the posted editor form into view data.
-func (s *Server) editorData(c echo.Context, isNew bool, foodID string) (pages.FoodEditData, error) {
-	if err := c.Request().ParseForm(); err != nil {
-		return pages.FoodEditData{}, err
-	}
-	f := c.Request().Form
-
-	d := pages.FoodEditData{
-		Member:      s.member(c),
-		IsNew:       isNew,
-		FoodID:      foodID,
-		Name:        c.FormValue("name"),
-		Description: c.FormValue("description"),
-		PrepTime:    c.FormValue("prep"),
-		CookTime:    c.FormValue("cook"),
-		Servings:    c.FormValue("servings"),
-		YieldAmount: c.FormValue("yield_amount"),
-		DefaultUnit: c.FormValue("default_unit"),
-		Density:     c.FormValue("density"),
-		Version:     c.FormValue("version"),
-		Aliases:     f["aliases"],
-		Tags:        f["tags"],
-		Steps:       f["steps"],
-		Units:       units.EditorUnits,
-	}
-	if isNew {
-		d.Action = "/foods/new"
-	} else {
-		d.Action = "/foods/" + foodID + "/edit"
-	}
-
-	foodIDs := f["comp_foodid"]
-	amounts := f["comp_amount"]
-	unitsF := f["comp_unit"]
-	variants := f["comp_variant"]
-	for i := range foodIDs {
-		row := pages.ComponentForm{FoodID: foodIDs[i], Amount: "0", Unit: "g"}
-		if i < len(amounts) {
-			row.Amount = amounts[i]
+		cp := service.ComponentInput{ChildID: id}
+		if i < len(amts) {
+			cp.Amount, _ = parseFloat(amts[i])
 		}
 		if i < len(unitsF) {
-			row.Unit = unitsF[i]
+			cp.Unit = unitsF[i]
 		}
-		if i < len(variants) {
-			row.Variant = variants[i]
+		if i < len(vars) {
+			cp.Variant = vars[i]
 		}
-		d.Components = append(d.Components, row)
+		in.Components = append(in.Components, cp)
 	}
-	return d, nil
+	in.Steps = form["step"]
+	pick := view.ComponentPick{Name: c.FormValue("pick_name"), Amount: c.FormValue("pick_amount"), Unit: c.FormValue("pick_unit"), Variant: c.FormValue("pick_variant")}
+	return in, pick
 }
 
-func (s *Server) fillEditorLookups(c echo.Context, d *pages.FoodEditData) error {
-	all, err := s.foods.List(c.Request().Context(), s.household(c))
-	if err != nil {
-		return err
+func foodRows(cat *service.Catalog, in service.FoodInput) [][2]string {
+	var comps []string
+	for _, cp := range in.Components {
+		comps = append(comps, units.Display(cp.Amount, cp.Unit)+" "+cat.Name(cp.ChildID))
 	}
-	d.AllFoods = all
-	tagSet := map[string]bool{}
-	byID := map[string]string{}
-	for _, r := range all {
-		byID[r.ID.String()] = r.Name
-		for _, t := range r.Tags {
-			tagSet[t] = true
-		}
+	return [][2]string{
+		{"Name", in.Name}, {"Servings", view.Num(in.Servings)}, {"Unit", in.DefaultUnit},
+		{"Density", view.OptNum(in.Density)}, {"Tags", strings.Join(in.Tags, ", ")},
+		{"Components", strings.Join(comps, "; ")}, {"Steps", strconv.Itoa(len(in.Steps)) + " steps"},
 	}
-	d.AllTags = make([]string, 0, len(tagSet))
-	for t := range tagSet {
-		d.AllTags = append(d.AllTags, t)
-	}
-	sort.Strings(d.AllTags)
-	for i := range d.Components {
-		d.Components[i].FoodName = byID[d.Components[i].FoodID]
-	}
-	return nil
 }
 
-func (s *Server) handleFoodNew(c echo.Context) error {
-	d := pages.FoodEditData{
-		Member: s.member(c), IsNew: true, Action: "/foods/new",
-		PrepTime: "0", CookTime: "0", Servings: "1", YieldAmount: "1", DefaultUnit: "g",
-		Units: units.EditorUnits,
-	}
-	if err := s.fillEditorLookups(c, &d); err != nil {
-		return err
-	}
-	return s.render(c, pages.FoodEdit(d))
-}
-
-func (s *Server) handleFoodEdit(c echo.Context) error {
+// saveFood handles editor sub-actions and the final save for new and
+// existing foods (one full-page form, no JS required).
+func (s *Server) saveFood(c echo.Context) error {
 	ctx := c.Request().Context()
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	r, err := s.foods.Get(ctx, s.household(c), id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return echo.ErrNotFound
-		}
-		return err
-	}
-
-	d := pages.FoodEditData{
-		Member: s.member(c), IsNew: false, FoodID: id.String(),
-		Action:        "/foods/" + id.String() + "/edit",
-		Name:          r.Name,
-		Description:   r.Description,
-		PrepTime:      strconv.Itoa(r.PrepTime),
-		CookTime:      strconv.Itoa(r.CookTime),
-		Servings:      strconv.Itoa(r.Servings),
-		YieldAmount:   units.Format(r.YieldAmount),
-		DefaultUnit:   r.DefaultUnit,
-		DensitySource: r.DensitySource,
-		Version:       strconv.Itoa(r.Version),
-		Aliases:       r.Aliases,
-		Tags:          r.Tags,
-		Steps:         r.Steps,
-		Units:         units.EditorUnits,
-	}
-	// Prefill the density input only for custom overrides; a starter default is
-	// re-derived on save, so leaving it blank keeps the starter value.
-	if r.DensitySource == "custom" && r.Density > 0 {
-		d.Density = strconv.FormatFloat(r.Density, 'g', -1, 64)
-	}
-	for _, comp := range r.Components {
-		d.Components = append(d.Components, pages.ComponentForm{
-			FoodID:  comp.ChildFoodID.String(),
-			Amount:  units.Format(comp.Amount),
-			Unit:    comp.Unit,
-			Variant: comp.Variant,
-		})
-	}
-	if err := s.fillEditorLookups(c, &d); err != nil {
-		return err
-	}
-	return s.render(c, pages.FoodEdit(d))
-}
-
-// handleFoodEditPost is the editor state machine: structural actions mutate the
-// form and re-render; "save" persists and redirects.
-func (s *Server) handleFoodEditPost(c echo.Context) error {
-	isNew := strings.HasSuffix(c.Path(), "/foods/new")
-	foodID := c.Param("id")
-
-	d, err := s.editorData(c, isNew, foodID)
+	a := actor(c)
+	cat, err := s.catalog(c)
 	if err != nil {
 		return err
 	}
-	action := c.FormValue("action")
-
-	switch {
-	case action == "save":
-		form, perr := editorToForm(d)
-		if perr != nil {
-			d.Error = perr.Error()
-			break
-		}
-		var idPtr *uuid.UUID
-		if !isNew {
-			id, err := uuid.Parse(foodID)
-			if err != nil {
-				return echo.ErrNotFound
-			}
-			idPtr = &id
-		}
-		savedID, err := s.foods.Save(c.Request().Context(), s.household(c), s.actorID(c), idPtr, form)
+	in, pick := readFoodForm(c)
+	if raw := c.Param("id"); raw != "" {
+		id, err := uuid.Parse(raw)
 		if err != nil {
-			if errors.Is(err, foods.ErrConflict) && idPtr != nil {
-				s.recordFoodConflict()
-				// Optimistic-lock conflict (FR16): show the current saved record
-				// alongside the user's attempt, and advance the hidden version so a
-				// deliberate re-save succeeds if no newer conflict has landed.
-				if cur, gerr := s.foods.Get(c.Request().Context(), s.household(c), *idPtr); gerr == nil {
-					d.Conflict = &pages.FoodConflict{
-						Version: cur.Version, Name: cur.Name, Description: cur.Description,
-						PrepTime: cur.PrepTime, CookTime: cur.CookTime,
-						Servings: cur.Servings, YieldAmount: cur.YieldAmount, DefaultUnit: cur.DefaultUnit,
-					}
-					d.Version = strconv.Itoa(cur.Version)
+			return service.ErrNotFound
+		}
+		if f := cat.Get(id); f == nil || f.Deleted() {
+			return service.ErrNotFound
+		}
+		in.ID = id
+	}
+	e := view.FoodEditor{Input: in, Pick: pick}
+	op := c.FormValue("op")
+	addPick := func(create bool) {
+		name := strings.TrimSpace(pick.Name)
+		if name == "" {
+			e.Errors = []string{"Type a food name to add."}
+			return
+		}
+		amt, ok := units.ParseAmount(pick.Amount)
+		if !ok || amt <= 0 {
+			e.Errors = []string{"Enter an amount above zero for " + name + "."}
+			return
+		}
+		f := cat.FindByName(name)
+		if f == nil && create {
+			res, err := s.svc.Foods.Save(ctx, a, service.FoodInput{Name: name, Servings: 1, DefaultUnit: units.Normalize(pick.Unit)})
+			if err != nil {
+				if msgs, ok := problems(err); ok {
+					e.Errors = msgs
+					return
 				}
-				d.Error = "This food was changed by someone else since you opened it. Review the current version below, then save again to overwrite it."
-				break
+				e.Errors = []string{"Could not create " + name + "."}
+				return
 			}
-			if errors.Is(err, foods.ErrCycle) || errors.Is(err, foods.ErrInvalidComponent) || errors.Is(err, foods.ErrInvalidComponentYield) || err.Error() == "food needs a name" {
-				d.Error = err.Error()
-				break
+			if cat, err = s.catalog(c); err != nil {
+				e.Errors = []string{"Could not reload foods."}
+				return
 			}
-			return err
+			f = cat.Get(res.ID)
 		}
-		return s.redirect(c, "/foods/"+savedID.String())
-
-	case action == "add-component":
-		d.Components = append(d.Components, pages.ComponentForm{Amount: "100", Unit: "g"})
-
-	case strings.HasPrefix(action, "remove-component:"):
-		if i, err := strconv.Atoi(action[len("remove-component:"):]); err == nil && i >= 0 && i < len(d.Components) {
-			d.Components = append(d.Components[:i], d.Components[i+1:]...)
+		if f == nil {
+			e.Missing = name
+			return
 		}
-
-	case action == "add-step":
-		d.Steps = append(d.Steps, "")
-
-	case strings.HasPrefix(action, "remove-step:"):
-		if i, err := strconv.Atoi(action[len("remove-step:"):]); err == nil && i >= 0 && i < len(d.Steps) {
-			d.Steps = append(d.Steps[:i], d.Steps[i+1:]...)
+		if f.ID == in.ID {
+			e.Errors = []string{"A food cannot include itself."}
+			return
 		}
-
-	case action == "add-tag":
-		if t := strings.ToLower(strings.TrimSpace(c.FormValue("tag_input"))); t != "" && !contains(d.Tags, t) {
-			d.Tags = append(d.Tags, t)
-		}
-
-	case strings.HasPrefix(action, "remove-tag:"):
-		t := action[len("remove-tag:"):]
-		var kept []string
-		for _, x := range d.Tags {
-			if x != t {
-				kept = append(kept, x)
-			}
-		}
-		d.Tags = kept
-
-	case action == "add-alias":
-		if alias := strings.TrimSpace(c.FormValue("alias_input")); alias != "" && !containsFold(d.Aliases, alias) {
-			d.Aliases = append(d.Aliases, alias)
-		}
-
-	case strings.HasPrefix(action, "remove-alias:"):
-		if i, err := strconv.Atoi(action[len("remove-alias:"):]); err == nil && i >= 0 && i < len(d.Aliases) {
-			d.Aliases = append(d.Aliases[:i], d.Aliases[i+1:]...)
-		}
+		e.Input.Components = append(e.Input.Components, service.ComponentInput{ChildID: f.ID, Amount: amt, Unit: pick.Unit, Variant: pick.Variant})
+		e.Pick = view.ComponentPick{Unit: pick.Unit}
 	}
-
-	if err := s.fillEditorLookups(c, &d); err != nil {
-		return err
+	switch {
+	case op == "add" || (op == "refresh" && strings.TrimSpace(pick.Name) != ""):
+		addPick(false)
+	case op == "create":
+		addPick(true)
+	case strings.HasPrefix(op, "remove:"):
+		if i, err := strconv.Atoi(strings.TrimPrefix(op, "remove:")); err == nil && i >= 0 && i < len(e.Input.Components) {
+			e.Input.Components = append(e.Input.Components[:i], e.Input.Components[i+1:]...)
+		}
+	case strings.HasPrefix(op, "up:"):
+		if i, err := strconv.Atoi(strings.TrimPrefix(op, "up:")); err == nil && i > 0 && i < len(e.Input.Components) {
+			cs := e.Input.Components
+			cs[i-1], cs[i] = cs[i], cs[i-1]
+		}
+	case op == "add-step":
+		e.Input.Steps = append(e.Input.Steps, "")
+	case strings.HasPrefix(op, "remove-step:"):
+		if i, err := strconv.Atoi(strings.TrimPrefix(op, "remove-step:")); err == nil && i >= 0 && i < len(e.Input.Steps) {
+			e.Input.Steps = append(e.Input.Steps[:i], e.Input.Steps[i+1:]...)
+		}
+	case op == "save":
+		return s.commitFood(c, cat, e)
 	}
-	return s.render(c, pages.FoodEdit(d))
+	return s.renderFoodEditor(c, http.StatusOK, cat, e)
 }
 
-func (s *Server) handleFoodDelete(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	if err := s.foods.Delete(c.Request().Context(), s.household(c), s.actorID(c), id); err != nil {
-		if errors.Is(err, foods.ErrInUse) {
-			return s.redirect(c, "/foods/"+id.String()+"/edit?error=in-use")
+func (s *Server) commitFood(c echo.Context, cat *service.Catalog, e view.FoodEditor) error {
+	res, err := s.svc.Foods.Save(c.Request().Context(), actor(c), e.Input)
+	if errors.Is(err, service.ErrConflict) {
+		s.metrics.Inc("mealplanner_conflicts_total", "entity", "food")
+		d, derr := s.svc.Foods.Detail(c.Request().Context(), actor(c).HouseholdID, e.Input.ID, 0)
+		if derr != nil {
+			return derr
 		}
+		saved := service.InputFromFood(d.Food, d.Steps)
+		e.Conflict = &view.Conflict{Saved: foodRows(d.Catalog, saved), Mine: foodRows(d.Catalog, e.Input)}
+		e.Input.Version = saved.Version
+		return s.renderFoodEditor(c, http.StatusConflict, d.Catalog, e)
+	}
+	if msgs, ok := problems(err); ok {
+		e.Errors = msgs
+		return s.renderFoodEditor(c, http.StatusUnprocessableEntity, cat, e)
+	}
+	if err != nil {
 		return err
 	}
+	msg := "Food saved."
+	if len(res.Warnings) > 0 {
+		msg += " " + strings.Join(res.Warnings, " ")
+		s.flash(c, "warn", msg)
+	} else {
+		s.flash(c, "ok", msg)
+	}
+	return s.redirect(c, "/foods/"+res.ID.String())
+}
+
+func (s *Server) deleteFood(c echo.Context) error {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return err
+	}
+	if err := s.svc.Foods.Delete(c.Request().Context(), actor(c), id); err != nil {
+		return err
+	}
+	s.flash(c, "ok", "Food deleted.")
 	return s.redirect(c, "/foods")
 }
 
-func editorToForm(d pages.FoodEditData) (foods.Form, error) {
-	if strings.TrimSpace(d.Name) == "" {
-		return foods.Form{}, errors.New("Food needs a name.")
-	}
-	yieldAmount, err := strconv.ParseFloat(strings.TrimSpace(d.YieldAmount), 64)
-	if err != nil || yieldAmount <= 0 {
-		return foods.Form{}, errors.New("Recipe yield must be greater than zero.")
-	}
-	density, _ := strconv.ParseFloat(strings.TrimSpace(d.Density), 64)
-	form := foods.Form{
-		Name:        strings.TrimSpace(d.Name),
-		Description: strings.TrimSpace(d.Description),
-		PrepTime:    atoiDefault(d.PrepTime, 0),
-		CookTime:    atoiDefault(d.CookTime, 0),
-		Servings:    atoiDefault(d.Servings, 1),
-		YieldAmount: yieldAmount,
-		DefaultUnit: d.DefaultUnit,
-		Density:     density,
-		Version:     atoiDefault(d.Version, 0),
-		Aliases:     d.Aliases,
-		Tags:        d.Tags,
-		Steps:       d.Steps,
-	}
-	for _, row := range d.Components {
-		id, err := uuid.Parse(row.FoodID)
-		if err != nil {
-			continue // unpicked component row: drop it
-		}
-		amount, _ := strconv.ParseFloat(row.Amount, 64)
-		form.Components = append(form.Components, foods.Component{
-			ChildFoodID: id, Amount: amount, Unit: row.Unit,
-			Variant: strings.TrimSpace(row.Variant),
-		})
-	}
-	return form, nil
+// URL import --------------------------------------------------------------
+
+func (s *Server) importPage(c echo.Context) error {
+	return s.ok(c, view.ImportURLPage(view.ImportPage{}))
 }
 
-func containsFold(list []string, value string) bool {
-	for _, item := range list {
-		if strings.EqualFold(strings.TrimSpace(item), strings.TrimSpace(value)) {
-			return true
-		}
+func (s *Server) importFetch(c echo.Context) error {
+	url := c.FormValue("url")
+	d, err := s.svc.Import.Fetch(c.Request().Context(), url)
+	if msgs, ok := problems(err); ok {
+		return s.render(c, http.StatusUnprocessableEntity, view.ImportURLPage(view.ImportPage{URL: url, Errors: msgs}))
 	}
-	return false
-}
-
-func atoiDefault(s string, def int) int {
-	n, err := strconv.Atoi(strings.TrimSpace(s))
 	if err != nil {
-		return def
+		return err
 	}
-	return n
+	return s.ok(c, view.ImportReviewPage(view.ImportReview{Draft: d}))
 }
 
-func floatDefault(s string, def float64) float64 {
-	n, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
-	if err != nil || n <= 0 {
-		return def
+func (s *Server) reimport(c echo.Context) error {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return err
 	}
-	return n
+	cur, err := s.svc.Foods.Detail(c.Request().Context(), actor(c).HouseholdID, id, 0)
+	if err != nil {
+		return err
+	}
+	if cur.Food.SourceUrl == "" || cur.Food.Deleted() {
+		return service.ErrNotFound
+	}
+	current := service.DraftFromFood(cur.Catalog, cur.Food, cur.Steps)
+	d, err := s.svc.Import.Fetch(c.Request().Context(), cur.Food.SourceUrl)
+	if msgs, ok := problems(err); ok {
+		s.flash(c, "error", "Re-import failed: "+strings.Join(msgs, " "))
+		return s.redirect(c, "/foods/"+id.String())
+	}
+	if err != nil {
+		return err
+	}
+	d.FoodID, d.Version = id, cur.Food.Version
+	return s.ok(c, view.ImportReviewPage(view.ImportReview{Draft: d, Current: &current}))
+}
+
+func readDraft(c echo.Context) service.ImportDraft {
+	d := service.ImportDraft{URL: c.FormValue("url"), Name: strings.TrimSpace(c.FormValue("name")), Description: c.FormValue("description")}
+	d.Servings, _ = parseFloat(c.FormValue("servings"))
+	if v, err := strconv.Atoi(c.FormValue("prep_time")); err == nil && v >= 0 {
+		d.PrepMin = int32(v)
+	}
+	if v, err := strconv.Atoi(c.FormValue("cook_time")); err == nil && v >= 0 {
+		d.CookMin = int32(v)
+	}
+	if id, err := uuid.Parse(c.FormValue("food_id")); err == nil {
+		d.FoodID = id
+		if v, err := strconv.Atoi(c.FormValue("version")); err == nil {
+			d.Version = int32(v)
+		}
+	}
+	for _, t := range splitList(c.FormValue("tags")) {
+		if t = strings.TrimSpace(t); t != "" {
+			d.Tags = append(d.Tags, t)
+		}
+	}
+	form, _ := c.FormParams()
+	amts, us, names, vars, raws := form["line_amount"], form["line_unit"], form["line_name"], form["line_variant"], form["line_raw"]
+	get := func(xs []string, i int) string {
+		if i < len(xs) {
+			return strings.TrimSpace(xs[i])
+		}
+		return ""
+	}
+	for i := range names {
+		d.Lines = append(d.Lines, service.DraftLine{Amount: get(amts, i), Unit: get(us, i), Name: get(names, i), Variant: get(vars, i), Raw: get(raws, i)})
+	}
+	for _, st := range strings.Split(c.FormValue("steps"), "\n") {
+		if st = strings.TrimSpace(st); st != "" {
+			d.Steps = append(d.Steps, st)
+		}
+	}
+	return d
+}
+
+func (s *Server) importSave(c echo.Context) error {
+	d := readDraft(c)
+	op := c.FormValue("op")
+	var current *service.ImportDraft
+	if d.FoodID != uuid.Nil {
+		if cur, err := s.svc.Foods.Detail(c.Request().Context(), actor(c).HouseholdID, d.FoodID, 0); err == nil {
+			cd := service.DraftFromFood(cur.Catalog, cur.Food, cur.Steps)
+			current = &cd
+		}
+	}
+	switch {
+	case op == "add-line":
+		d.Lines = append(d.Lines, service.DraftLine{})
+		return s.ok(c, view.ImportReviewPage(view.ImportReview{Draft: d, Current: current}))
+	case strings.HasPrefix(op, "remove-line:"):
+		if i, err := strconv.Atoi(strings.TrimPrefix(op, "remove-line:")); err == nil && i >= 0 && i < len(d.Lines) {
+			d.Lines = append(d.Lines[:i], d.Lines[i+1:]...)
+		}
+		return s.ok(c, view.ImportReviewPage(view.ImportReview{Draft: d, Current: current}))
+	case op != "save":
+		return s.ok(c, view.ImportReviewPage(view.ImportReview{Draft: d, Current: current}))
+	}
+	res, err := s.svc.Import.SaveDraft(c.Request().Context(), actor(c), d)
+	if errors.Is(err, service.ErrConflict) {
+		s.metrics.Inc("mealplanner_conflicts_total", "entity", "food")
+		if current != nil {
+			d.Version = current.Version
+		}
+		return s.render(c, http.StatusConflict, view.ImportReviewPage(view.ImportReview{Draft: d, Current: current,
+			Errors: []string{"This recipe was changed by someone else while you reviewed. The saved version is shown above; save again to apply your import."}}))
+	}
+	if msgs, ok := problems(err); ok {
+		return s.render(c, http.StatusUnprocessableEntity, view.ImportReviewPage(view.ImportReview{Draft: d, Current: current, Errors: msgs}))
+	}
+	if err != nil {
+		return err
+	}
+	s.flash(c, "ok", "Recipe imported.")
+	return s.redirect(c, "/foods/"+res.ID.String())
 }

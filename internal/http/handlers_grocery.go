@@ -1,401 +1,318 @@
-package httpserver
+package http
 
 import (
-	"errors"
+	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 
-	"mealplanner/internal/foods"
-	"mealplanner/internal/grocery"
-	"mealplanner/internal/planner"
-	"mealplanner/internal/view"
-	"mealplanner/internal/view/pages"
+	"github.com/icylionz/mealplanner/internal/service"
+	"github.com/icylionz/mealplanner/internal/units"
+	"github.com/icylionz/mealplanner/internal/view"
 )
 
-func (s *Server) handleGrocery(c echo.Context) error {
-	ctx := c.Request().Context()
-	lists, err := s.grocery.ListAll(ctx, s.household(c))
+func (s *Server) groceryLists(c echo.Context) error {
+	lists, err := s.svc.Grocery.Lists(c.Request().Context(), actor(c).HouseholdID)
 	if err != nil {
 		return err
 	}
-
-	// Attach known densities by name so the UI can offer volume<->weight
-	// conversions on grocery items (FR10).
-	all, err := s.foods.List(ctx, s.household(c))
-	if err != nil {
-		return err
-	}
-	densities := foods.DensityByName(all)
-	foodsByID := foods.Index(all)
-	for id, food := range foodsByID {
-		if food.HasDensity() {
-			densities[id.String()] = food.Density
-		}
-	}
-	for i := range lists {
-		for j := range lists[i].Items {
-			it := &lists[i].Items[j]
-			if it.IngredientID != nil {
-				it.Density = densities[it.IngredientID.String()]
-			} else {
-				it.Density = densities[strings.ToLower(strings.TrimSpace(it.Name))]
-			}
-		}
-	}
-
-	var active *grocery.List
-	if want := c.QueryParam("list"); want != "" {
-		for i := range lists {
-			if lists[i].ID.String() == want {
-				active = &lists[i]
-			}
-		}
-	}
-	if active == nil && len(lists) > 0 {
-		active = &lists[0]
-	}
-
-	return s.render(c, pages.Grocery(pages.GroceryData{
-		Member:   s.member(c),
-		Lists:    lists,
-		Active:   active,
-		Renaming: c.QueryParam("rename") == "1",
-	}))
+	return s.ok(c, view.GroceryListsPage(lists, nil))
 }
 
-func (s *Server) handleGroceryItemDetail(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	detail, err := s.grocery.GetItemDetail(c.Request().Context(), s.household(c), id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return echo.ErrNotFound
+func (s *Server) createList(c echo.Context) error {
+	id, err := s.svc.Grocery.CreateList(c.Request().Context(), actor(c), c.FormValue("name"))
+	if msgs, ok := problems(err); ok {
+		lists, lerr := s.svc.Grocery.Lists(c.Request().Context(), actor(c).HouseholdID)
+		if lerr != nil {
+			return lerr
+		}
+		return s.render(c, http.StatusUnprocessableEntity, view.GroceryListsPage(lists, msgs))
 	}
 	if err != nil {
 		return err
 	}
-	return s.render(c, pages.GroceryItemDetail(pages.GroceryItemDetailData{
-		Member: s.member(c), Detail: *detail, CostInput: costInput(detail.Item.Cost),
-	}))
+	return s.redirect(c, "/grocery/"+id.String())
 }
 
-// handleGroceryItemCost records or clears the price paid for a line (FR19).
-func (s *Server) handleGroceryItemCost(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	ctx := c.Request().Context()
-	raw := c.FormValue("cost")
-	err = s.grocery.SetItemCost(ctx, s.household(c), s.actorID(c), id, raw)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return echo.ErrNotFound
-	}
-	if errors.Is(err, grocery.ErrInvalidCost) {
-		detail, derr := s.grocery.GetItemDetail(ctx, s.household(c), id)
-		if derr != nil {
-			return derr
-		}
-		return s.renderStatus(c, http.StatusUnprocessableEntity, pages.GroceryItemDetail(pages.GroceryItemDetailData{
-			Member: s.member(c), Detail: *detail, CostInput: raw, CostError: "Enter a cost of zero or more, or leave it blank.",
-		}))
-	}
+func (s *Server) listView(c echo.Context, status int, id uuid.UUID, errs []string) error {
+	d, err := s.svc.Grocery.List(c.Request().Context(), actor(c).HouseholdID, id)
 	if err != nil {
 		return err
 	}
-	return s.redirect(c, "/grocery/items/"+id.String())
-}
-
-func costInput(cost *float64) string {
-	if cost == nil {
-		return ""
-	}
-	return strconv.FormatFloat(*cost, 'f', 2, 64)
-}
-
-func (s *Server) handleGroceryNewList(c echo.Context) error {
-	id, err := s.grocery.Create(c.Request().Context(), s.household(c), s.actorID(c), "New list")
-	if err != nil {
-		return err
-	}
-	return s.redirect(c, "/grocery?list="+id.String())
-}
-
-func (s *Server) handleGroceryRename(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	if err := s.grocery.Rename(c.Request().Context(), s.household(c), s.actorID(c), id, strings.TrimSpace(c.FormValue("name"))); err != nil {
-		return err
-	}
-	return s.redirect(c, "/grocery?list="+id.String())
-}
-
-func (s *Server) handleGroceryDeleteList(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	if err := s.grocery.Delete(c.Request().Context(), s.household(c), s.actorID(c), id); err != nil {
-		return err
-	}
-	return s.redirect(c, "/grocery")
-}
-
-func (s *Server) handleGroceryClearChecked(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	if err := s.grocery.ClearChecked(c.Request().Context(), s.household(c), s.actorID(c), id); err != nil {
-		return err
-	}
-	return s.redirect(c, "/grocery?list="+id.String())
-}
-
-func (s *Server) groceryItemAction(c echo.Context, fn func(uuid.UUID) error) error {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.ErrNotFound
-	}
-	if err := fn(id); err != nil {
-		return err
-	}
-	list := c.QueryParam("list")
-	if list != "" {
-		return s.redirect(c, "/grocery?list="+list)
-	}
-	return s.redirect(c, "/grocery")
-}
-
-func (s *Server) handleGroceryToggle(c echo.Context) error {
-	return s.groceryItemAction(c, func(id uuid.UUID) error {
-		return s.grocery.ToggleItem(c.Request().Context(), s.household(c), s.actorID(c), id)
-	})
-}
-
-func (s *Server) handleGroceryConvert(c echo.Context) error {
-	ctx := c.Request().Context()
-	all, err := s.foods.List(ctx, s.household(c))
-	if err != nil {
-		return err
-	}
-	densities := foods.DensityByName(all)
-	for _, food := range all {
-		if food.HasDensity() {
-			densities[food.ID.String()] = food.Density
-		}
-	}
-	return s.groceryItemAction(c, func(id uuid.UUID) error {
-		return s.grocery.ConvertItem(ctx, s.household(c), s.actorID(c), id, c.FormValue("unit"), densities)
-	})
-}
-
-func (s *Server) handleGroceryDeleteItem(c echo.Context) error {
-	return s.groceryItemAction(c, func(id uuid.UUID) error {
-		return s.grocery.DeleteItem(c.Request().Context(), s.household(c), s.actorID(c), id)
-	})
-}
-
-// genState parses the generate form/query state shared by GET and POST.
-func (s *Server) genState(c echo.Context) (pages.GroceryGenData, map[uuid.UUID]foods.Food, error) {
-	ctx := c.Request().Context()
-	get := func(k string) string {
-		if v := c.FormValue(k); v != "" {
-			return v
-		}
-		return c.QueryParam(k)
-	}
-
-	d := pages.GroceryGenData{
-		Member:       s.member(c),
-		ListID:       get("list"),
-		Mode:         get("mode"),
-		MealSearch:   get("meal_q"),
-		SelectedMeal: get("meal"),
-		FoodSearch:   get("food_q"),
-		SelectedFood: get("food"),
-		FromDate:     get("from"),
-		ToDate:       get("to"),
-	}
-	if d.Mode == "" {
-		d.Mode = "planned-meal"
-	}
-	if d.FoodServings, _ = strconv.Atoi(get("servings")); d.FoodServings < 1 {
-		d.FoodServings = 2
-	}
-	if _, err := time.Parse(view.DateFormat, d.FromDate); err != nil {
-		d.FromDate = todayStr()
-	}
-	if _, err := time.Parse(view.DateFormat, d.ToDate); err != nil {
-		d.ToDate = view.ParseDate(todayStr()).AddDate(0, 0, 6).Format(view.DateFormat)
-	}
-	d.DateError = d.FromDate > d.ToDate
-
-	all, err := s.foods.List(ctx, s.household(c))
-	if err != nil {
-		return d, nil, err
-	}
-	// Index includes soft-deleted foods so meals over an old plan still resolve
-	// and expand; the food picker (d.Foods below) stays live-only (G1).
-	withDeleted, err := s.foods.ListWithDeleted(ctx, s.household(c))
-	if err != nil {
-		return d, nil, err
-	}
-	idx := foods.Index(withDeleted)
-
-	// Planned meals picker (sorted by date+time, filtered).
-	meals, err := s.planner.ListBetween(ctx, s.household(c), "0001-01-01", "9999-12-31")
-	if err != nil {
-		return d, nil, err
-	}
-	for _, m := range meals {
-		r, ok := idx[m.FoodID]
-		if !ok {
-			continue
-		}
-		if !plannedMealMatches(m, idx, d.MealSearch) {
-			continue
-		}
-		d.Meals = append(d.Meals, pages.GenMealOption{
-			ID: m.ID.String(), Food: r,
-			DayLabel: view.DayLabelShort(m.Date), Time: m.Time, Servings: m.Servings,
-		})
-	}
-
-	for _, r := range all {
-		if r.Matches(d.FoodSearch) {
-			d.Foods = append(d.Foods, r)
-		}
-	}
-	return d, idx, nil
-}
-
-// plannedMealMatches searches the date plus canonical names and aliases for
-// every recipe attached to the meal, including the primary recipe.
-func plannedMealMatches(meal planner.Meal, idx map[uuid.UUID]foods.Food, query string) bool {
-	query = strings.TrimSpace(query)
-	if query == "" || strings.Contains(meal.Date, query) {
-		return true
-	}
-	if primary, ok := idx[meal.FoodID]; ok && primary.Matches(query) {
-		return true
-	}
-	for _, recipe := range meal.Recipes {
-		if food, ok := idx[recipe.FoodID]; ok && food.Matches(query) {
-			return true
-		}
-	}
-	return false
-}
-
-// genLeaves computes the leaf ingredients for the selected generation source.
-func (s *Server) genLeaves(c echo.Context, d pages.GroceryGenData, idx map[uuid.UUID]foods.Food) ([]foods.LeafIngredient, bool, error) {
-	ctx := c.Request().Context()
-	switch d.Mode {
-	case "planned-meal":
-		id, err := uuid.Parse(d.SelectedMeal)
-		if err != nil {
-			return nil, false, nil
-		}
-		m, err := s.planner.Get(ctx, s.household(c), id)
-		if err != nil {
-			return nil, false, nil
-		}
-		return mealLeaves(idx, *m), true, nil
-	case "food":
-		id, err := uuid.Parse(d.SelectedFood)
-		if err != nil {
-			return nil, false, nil
-		}
-		return foods.LeafIngredients(idx, id, float64(d.FoodServings)), true, nil
-	case "date-range":
-		if d.DateError {
-			return nil, false, nil
-		}
-		meals, err := s.planner.ListBetween(ctx, s.household(c), d.FromDate, d.ToDate)
-		if err != nil {
-			return nil, false, err
-		}
-		var leaves []foods.LeafIngredient
-		for _, m := range meals {
-			leaves = append(leaves, mealLeaves(idx, m)...)
-		}
-		return leaves, true, nil
-	}
-	return nil, false, nil
-}
-
-// mealLeaves expands a scheduled meal into its leaf ingredients: the primary
-// recipe scaled by the meal's servings, plus each additional recipe scaled by
-// its override (or the meal's servings when unset) (G4).
-func mealLeaves(idx map[uuid.UUID]foods.Food, m planner.Meal) []foods.LeafIngredient {
-	leaves := foods.LeafIngredients(idx, m.FoodID, float64(m.Servings))
-	for _, r := range m.Recipes {
-		leaves = append(leaves, foods.LeafIngredients(idx, r.FoodID, float64(r.ScaledServings(m.Servings)))...)
-	}
-	mealID := m.ID
-	for i := range leaves {
-		for j := range leaves[i].Sources {
-			leaves[i].Sources[j].MealID = &mealID
-		}
-	}
-	return leaves
-}
-
-func (s *Server) handleGroceryGenerate(c echo.Context) error {
-	d, idx, err := s.genState(c)
-	if err != nil {
-		return err
-	}
-	if c.QueryParam("preview") == "1" {
-		leaves, ok, err := s.genLeaves(c, d, idx)
+	p := view.ListPage{D: d, Errors: errs}
+	if principal(c).Role == "owner" {
+		cat, err := s.catalog(c)
 		if err != nil {
 			return err
 		}
-		if ok {
-			for _, ing := range foods.Aggregate(leaves, foods.DensityMap(idx)) {
-				d.Preview = append(d.Preview, pages.GenPreviewItem{Name: foods.IngredientDisplayName(ing.Name, ing.Variant), Amount: ing.Amount, Unit: ing.Unit})
-			}
-			d.HasPreview = true
-		}
+		p.Options = foodOptions(cat, "ingredient")
 	}
-	return s.render(c, pages.GroceryGenerate(d))
+	return s.render(c, status, view.GroceryListPage(p))
 }
 
-func (s *Server) handleGroceryGenerateCommit(c echo.Context) error {
-	started := time.Now()
-	d, idx, err := s.genState(c)
+func (s *Server) groceryList(c echo.Context) error {
+	id, err := parseID(c, "id")
 	if err != nil {
-		s.logError(c, "grocery_generation_failed", err)
 		return err
 	}
-	leaves, ok, err := s.genLeaves(c, d, idx)
-	if err != nil {
-		s.logError(c, "grocery_generation_failed", err)
-		return err
-	}
-	if !ok {
-		return s.render(c, pages.GroceryGenerate(d))
-	}
+	return s.listView(c, http.StatusOK, id, nil)
+}
 
-	var listID *uuid.UUID
-	if id, err := uuid.Parse(d.ListID); err == nil {
-		listID = &id
-	}
-	target, err := s.grocery.AddIngredients(c.Request().Context(), s.household(c), s.actorID(c), listID, foods.Aggregate(leaves, foods.DensityMap(idx)))
+func (s *Server) addItem(c echo.Context) error {
+	id, err := parseID(c, "id")
 	if err != nil {
-		s.logError(c, "grocery_generation_failed", err)
 		return err
 	}
-	s.metricsRegistry().ObserveGroceryGeneration(time.Since(started))
-	return s.redirect(c, "/grocery?list="+target.String())
+	amount := 1.0
+	if v := strings.TrimSpace(c.FormValue("amount")); v != "" {
+		a, ok := units.ParseAmount(v)
+		if !ok {
+			return s.listView(c, http.StatusUnprocessableEntity, id, []string{"Enter a valid amount."})
+		}
+		amount = a
+	}
+	err = s.svc.Grocery.AddItem(c.Request().Context(), actor(c), id, c.FormValue("name"), amount, c.FormValue("unit"), c.FormValue("note"))
+	if msgs, ok := problems(err); ok {
+		return s.listView(c, http.StatusUnprocessableEntity, id, msgs)
+	}
+	if err != nil {
+		return err
+	}
+	return s.redirect(c, "/grocery/"+id.String())
+}
+
+func (s *Server) renameList(c echo.Context) error {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return err
+	}
+	err = s.svc.Grocery.RenameList(c.Request().Context(), actor(c), id, c.FormValue("name"))
+	if msgs, ok := problems(err); ok {
+		return s.listView(c, http.StatusUnprocessableEntity, id, msgs)
+	}
+	if err != nil {
+		return err
+	}
+	s.flash(c, "ok", "List renamed.")
+	return s.redirect(c, "/grocery/"+id.String())
+}
+
+func (s *Server) deleteList(c echo.Context) error {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return err
+	}
+	if err := s.svc.Grocery.DeleteList(c.Request().Context(), actor(c), id); err != nil {
+		return err
+	}
+	s.flash(c, "ok", "List deleted.")
+	return s.redirect(c, "/grocery")
+}
+
+func (s *Server) itemView(c echo.Context, status int, id uuid.UUID, errs []string) error {
+	cat, err := s.catalog(c)
+	if err != nil {
+		return err
+	}
+	d, err := s.svc.Grocery.Item(c.Request().Context(), actor(c), cat, id)
+	if err != nil {
+		return err
+	}
+	return s.render(c, status, view.GroceryItemPage(view.ItemPage{D: d, Errors: errs}))
+}
+
+func (s *Server) groceryItem(c echo.Context) error {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return err
+	}
+	return s.itemView(c, http.StatusOK, id, nil)
+}
+
+func (s *Server) checkItem(c echo.Context) error {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return err
+	}
+	listID, err := s.svc.Grocery.SetChecked(c.Request().Context(), actor(c), id, c.FormValue("checked") == "true")
+	if err != nil {
+		return err
+	}
+	if c.FormValue("back") == "item" {
+		return s.redirect(c, "/grocery/items/"+id.String())
+	}
+	return s.redirect(c, "/grocery/"+listID.String())
+}
+
+// itemResult handles the shared outcome of owner item edits.
+func (s *Server) itemResult(c echo.Context, id uuid.UUID, err error, msg string) error {
+	if msgs, ok := problems(err); ok {
+		return s.itemView(c, http.StatusUnprocessableEntity, id, msgs)
+	}
+	if err != nil {
+		return err
+	}
+	s.flash(c, "ok", msg)
+	return s.redirect(c, "/grocery/items/"+id.String())
+}
+
+func (s *Server) editItem(c echo.Context) error {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return err
+	}
+	amount, ok := parseFloat(c.FormValue("amount"))
+	if !ok {
+		return s.itemView(c, http.StatusUnprocessableEntity, id, []string{"Enter a valid amount."})
+	}
+	_, err = s.svc.Grocery.EditItem(c.Request().Context(), actor(c), id, service.ItemEdit{
+		Name: c.FormValue("name"), Amount: amount, Unit: c.FormValue("unit"), Variant: c.FormValue("variant"), Note: c.FormValue("note"),
+	})
+	return s.itemResult(c, id, err, "Item saved.")
+}
+
+func (s *Server) convertItem(c echo.Context) error {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return err
+	}
+	_, err = s.svc.Grocery.ConvertItem(c.Request().Context(), actor(c), id, c.FormValue("unit"))
+	return s.itemResult(c, id, err, "Item converted.")
+}
+
+func (s *Server) costItem(c echo.Context) error {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return err
+	}
+	var cost *float64
+	if v := strings.TrimSpace(c.FormValue("cost")); v != "" {
+		f, ok := parseFloat(v)
+		if !ok {
+			return s.itemView(c, http.StatusUnprocessableEntity, id, []string{"Enter a valid cost."})
+		}
+		cost = &f
+	}
+	_, err = s.svc.Grocery.SetCost(c.Request().Context(), actor(c), id, cost)
+	return s.itemResult(c, id, err, "Cost saved.")
+}
+
+func (s *Server) deleteItem(c echo.Context) error {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return err
+	}
+	listID, err := s.svc.Grocery.RemoveItem(c.Request().Context(), actor(c), id)
+	if err != nil {
+		return err
+	}
+	s.flash(c, "ok", "Item removed.")
+	return s.redirect(c, "/grocery/"+listID.String())
+}
+
+func (s *Server) generateForm(c echo.Context, req service.GenerateRequest, foodName string, errs []string) (view.GenerateForm, error) {
+	ctx := c.Request().Context()
+	a := actor(c)
+	cat, err := s.catalog(c)
+	if err != nil {
+		return view.GenerateForm{}, err
+	}
+	lists, err := s.svc.Grocery.Lists(ctx, a.HouseholdID)
+	if err != nil {
+		return view.GenerateForm{}, err
+	}
+	today := s.today0()
+	meals, err := s.svc.Planner.Range(ctx, a.HouseholdID, cat, today.AddDate(0, 0, -7), today.AddDate(0, 0, 30))
+	if err != nil {
+		return view.GenerateForm{}, err
+	}
+	f := view.GenerateForm{Req: req, FoodName: foodName, Lists: lists, Options: foodOptions(cat, ""), Errors: errs}
+	for _, m := range meals {
+		f.Meals = append(f.Meals, view.MealOption{ID: m.Meal.ID, Label: view.ShortDate(m.Meal.PlanDate) + " " + view.Clock(m.Meal.PlanTime) + " · " + m.Title()})
+	}
+	return f, nil
+}
+
+func (s *Server) generatePage(c echo.Context) error {
+	today := s.today0()
+	req := service.GenerateRequest{Mode: c.QueryParam("mode"), From: today, To: today.AddDate(0, 0, 6), Servings: 4}
+	if req.Mode == "" {
+		req.Mode = "range"
+	}
+	if d, ok := parseDate(c.QueryParam("from")); ok {
+		req.From = d
+	}
+	if d, ok := parseDate(c.QueryParam("to")); ok {
+		req.To = d
+	}
+	if id, err := uuid.Parse(c.QueryParam("meal")); err == nil {
+		req.MealID = id
+	}
+	if id, err := uuid.Parse(c.QueryParam("list")); err == nil {
+		req.ListID = id
+	}
+	if v, ok := parseFloat(c.QueryParam("servings")); ok && v > 0 {
+		req.Servings = v
+	}
+	foodName := ""
+	if id, err := uuid.Parse(c.QueryParam("food")); err == nil {
+		cat, err := s.catalog(c)
+		if err != nil {
+			return err
+		}
+		if f := cat.Get(id); f != nil {
+			foodName = f.Name
+		}
+	}
+	f, err := s.generateForm(c, req, foodName, nil)
+	if err != nil {
+		return err
+	}
+	return s.ok(c, view.GeneratePage(f))
+}
+
+func (s *Server) generate(c echo.Context) error {
+	req := service.GenerateRequest{Mode: c.FormValue("mode"), NewName: c.FormValue("new_name")}
+	req.From, _ = parseDate(c.FormValue("from"))
+	req.To, _ = parseDate(c.FormValue("to"))
+	req.MealID, _ = uuid.Parse(c.FormValue("meal"))
+	req.ListID, _ = uuid.Parse(c.FormValue("list"))
+	req.Servings, _ = parseFloat(c.FormValue("servings"))
+	foodName := c.FormValue("food_name")
+	var errs []string
+	if req.Mode == "food" {
+		cat, err := s.catalog(c)
+		if err != nil {
+			return err
+		}
+		if f := cat.FindByName(foodName); f != nil {
+			req.FoodID = f.ID
+		} else {
+			errs = []string{"Choose a food from the suggestions."}
+		}
+	}
+	if errs == nil {
+		res, err := s.svc.Grocery.Generate(c.Request().Context(), actor(c), req)
+		if msgs, ok := problems(err); ok {
+			errs = msgs
+		} else if err != nil {
+			return err
+		} else {
+			msg := fmt.Sprintf("Added %d new and merged %d existing items.", res.Added, res.Merged)
+			kind := "ok"
+			if res.Review > 0 {
+				msg += fmt.Sprintf(" %d need review for unit conversion.", res.Review)
+				kind = "warn"
+			}
+			s.flash(c, kind, msg)
+			return s.redirect(c, "/grocery/"+res.ListID.String())
+		}
+	}
+	f, err := s.generateForm(c, req, foodName, errs)
+	if err != nil {
+		return err
+	}
+	return s.render(c, http.StatusUnprocessableEntity, view.GeneratePage(f))
 }

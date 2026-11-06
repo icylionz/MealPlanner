@@ -1,208 +1,199 @@
-// Package units ports the prototype unit system: mass, volume, count,
-// same-dimension conversion, and display formatting (plate-units.jsx).
+// Package units normalizes measurement units and converts quantities,
+// including volume↔weight through an ingredient density (FR10).
 package units
 
 import (
+	"errors"
 	"math"
 	"strconv"
 	"strings"
 )
 
-// Type is a unit dimension.
-type Type string
+type Dimension int
 
 const (
-	Mass   Type = "mass"
-	Volume Type = "volume"
-	Count  Type = "count"
+	Count Dimension = iota
+	Mass
+	Volume
 )
 
-var unitTypes = map[string]Type{
-	"mg": Mass, "g": Mass, "kg": Mass, "oz": Mass, "lb": Mass,
-	"ml": Volume, "cl": Volume, "dl": Volume, "L": Volume, "l": Volume,
-	"tsp": Volume, "tbsp": Volume, "fl oz": Volume, "cup": Volume, "pint": Volume, "quart": Volume,
-	"count": Count, "pcs": Count, "whole": Count,
-	"serving": Count, "servings": Count,
+func (d Dimension) String() string {
+	switch d {
+	case Mass:
+		return "weight"
+	case Volume:
+		return "volume"
+	}
+	return "count"
 }
 
-var unitFactors = map[string]float64{
-	"mg": 0.001, "g": 1, "kg": 1000, "oz": 28.3495, "lb": 453.592,
-	"ml": 1, "cl": 10, "dl": 100, "L": 1000, "l": 1000,
-	"tsp": 4.92892, "tbsp": 14.7868, "fl oz": 29.5735, "cup": 236.588, "pint": 473.176, "quart": 946.353,
-	"count": 1, "pcs": 1, "whole": 1,
-	"serving": 1, "servings": 1,
+// Base factors: mass in grams, volume in millilitres.
+var factors = map[string]struct {
+	dim Dimension
+	f   float64
+}{
+	"mg":     {Mass, 0.001},
+	"g":      {Mass, 1},
+	"kg":     {Mass, 1000},
+	"oz":     {Mass, 28.349523125},
+	"lb":     {Mass, 453.59237},
+	"ml":     {Volume, 1},
+	"l":      {Volume, 1000},
+	"tsp":    {Volume, 4.92892159375},
+	"tbsp":   {Volume, 14.78676478125},
+	"fl oz":  {Volume, 29.5735295625},
+	"cup":    {Volume, 236.5882365},
+	"pint":   {Volume, 473.176473},
+	"quart":  {Volume, 946.352946},
+	"gallon": {Volume, 3785.411784},
 }
 
-// ByType lists selectable units per dimension, in prototype order.
-var ByType = map[Type][]string{
-	Mass:   {"mg", "g", "kg", "oz", "lb"},
-	Volume: {"ml", "cl", "dl", "L", "tsp", "tbsp", "fl oz", "cup", "pint", "quart"},
-	Count:  {"count"},
+var aliases = map[string]string{
+	"milligram": "mg", "milligrams": "mg",
+	"gram": "g", "grams": "g", "gr": "g", "gms": "g",
+	"kilogram": "kg", "kilograms": "kg", "kgs": "kg",
+	"ounce": "oz", "ounces": "oz",
+	"pound": "lb", "pounds": "lb", "lbs": "lb",
+	"millilitre": "ml", "milliliter": "ml", "millilitres": "ml", "milliliters": "ml", "mls": "ml",
+	"litre": "l", "liter": "l", "litres": "l", "liters": "l",
+	"teaspoon": "tsp", "teaspoons": "tsp", "tsps": "tsp", "t": "tsp",
+	"tablespoon": "tbsp", "tablespoons": "tbsp", "tbsps": "tbsp", "tbs": "tbsp", "tbl": "tbsp",
+	"cups": "cup", "c": "cup",
+	"fluid ounce": "fl oz", "fluid ounces": "fl oz", "floz": "fl oz", "fl. oz": "fl oz",
+	"pints": "pint", "pt": "pint", "quarts": "quart", "qt": "quart", "gallons": "gallon", "gal": "gallon",
+	"": "each", "ea": "each", "pc": "each", "pcs": "each", "piece": "each", "pieces": "each", "whole": "each", "x": "each",
+	"servings": "serving", "batches": "batch",
+	"cloves": "clove", "cans": "can", "slices": "slice", "bunches": "bunch", "pinches": "pinch",
+	"sprigs": "sprig", "leaves": "leaf", "handfuls": "handful", "packets": "packet", "jars": "jar",
+	"heads": "head", "sticks": "stick", "stalks": "stalk", "bottles": "bottle", "bags": "bag",
 }
 
-// EditorUnits is the flat unit list offered in the recipe editor.
-var EditorUnits = []string{"mg", "g", "kg", "oz", "lb", "ml", "cl", "dl", "L", "tsp", "tbsp", "fl oz", "cup", "pint", "quart", "count", "serving"}
-
-// IsServing reports whether a unit explicitly denotes recipe servings. Serving
-// units are handled separately from physical/count yields during recipe
-// expansion even though both are count-like for grocery aggregation.
-func IsServing(unit string) bool {
-	return unit == "serving" || unit == "servings"
+// Normalize returns the canonical spelling of a unit.
+func Normalize(u string) string {
+	u = strings.ToLower(strings.TrimSpace(u))
+	u = strings.TrimSuffix(u, ".")
+	if a, ok := aliases[u]; ok {
+		return a
+	}
+	return u
 }
 
-// IsKnown reports whether unit has defined conversion semantics.
-func IsKnown(unit string) bool {
-	_, ok := unitTypes[unit]
-	return ok
+// Known reports whether u is a recognised unit (any dimension) as opposed to
+// free text that probably belongs to an ingredient name.
+func Known(u string) bool {
+	n := Normalize(u)
+	if _, ok := factors[n]; ok {
+		return true
+	}
+	switch n {
+	case "each", "serving", "batch", "clove", "can", "slice", "bunch", "pinch", "sprig", "leaf",
+		"handful", "packet", "jar", "head", "stick", "stalk", "bottle", "bag":
+		return true
+	}
+	return false
 }
 
-// TypeOf returns the dimension of a unit, defaulting to Count.
-func TypeOf(u string) Type {
-	if t, ok := unitTypes[u]; ok {
-		return t
+func DimensionOf(u string) Dimension {
+	if f, ok := factors[Normalize(u)]; ok {
+		return f.dim
 	}
 	return Count
 }
 
-// ToBase converts an amount to the dimension's base unit (g or ml).
-func ToBase(amount float64, unit string) float64 {
-	f, ok := unitFactors[unit]
-	if !ok {
-		f = 1
-	}
-	return amount * f
-}
+var (
+	ErrNeedsDensity = errors.New("conversion needs a density")
+	ErrIncompatible = errors.New("units are not convertible")
+)
 
-// FromBase converts a base amount back to the given unit.
-func FromBase(base float64, unit string) float64 {
-	f, ok := unitFactors[unit]
-	if !ok {
-		f = 1
+// Convert converts amount from one unit into another. density is grams per
+// millilitre and is only used for volume↔weight; nil means unknown.
+func Convert(amount float64, from, to string, density *float64) (float64, error) {
+	f, t := Normalize(from), Normalize(to)
+	if f == t {
+		return amount, nil
 	}
-	return base / f
-}
-
-// Convert converts an amount between two units of the same dimension.
-func Convert(amount float64, from, to string) float64 {
-	return FromBase(ToBase(amount, from), to)
-}
-
-// StarterDensities maps lowercase ingredient names to a starter density in
-// grams per millilitre (FR10). Used as a default when the owner has not set a
-// custom density for a food.
-var StarterDensities = map[string]float64{
-	"water":             1.0,
-	"milk":              1.03,
-	"oat milk":          1.03,
-	"olive oil":         0.918,
-	"vegetable oil":     0.92,
-	"canola oil":        0.92,
-	"honey":             1.42,
-	"maple syrup":       1.37,
-	"lemon juice":       1.03,
-	"caesar dressing":   0.94,
-	"bread flour":       0.53,
-	"all-purpose flour": 0.53,
-	"flour":             0.53,
-	"granulated sugar":  0.85,
-	"sugar":             0.85,
-	"table salt":        1.22,
-	"salt":              1.22,
-	"butter":            0.911,
-}
-
-// StarterDensity returns the starter density for an ingredient name, if known.
-func StarterDensity(name string) (float64, bool) {
-	d, ok := StarterDensities[strings.ToLower(strings.TrimSpace(name))]
-	return d, ok
-}
-
-// ConvertDensity converts an amount between two units, crossing the mass<->volume
-// boundary using density (grams per millilitre) when needed. It returns ok=false
-// when the conversion is not possible: a count unit is involved, or a
-// cross-dimension conversion is required but density is not positive.
-func ConvertDensity(amount float64, from, to string, density float64) (float64, bool) {
-	tf, tt := TypeOf(from), TypeOf(to)
-	if tf == Count || tt == Count {
-		return 0, from == to
+	ff, okF := factors[f]
+	tf, okT := factors[t]
+	if !okF || !okT {
+		return 0, ErrIncompatible
 	}
-	if tf == tt {
-		return Convert(amount, from, to), true
-	}
-	if density <= 0 {
-		return 0, false
-	}
-	// Cross-dimension: base units are grams (mass) and millilitres (volume);
-	// grams = millilitres * density.
-	base := ToBase(amount, from) // g if from is mass, ml if from is volume
-	var targetBase float64
-	if tf == Volume { // ml -> g
-		targetBase = base * density
-	} else { // g -> ml
-		targetBase = base / density
-	}
-	return FromBase(targetBase, to), true
-}
-
-// CrossTargets returns the units of the opposite mass/volume dimension, offered
-// as conversion targets only when a density is available. Returns nil for count
-// units or when density is not positive.
-func CrossTargets(unit string, density float64) []string {
-	t := TypeOf(unit)
-	if t == Count || density <= 0 {
-		return nil
-	}
-	other := Volume
-	if t == Volume {
-		other = Mass
-	}
-	out := make([]string, len(ByType[other]))
-	copy(out, ByType[other])
-	return out
-}
-
-// ConvertTargets returns the other units of the same dimension, or nil when
-// the unit is not convertible (count).
-func ConvertTargets(unit string) []string {
-	t := TypeOf(unit)
-	if t == Count {
-		return nil
-	}
-	var out []string
-	for _, u := range ByType[t] {
-		if u != unit {
-			out = append(out, u)
+	base := amount * ff.f
+	if ff.dim != tf.dim {
+		if density == nil || *density <= 0 {
+			return 0, ErrNeedsDensity
+		}
+		if ff.dim == Volume { // ml -> g
+			base *= *density
+		} else { // g -> ml
+			base /= *density
 		}
 	}
-	return out
+	return base / tf.f, nil
 }
 
-// Format renders an amount like the prototype's formatAmount.
-func Format(n float64) string {
-	if math.IsNaN(n) {
+// Convertible reports whether Convert would succeed.
+func Convertible(from, to string, density *float64) bool {
+	_, err := Convert(1, from, to, density)
+	return err == nil
+}
+
+// Format renders a quantity compactly: 2, 1.5, 0.33, 1250.
+func Format(v float64) string {
+	if v == 0 {
 		return "0"
 	}
-	if n == math.Round(n) {
-		return strconv.FormatInt(int64(math.Round(n)), 10)
+	r := math.Round(v*100) / 100
+	if r == 0 {
+		r = math.Round(v*1000) / 1000
 	}
-	var s string
-	switch {
-	case n < 1:
-		s = strconv.FormatFloat(n, 'f', 2, 64)
-	case n < 10:
-		s = strconv.FormatFloat(n, 'f', 1, 64)
-	default:
-		return strconv.FormatFloat(math.Round(n*10)/10, 'f', -1, 64)
+	return strconv.FormatFloat(r, 'f', -1, 64)
+}
+
+// Display formats amount and unit for humans ("2 cup", "3 each" -> "3").
+func Display(amount float64, unit string) string {
+	u := Normalize(unit)
+	if u == "each" {
+		return Format(amount)
 	}
-	s = strings.TrimRight(s, "0")
-	s = strings.TrimRight(s, ".")
+	return Format(amount) + " " + unit
+}
+
+// Common lists the units offered in form selects.
+var Common = []string{"g", "kg", "mg", "oz", "lb", "ml", "l", "tsp", "tbsp", "cup", "fl oz", "each", "serving", "batch", "clove", "can", "slice", "bunch", "pinch"}
+
+// ParseAmount accepts decimals, simple fractions and mixed numbers
+// ("1.5", "1/2", "1 1/2", "½").
+func ParseAmount(s string) (float64, bool) {
+	s = strings.TrimSpace(s)
+	for k, v := range vulgar {
+		if strings.Contains(s, k) {
+			s = strings.TrimSpace(strings.Replace(s, k, " "+v, 1))
+		}
+	}
 	if s == "" {
-		return "0"
+		return 0, false
 	}
-	return s
+	parts := strings.Fields(s)
+	total := 0.0
+	for _, p := range parts {
+		if num, den, ok := strings.Cut(p, "/"); ok {
+			n, err1 := strconv.ParseFloat(num, 64)
+			d, err2 := strconv.ParseFloat(den, 64)
+			if err1 != nil || err2 != nil || d == 0 {
+				return 0, false
+			}
+			total += n / d
+			continue
+		}
+		v, err := strconv.ParseFloat(strings.ReplaceAll(p, ",", "."), 64)
+		if err != nil {
+			return 0, false
+		}
+		total += v
+	}
+	return total, true
 }
 
-// Round3 rounds to three decimals like the prototype's aggregation output.
-func Round3(n float64) float64 {
-	return math.Round(n*1000) / 1000
+var vulgar = map[string]string{
+	"½": "1/2", "⅓": "1/3", "⅔": "2/3", "¼": "1/4", "¾": "3/4", "⅕": "1/5", "⅛": "1/8", "⅜": "3/8", "⅝": "5/8", "⅞": "7/8",
 }

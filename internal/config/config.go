@@ -1,140 +1,126 @@
-// Package config loads and validates environment-driven configuration.
+// Package config loads environment-driven settings (docs/architecture.md).
 package config
 
 import (
+	"bufio"
 	"fmt"
-	"net/netip"
+	"net"
 	"os"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/joho/godotenv"
 )
 
-// Config holds all runtime configuration for the application.
 type Config struct {
-	Port                       string
-	BasePath                   string
-	DatabaseURL                string
-	SessionCookieName          string
-	SessionSecret              string
-	AppEnv                     string
-	LoginThrottleThreshold     int
-	LoginThrottleWindow        time.Duration
-	LoginThrottleBlockDuration time.Duration
-	TrustedProxyCIDRs          []netip.Prefix
+	Port              string
+	BasePath          string
+	DatabaseURL       string
+	SessionCookieName string
+	SessionSecret     string
+	AppEnv            string
+	Timezone          *time.Location
+	TrustedProxies    []*net.IPNet
+
+	LoginThrottleThreshold int
+	LoginThrottleWindow    time.Duration
+	LoginThrottleBlock     time.Duration
 }
 
-// Load reads configuration from the environment, loading .env first when present.
-func Load() (*Config, error) {
-	_ = godotenv.Load()
-	threshold, err := getEnvInt("LOGIN_THROTTLE_THRESHOLD", 5)
-	if err != nil {
-		return nil, err
-	}
-	window, err := getEnvDuration("LOGIN_THROTTLE_WINDOW", 10*time.Minute)
-	if err != nil {
-		return nil, err
-	}
-	blockDuration, err := getEnvDuration("LOGIN_THROTTLE_BLOCK_DURATION", 15*time.Minute)
-	if err != nil {
-		return nil, err
-	}
-	trustedProxies, err := getEnvPrefixes("TRUSTED_PROXY_CIDRS")
-	if err != nil {
-		return nil, err
-	}
+func (c Config) Production() bool { return c.AppEnv == "production" }
 
-	cfg := &Config{
-		Port:                       getEnv("PORT", "8080"),
-		BasePath:                   normalizeBasePath(os.Getenv("BASE_PATH")),
-		DatabaseURL:                os.Getenv("DATABASE_URL"),
-		SessionCookieName:          getEnv("SESSION_COOKIE_NAME", "bbplate_session"),
-		SessionSecret:              os.Getenv("SESSION_SECRET"),
-		AppEnv:                     getEnv("APP_ENV", "development"),
-		LoginThrottleThreshold:     threshold,
-		LoginThrottleWindow:        window,
-		LoginThrottleBlockDuration: blockDuration,
-		TrustedProxyCIDRs:          trustedProxies,
+// LoadDotEnv sets variables from a .env file without overriding the real
+// environment. A missing file is not an error.
+func LoadDotEnv(path string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
 	}
-
-	if cfg.DatabaseURL == "" {
-		return nil, fmt.Errorf("DATABASE_URL is required")
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		k = strings.TrimSpace(k)
+		v = strings.Trim(strings.TrimSpace(v), `"'`)
+		if _, set := os.LookupEnv(k); !set {
+			os.Setenv(k, v)
+		}
 	}
-	if cfg.LoginThrottleThreshold <= 0 || cfg.LoginThrottleWindow <= 0 || cfg.LoginThrottleBlockDuration <= 0 {
-		return nil, fmt.Errorf("login throttle settings must be positive")
-	}
-	return cfg, nil
 }
 
-// IsDevelopment reports whether the app runs in development mode.
-func (c *Config) IsDevelopment() bool { return c.AppEnv == "development" }
+func Load() (Config, error) {
+	c := Config{
+		Port:              env("PORT", "8080"),
+		BasePath:          NormalizeBasePath(os.Getenv("BASE_PATH")),
+		DatabaseURL:       os.Getenv("DATABASE_URL"),
+		SessionCookieName: env("SESSION_COOKIE_NAME", "mealplanner_session"),
+		SessionSecret:     os.Getenv("SESSION_SECRET"),
+		AppEnv:            env("APP_ENV", "development"),
+	}
+	if c.DatabaseURL == "" {
+		return c, fmt.Errorf("DATABASE_URL is required")
+	}
+	if c.SessionSecret == "" {
+		if c.Production() {
+			return c, fmt.Errorf("SESSION_SECRET is required in production")
+		}
+		c.SessionSecret = "dev-insecure-secret"
+	}
+	loc, err := time.LoadLocation(env("APP_TIMEZONE", "UTC"))
+	if err != nil {
+		return c, fmt.Errorf("APP_TIMEZONE: %w", err)
+	}
+	c.Timezone = loc
+	if c.TrustedProxies, err = ParseCIDRs(os.Getenv("TRUSTED_PROXY_CIDRS")); err != nil {
+		return c, err
+	}
+	if c.LoginThrottleThreshold, err = strconv.Atoi(env("LOGIN_THROTTLE_THRESHOLD", "5")); err != nil {
+		return c, fmt.Errorf("LOGIN_THROTTLE_THRESHOLD: %w", err)
+	}
+	if c.LoginThrottleWindow, err = time.ParseDuration(env("LOGIN_THROTTLE_WINDOW", "10m")); err != nil {
+		return c, fmt.Errorf("LOGIN_THROTTLE_WINDOW: %w", err)
+	}
+	if c.LoginThrottleBlock, err = time.ParseDuration(env("LOGIN_THROTTLE_BLOCK_DURATION", "15m")); err != nil {
+		return c, fmt.Errorf("LOGIN_THROTTLE_BLOCK_DURATION: %w", err)
+	}
+	return c, nil
+}
 
-// normalizeBasePath returns "" for root deployment, or "/prefix" without a
-// trailing slash for sub-path deployment.
-func normalizeBasePath(p string) string {
+// NormalizeBasePath returns "" for root or "/segment" with no trailing slash.
+func NormalizeBasePath(p string) string {
 	p = strings.TrimSpace(p)
-	if p == "" || p == "/" {
+	p = strings.Trim(p, "/")
+	if p == "" {
 		return ""
 	}
-	if !strings.HasPrefix(p, "/") {
-		p = "/" + p
-	}
-	return strings.TrimRight(p, "/")
+	return "/" + p
 }
 
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
+func ParseCIDRs(raw string) ([]*net.IPNet, error) {
+	var out []*net.IPNet
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		_, n, err := net.ParseCIDR(part)
+		if err != nil {
+			return nil, fmt.Errorf("TRUSTED_PROXY_CIDRS: %w", err)
+		}
+		out = append(out, n)
+	}
+	return out, nil
+}
+
+func env(k, def string) string {
+	if v := os.Getenv(k); v != "" {
 		return v
 	}
-	return fallback
-}
-
-func getEnvInt(key string, fallback int) (int, error) {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback, nil
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return 0, fmt.Errorf("%s must be an integer: %w", key, err)
-	}
-	return n, nil
-}
-
-func getEnvDuration(key string, fallback time.Duration) (time.Duration, error) {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback, nil
-	}
-	d, err := time.ParseDuration(v)
-	if err != nil {
-		return 0, fmt.Errorf("%s must be a duration: %w", key, err)
-	}
-	return d, nil
-}
-
-func getEnvPrefixes(key string) ([]netip.Prefix, error) {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return nil, nil
-	}
-	prefixes := make([]netip.Prefix, 0, strings.Count(value, ",")+1)
-	for _, raw := range strings.Split(value, ",") {
-		prefix, err := netip.ParsePrefix(strings.TrimSpace(raw))
-		if err != nil {
-			return nil, fmt.Errorf("%s must contain valid CIDRs: %w", key, err)
-		}
-		addr := prefix.Addr().Unmap()
-		bits := prefix.Bits()
-		if prefix.Addr().Is4In6() {
-			if bits < 96 {
-				return nil, fmt.Errorf("%s contains an invalid IPv4-mapped CIDR %q", key, raw)
-			}
-			bits -= 96
-		}
-		prefixes = append(prefixes, netip.PrefixFrom(addr, bits).Masked())
-	}
-	return prefixes, nil
+	return def
 }

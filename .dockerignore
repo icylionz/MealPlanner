@@ -1,6 +1,8 @@
 .git
-bin/
-tmp/
 .env
-docs/
-*.md
+.cache
+bin
+tmp
+internal/repo/db
+**/*_templ.go
+internal/assets/static/app.css

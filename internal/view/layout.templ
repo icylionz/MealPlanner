@@ -1,0 +1,258 @@
+package view
+
+type Meta struct {
+	Title  string
+	Active string // today, plan, foods, grocery, prep, data, household, settings
+}
+
+templ head(title string) {
+	<meta charset="utf-8"/>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+	<meta name="theme-color" content="#22386A"/>
+	<meta name="htmx-config" content='{"historyCacheSize":0,"refreshOnHistoryMiss":true,"scrollIntoViewOnBoost":false}'/>
+	<title>{ title } · Backbone Plate</title>
+	<link rel="manifest" href={ Path("/manifest.webmanifest") }/>
+	<link rel="icon" href={ Asset("icon.svg") } type="image/svg+xml"/>
+	<link rel="apple-touch-icon" href={ Asset("icon-192.png") }/>
+	<link href={ Asset("app.css") } rel="stylesheet"/>
+	<link href={ Asset("fonts-text.css") } rel="stylesheet"/>
+	<link href={ Asset("shell.css") } rel="stylesheet"/>
+	<link href={ Asset("mp.css") } rel="stylesheet"/>
+	<script src={ Asset("htmx.min.js") } defer></script>
+	<script src={ Asset("app.js") } defer data-base={ Path("") }></script>
+}
+
+templ navLink(active, key, href, icon, label string) {
+	<a class={ NavClass(active, key) } href={ URL(href) } title={ label }><span class="app-nav-rail"></span>@Icon(icon, 20)<span class="app-sidebar-label">{ label }</span></a>
+}
+
+templ tabLink(active, key, href, icon, label string) {
+	<a class={ TabClass(active, key) } href={ URL(href) }>
+		@Icon(icon, 22)
+		<span>{ label }</span>
+	</a>
+}
+
+// Shell is the authenticated app frame: Backbone sidebar on desktop, top bar
+// plus the five-tab bottom bar on mobile (PRD 8.1).
+templ Shell(m Meta) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			@head(m.Title)
+		</head>
+		<body class="rh-app min-h-screen" hx-boost="true">
+			<header>
+				<div class="app-mobile-topbar px-4 lg:hidden">
+					<div class="flex w-full items-center justify-between gap-3">
+						<a class="app-shell-brand min-w-0" href={ URL("/today") }>
+							@BrandMark()
+							<div class="app-brand-copy min-w-0">
+								<p class="app-brand-name truncate">Plate</p>
+								<p class="app-brand-overline truncate">{ HouseholdName(ctx) }</p>
+							</div>
+						</a>
+						<nav class="flex items-center gap-1" aria-label="More">
+							<a class={ "mp-icon-btn " + If(m.Active == "data", "is-active", "") } href={ URL("/data") } title="Data">@Icon("database", 19)<span class="sr-only">Data</span></a>
+							<a class={ "mp-icon-btn " + If(m.Active == "household", "is-active", "") } href={ URL("/household") } title="Household">@Icon("users", 19)<span class="sr-only">Household</span></a>
+							<a class={ "mp-icon-btn " + If(m.Active == "settings", "is-active", "") } href={ URL("/settings") } title="Settings">@Icon("sliders-horizontal", 19)<span class="sr-only">Settings</span></a>
+						</nav>
+					</div>
+				</div>
+				<aside class="app-desktop-sidebar hidden flex-col lg:flex">
+					<div class="app-sidebar-header flex items-center justify-between gap-3">
+						<a class="app-sidebar-brand app-shell-brand flex min-w-0 items-center gap-3" href={ URL("/today") }>
+							@BrandMark()
+							<div class="app-brand-copy min-w-0">
+								<p class="app-brand-name truncate">Backbone</p>
+								<p class="app-brand-overline truncate">Plate</p>
+							</div>
+						</a>
+						<button class="inline-flex size-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 hover:bg-slate-50" type="button" data-nav-desktop-toggle aria-expanded="true" title="Collapse sidebar">
+							@Icon("panel-left-close", 20)
+							<span class="sr-only">Collapse sidebar</span>
+						</button>
+					</div>
+					<nav class="app-sidebar-nav mt-8 flex flex-1 flex-col gap-1">
+						<p class="app-nav-group-label">Kitchen</p>
+						@navLink(m.Active, "today", "/today", "sun", "Today")
+						@navLink(m.Active, "plan", "/plan", "calendar-days", "Plan")
+						@navLink(m.Active, "foods", "/foods", "utensils", "Foods")
+						@navLink(m.Active, "grocery", "/grocery", "shopping-cart", "Grocery")
+						@navLink(m.Active, "prep", "/prep", "chef-hat", "Prep")
+						<p class="app-nav-group-label">Household</p>
+						@navLink(m.Active, "data", "/data", "database", "Data")
+						@navLink(m.Active, "household", "/household", "users", "Household")
+						@navLink(m.Active, "settings", "/settings", "sliders-horizontal", "Settings")
+					</nav>
+					<div class="app-sidebar-footer">
+						<div class="app-user-avatar">{ UserInitial(ctx) }</div>
+						<div class="app-user-meta app-brand-copy">
+							<p class="app-user-name">{ UserName(ctx) }</p>
+							<p class="app-user-subtitle">{ HouseholdName(ctx) } · { RoleLabel(ctx) }</p>
+						</div>
+						<form method="post" action={ URL("/logout") } class="app-logout-form">
+							@CSRFField()
+							<button class="app-user-logout" type="submit" title="Sign out" aria-label="Sign out">
+								@Icon("log-out", 18)
+							</button>
+						</form>
+					</div>
+				</aside>
+				<div class="app-desktop-topbar hidden lg:flex">
+					<div class="app-topbar-shell">
+						<div class="app-topbar-copy">
+							<p class="app-topbar-title">{ m.Title }</p>
+						</div>
+					</div>
+					<div class="app-topbar-actions">
+						if p := Req(ctx).Principal; p != nil && len(p.Households) > 1 {
+							<form method="post" action={ URL("/household/switch") } class="flex items-center gap-2">
+								@CSRFField()
+								<select name="household_id" class="rh-select h-9 py-0 text-sm" aria-label="Active household" data-autosubmit>
+									for _, h := range p.Households {
+										<option value={ h.ID.String() } selected?={ p.Household != nil && h.ID == p.Household.ID }>{ h.Name }</option>
+									}
+								</select>
+								<noscript><button class="rh-btn rh-btn-secondary rh-btn-sm" type="submit">Switch</button></noscript>
+							</form>
+						} else {
+							<span class="rh-chip rh-chip-cat">@Icon("home", 12)<span>{ HouseholdName(ctx) }</span></span>
+						}
+						<div class="app-user-avatar">{ UserInitial(ctx) }</div>
+					</div>
+				</div>
+			</header>
+			<main class="app-main">
+				<div class="mx-auto w-full max-w-[1280px] space-y-5">
+					@FlashMessage()
+					{ children... }
+				</div>
+			</main>
+			<nav class="mp-tabs lg:hidden" aria-label="Primary">
+				@tabLink(m.Active, "today", "/today", "sun", "Today")
+				@tabLink(m.Active, "plan", "/plan", "calendar-days", "Plan")
+				@tabLink(m.Active, "foods", "/foods", "utensils", "Foods")
+				@tabLink(m.Active, "grocery", "/grocery", "shopping-cart", "Grocery")
+				@tabLink(m.Active, "prep", "/prep", "chef-hat", "Prep")
+			</nav>
+		</body>
+	</html>
+}
+
+// Bare is the frame for sign-in, registration and onboarding.
+templ Bare(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			@head(title)
+		</head>
+		<body class="rh-app min-h-screen" hx-boost="true">
+			<main class="mp-bare">
+				<div class="w-full max-w-[440px] space-y-5">
+					<div class="flex items-center justify-center gap-3">
+						@BrandMark()
+						<div>
+							<p class="app-brand-name">Backbone <span>Plate</span></p>
+							<p class="app-brand-overline">Household meal planner</p>
+						</div>
+					</div>
+					@FlashMessage()
+					{ children... }
+				</div>
+			</main>
+		</body>
+	</html>
+}
+
+// Print is a chrome-free document for printable views.
+templ Print(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			@head(title)
+		</head>
+		<body class="mp-print">
+			{ children... }
+		</body>
+	</html>
+}
+
+templ CSRFField() {
+	<input type="hidden" name="_csrf" value={ CSRF(ctx) }/>
+}
+
+templ FlashMessage() {
+	if r := Req(ctx); r.Flash != "" {
+		<div class={ "mp-flash " + If(r.FlashKind == "error", "is-error", "") } role="status">
+			@Icon(If(r.FlashKind == "error", "alert-circle", "check-circle"), 16)
+			<span>{ r.Flash }</span>
+		</div>
+	}
+}
+
+// Errors renders validation problems.
+templ Errors(problems []string) {
+	if len(problems) > 0 {
+		<div class="mp-flash is-error" role="alert">
+			@Icon("alert-circle", 16)
+			<div>
+				for _, p := range problems {
+					<p>{ p }</p>
+				}
+			</div>
+		</div>
+	}
+}
+
+templ Warnings(msgs []string) {
+	if len(msgs) > 0 {
+		<div class="mp-flash is-warn" role="status">
+			@Icon("triangle-alert", 16)
+			<div>
+				for _, p := range msgs {
+					<p>{ p }</p>
+				}
+			</div>
+		</div>
+	}
+}
+
+templ PageHeader(eyebrow, title, sub string) {
+	<section class="rh-page-header">
+		<div>
+			if eyebrow != "" {
+				<p class="rh-eyebrow">{ eyebrow }</p>
+			}
+			<h1 class="rh-h1">{ title }</h1>
+			if sub != "" {
+				<p class="rh-sub">{ sub }</p>
+			}
+		</div>
+		<div class="flex flex-wrap gap-2">
+			{ children... }
+		</div>
+	</section>
+}
+
+templ Empty(icon, title, body string) {
+	<div class="mp-empty">
+		<span class="mp-empty-icon">@Icon(icon, 22)</span>
+		<p class="text-base font-semibold text-slate-900">{ title }</p>
+		<p class="text-sm text-slate-600">{ body }</p>
+		<div class="mt-2 flex flex-wrap justify-center gap-2">
+			{ children... }
+		</div>
+	</div>
+}
+
+templ ErrorPage(status int, title, body string) {
+	@Bare(title) {
+		<section class="rh-card text-center">
+			<p class="rh-eyebrow">Error { Itoa(status) }</p>
+			<h1 class="rh-h1 mt-2">{ title }</h1>
+			<p class="rh-sub">{ body }</p>
+			<div class="mt-4"><a class="rh-btn rh-btn-primary" href={ URL("/today") }>Back to Today</a></div>
+		</section>
+	}
+}

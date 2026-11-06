@@ -1,0 +1,624 @@
+package view
+
+import (
+	"github.com/google/uuid"
+
+	"github.com/icylionz/mealplanner/internal/service"
+)
+
+type FoodRow struct {
+	Food     *service.Food
+	Estimate service.Estimate
+}
+
+type FoodsList struct {
+	Filter service.FoodFilter
+	Tags   []string
+	Rows   []FoodRow
+	Total  int
+	Page   int
+	Pages  int
+}
+
+func (l FoodsList) pageURL(p int) string {
+	return Query("/foods", "q", l.Filter.Query, "tag", l.Filter.Tag, "kind", l.Filter.Kind, "page", Itoa(p))
+}
+
+templ FoodsPage(l FoodsList) {
+	@Shell(Meta{Title: "Foods", Active: "foods"}) {
+		@PageHeader("Library", "Foods", "Ingredients and recipes share one catalog. A food with components is a recipe.") {
+			if IsOwner(ctx) {
+				<a class="rh-btn rh-btn-primary" href={ URL("/foods/new") }>@Icon("plus", 16) New food</a>
+				<a class="rh-btn rh-btn-secondary" href={ URL("/foods/import") }>@Icon("download", 16) Import recipe</a>
+			}
+		}
+		<form method="get" action={ URL("/foods") } class="rh-card rh-card-tight flex flex-wrap items-end gap-3" data-live-form>
+			<label class="rh-field min-w-[200px] flex-1">
+				<span class="rh-label">Search</span>
+				<input id="foods-q" class="rh-input" type="search" name="q" value={ l.Filter.Query } placeholder="Name or alias" autocomplete="off" data-live-input/>
+			</label>
+			<label class="rh-field">
+				<span class="rh-label">Type</span>
+				<select class="rh-select" name="kind" data-autosubmit>
+					<option value="" selected?={ l.Filter.Kind == "" }>All foods</option>
+					<option value="recipe" selected?={ l.Filter.Kind == "recipe" }>Recipes</option>
+					<option value="ingredient" selected?={ l.Filter.Kind == "ingredient" }>Ingredients</option>
+				</select>
+			</label>
+			<label class="rh-field">
+				<span class="rh-label">Tag</span>
+				<select class="rh-select" name="tag" data-autosubmit>
+					<option value="">Any tag</option>
+					for _, t := range l.Tags {
+						<option value={ t } selected?={ l.Filter.Tag == t }>{ t }</option>
+					}
+				</select>
+			</label>
+			<button class="rh-btn rh-btn-secondary" type="submit">@Icon("filter", 16) Filter</button>
+		</form>
+		if len(l.Rows) == 0 {
+			@Empty("utensils", "No foods match", "Try another search, or add a food.") {
+				if IsOwner(ctx) {
+					<a class="rh-btn rh-btn-primary" href={ URL("/foods/new") }>New food</a>
+				}
+				<a class="rh-btn rh-btn-secondary" href={ URL("/foods") }>Clear filters</a>
+			}
+		} else {
+			<div class="rh-table-wrap mobile-scroll-table">
+				<table class="rh-table">
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th class="hidden sm:table-cell">Tags</th>
+							<th class="num">Makes</th>
+							<th class="num hidden md:table-cell">Est. cost</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, r := range l.Rows {
+							<tr class="rh-row-hover">
+								<td>
+									<a class="flex items-center gap-3" href={ URL("/foods/" + r.Food.ID.String()) }>
+										<span class="rh-accounts-icon">
+											if r.Food.IsRecipe() {
+												@Icon("layers", 17)
+											} else {
+												@Icon("package", 17)
+											}
+										</span>
+										<span class="min-w-0">
+											<span class="rh-accounts-name">{ r.Food.Name }</span>
+											<span class="block truncate text-xs text-slate-500">
+												{ If(r.Food.IsRecipe(), Plural(len(r.Food.Components), "component", "components"), "Ingredient") }
+												if len(r.Food.Aliases) > 0 {
+													· aka { Join(r.Food.Aliases, ", ") }
+												}
+											</span>
+										</span>
+									</a>
+								</td>
+								<td class="hidden sm:table-cell">
+									<div class="flex flex-wrap gap-1">
+										for _, t := range r.Food.Tags {
+											<a class="rh-chip rh-chip-tag" href={ templ.SafeURL(Query("/foods", "tag", t)) }>{ t }</a>
+										}
+									</div>
+								</td>
+								<td class="num text-slate-600">
+									if r.Food.IsRecipe() {
+										{ Num(r.Food.Servings) } srv
+									} else {
+										{ r.Food.DefaultUnit }
+									}
+								</td>
+								<td class="num hidden md:table-cell">
+									if r.Estimate.Priced > 0 {
+										<span class="rh-money font-semibold">{ Money(r.Estimate.Total) }</span>
+										if !r.Estimate.Complete() {
+											<span class="text-xs text-amber-700">*</span>
+										}
+									} else {
+										<span class="text-slate-400">—</span>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+			<div class="mobile-pagination flex items-center justify-between text-sm text-slate-600">
+				<span>{ Plural(l.Total, "food", "foods") } · page { Itoa(l.Page) } of { Itoa(l.Pages) }</span>
+				<div class="pagination-links flex gap-2">
+					if l.Page > 1 {
+						<a class="rh-btn rh-btn-secondary rh-btn-sm" href={ templ.SafeURL(l.pageURL(l.Page - 1)) }>Previous</a>
+					}
+					if l.Page < l.Pages {
+						<a class="rh-btn rh-btn-secondary rh-btn-sm" href={ templ.SafeURL(l.pageURL(l.Page + 1)) }>Next</a>
+					}
+				</div>
+			</div>
+		}
+	}
+}
+
+type FoodPage struct {
+	D       service.FoodDetail
+	Amount  float64
+	Unit    string
+	AmountE service.Estimate
+}
+
+templ FoodDetailPage(p FoodPage) {
+	{{ f := p.D.Food }}
+	@Shell(Meta{Title: f.Name, Active: "foods"}) {
+		<nav class="rh-crumb"><a href={ URL("/foods") }>Foods</a><span class="sep">/</span><span class="here">{ f.Name }</span></nav>
+		@PageHeader(If(f.IsRecipe(), "Recipe", "Ingredient"), f.Name, f.Description) {
+			if IsOwner(ctx) && !f.Deleted() {
+				<a class="rh-btn rh-btn-primary" href={ URL("/foods/" + f.ID.String() + "/edit") }>@Icon("pencil", 16) Edit</a>
+				<a class="rh-btn rh-btn-secondary" href={ templ.SafeURL(Query("/grocery/generate", "mode", "food", "food", f.ID.String(), "servings", Num(p.D.Servings))) }>@Icon("shopping-cart", 16) Add to grocery list</a>
+				if f.SourceUrl != "" {
+					<form method="post" action={ URL("/foods/" + f.ID.String() + "/reimport") }>
+						@CSRFField()
+						<button class="rh-btn rh-btn-secondary" type="submit">@Icon("refresh", 16) Re-import</button>
+					</form>
+				}
+			}
+		}
+		if f.Deleted() {
+			<div class="mp-flash is-warn">@Icon("archive", 16) This food was deleted. It stays readable where it was used before.</div>
+		}
+		if len(f.Tags) > 0 {
+			<div class="flex flex-wrap gap-1.5">
+				for _, t := range f.Tags {
+					<a class="rh-chip rh-chip-tag" href={ templ.SafeURL(Query("/foods", "tag", t)) }>@Icon("tag", 11)<span>{ t }</span></a>
+				}
+			</div>
+		}
+		<div class="grid gap-4 lg:grid-cols-[3fr_2fr]">
+			<div class="space-y-4">
+				if f.IsRecipe() {
+					<section class="rh-card space-y-3">
+						<div class="flex flex-wrap items-center justify-between gap-2">
+							<h2 class="text-base font-semibold">Components</h2>
+							<span class="text-xs text-slate-500">For { Num(f.Servings) } servings</span>
+						</div>
+						<ul class="divide-y divide-slate-200">
+							for _, cp := range f.Components {
+								{{ child := p.D.Catalog.Get(cp.ChildFoodID) }}
+								<li class="flex items-center justify-between gap-3 py-2">
+									<div class="min-w-0">
+										<a class="font-medium hover:underline" href={ URL("/foods/" + cp.ChildFoodID.String()) }>{ p.D.Catalog.Name(cp.ChildFoodID) }</a>
+										if cp.VariantText != "" {
+											<span class="text-sm text-slate-500">, { cp.VariantText }</span>
+										}
+										if child != nil && child.IsRecipe() {
+											<span class="rh-chip ml-1">@Icon("layers", 11) recipe</span>
+										}
+									</div>
+									<span class="shrink-0 font-semibold tabular-nums">{ Qty(cp.Amount, cp.Unit) }</span>
+								</li>
+							}
+						</ul>
+					</section>
+					<section class="rh-card space-y-3">
+						<div class="flex flex-wrap items-center justify-between gap-2">
+							<h2 class="text-base font-semibold">Shopping ingredients</h2>
+							<form method="get" class="flex items-center gap-2 text-sm">
+								<label for="scale-servings" class="text-slate-500">Servings</label>
+								<input id="scale-servings" class="rh-input w-20 py-1" type="number" step="any" min="0" name="servings" value={ Num(p.D.Servings) }/>
+								<button class="rh-btn rh-btn-secondary rh-btn-sm" type="submit">Scale</button>
+							</form>
+						</div>
+						@LeafTable(p.D.Leaves)
+					</section>
+				}
+				if len(p.D.Steps) > 0 {
+					<section class="rh-card space-y-3">
+						<h2 class="text-base font-semibold">Steps</h2>
+						<ol class="mp-steps">
+							for _, st := range p.D.Steps {
+								<li>{ st.Instruction }</li>
+							}
+						</ol>
+					</section>
+				}
+				if len(p.D.UsedBy) > 0 {
+					<section class="rh-card space-y-2">
+						<h2 class="text-base font-semibold">Used in</h2>
+						<div class="flex flex-wrap gap-1.5">
+							for _, u := range p.D.UsedBy {
+								<a class="rh-chip rh-chip-cat" href={ URL("/foods/" + u.ID.String()) }>{ u.Name }</a>
+							}
+						</div>
+					</section>
+				}
+			</div>
+			<div class="space-y-4">
+				if f.IsRecipe() {
+					@EstimateCard(p.D.Estimate, "for "+Num(p.D.Servings)+" servings")
+				} else {
+					<section class="space-y-2">
+						@EstimateCard(p.AmountE, "for "+Qty(p.Amount, p.Unit))
+						<form method="get" class="flex items-center gap-2 text-sm">
+							<input class="rh-input w-24 py-1" type="number" step="any" min="0" name="amount" value={ Num(p.Amount) } aria-label="Amount"/>
+							<select class="rh-select py-1" name="unit" aria-label="Unit">
+								for _, u := range UnitOptions {
+									<option value={ u } selected?={ u == p.Unit }>{ u }</option>
+								}
+							</select>
+							<button class="rh-btn rh-btn-secondary rh-btn-sm" type="submit">Estimate</button>
+						</form>
+					</section>
+				}
+				<section class="rh-card space-y-2">
+					<p class="rh-overline">Details</p>
+					<dl class="rh-schedule-facts">
+						<dt>Servings</dt><dd>{ Num(f.Servings) }</dd>
+						if f.YieldAmount != nil {
+							<dt>Yield</dt><dd>{ Qty(*f.YieldAmount, f.DefaultUnit) }</dd>
+						}
+						<dt>Unit</dt><dd>{ If(f.DefaultUnit == "", "—", f.DefaultUnit) }</dd>
+						if f.IsRecipe() {
+							<dt>Prep</dt><dd>{ Minutes(f.PrepTimeMin) }</dd>
+							<dt>Cook</dt><dd>{ Minutes(f.CookTimeMin) }</dd>
+						}
+						<dt>Density</dt>
+						<dd>
+							if f.DensityGPerMl != nil {
+								{ Num(*f.DensityGPerMl) } g/ml
+								if f.DensitySource == "custom" {
+									<span class="rh-chip rh-chip-warn ml-1">Custom</span>
+								} else {
+									<span class="rh-chip ml-1">Starter</span>
+								}
+							} else {
+								<span class="text-slate-400">Not set</span>
+							}
+						</dd>
+						if len(f.Aliases) > 0 {
+							<dt>Aliases</dt><dd>{ Join(f.Aliases, ", ") }</dd>
+						}
+						if r, ok := p.D.Catalog.Cost(f.ID); ok {
+							<dt>Last cost</dt><dd>{ Money(r.Cost) + " for " + Qty(r.Amount, r.Unit) }</dd>
+						}
+						if f.SourceUrl != "" {
+							<dt>Source</dt>
+							<dd><a class="font-semibold text-primary hover:underline" href={ templ.SafeURL(f.SourceUrl) } target="_blank" rel="noopener noreferrer nofollow">{ f.SourceUrl }</a></dd>
+							<dt>Imported</dt><dd>{ OptDateTime(f.SourceLastImportedAt) }</dd>
+						}
+					</dl>
+				</section>
+				if IsOwner(ctx) && !f.Deleted() {
+					<form method="post" action={ URL("/foods/" + f.ID.String() + "/delete") } data-confirm="Delete this food? Past meals and lists keep showing it.">
+						@CSRFField()
+						<button class="rh-btn rh-btn-danger" type="submit">@Icon("trash", 16) Delete food</button>
+					</form>
+				}
+			</div>
+		</div>
+	}
+}
+
+type FoodEditor struct {
+	Input    service.FoodInput
+	Names    map[uuid.UUID]string
+	Recipes  map[uuid.UUID]bool
+	Options  []FoodOption
+	Pick     ComponentPick
+	Errors   []string
+	Warnings []string
+	Conflict *Conflict
+	Missing  string // name offered for creation
+}
+
+type ComponentPick struct {
+	Name    string
+	Amount  string
+	Unit    string
+	Variant string
+}
+
+func (e FoodEditor) Action() string {
+	if e.Input.ID == uuid.Nil {
+		return "/foods/new"
+	}
+	return "/foods/" + e.Input.ID.String() + "/edit"
+}
+
+templ unitSelect(name, current string) {
+	<select class="rh-select py-1.5" name={ name }>
+		if !contains(UnitOptions, current) && current != "" {
+			<option value={ current } selected>{ current }</option>
+		}
+		for _, u := range UnitOptions {
+			<option value={ u } selected?={ u == current }>{ u }</option>
+		}
+	</select>
+}
+
+func contains(xs []string, s string) bool {
+	for _, x := range xs {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+templ FoodEditorPage(e FoodEditor) {
+	@Shell(Meta{Title: If(e.Input.ID == uuid.Nil, "New food", "Edit food"), Active: "foods"}) {
+		@PageHeader(If(e.Input.ID == uuid.Nil, "New", "Edit"), If(e.Input.Name == "", "New food", e.Input.Name), "Add components to turn a food into a recipe.") {
+		}
+		@ConflictPanel(e.Conflict)
+		@Errors(e.Errors)
+		@Warnings(e.Warnings)
+		<form method="post" action={ URL(e.Action()) } class="space-y-4">
+			@CSRFField()
+			<button class="mp-default-submit" type="submit" name="op" value="refresh" tabindex="-1" aria-hidden="true">Refresh</button>
+			<input type="hidden" name="version" value={ I32(e.Input.Version) }/>
+			<input type="hidden" name="source_url" value={ e.Input.SourceURL }/>
+			<section class="rh-card space-y-4">
+				<h2 class="text-base font-semibold">Basics</h2>
+				<label class="rh-field">
+					<span class="rh-label">Name</span>
+					<input class="rh-input" type="text" name="name" value={ e.Input.Name } required/>
+				</label>
+				<label class="rh-field">
+					<span class="rh-label">Description</span>
+					<textarea class="rh-textarea" name="description" rows="2">{ e.Input.Description }</textarea>
+				</label>
+				<div class="grid gap-3 sm:grid-cols-2">
+					<label class="rh-field">
+						<span class="rh-label">Aliases</span>
+						<input class="rh-input" type="text" name="aliases" value={ Join(e.Input.Aliases, ", ") } placeholder="Comma separated"/>
+					</label>
+					<label class="rh-field">
+						<span class="rh-label">Tags</span>
+						<input class="rh-input" type="text" name="tags" value={ Join(e.Input.Tags, ", ") } placeholder="dinner, vegetarian"/>
+					</label>
+				</div>
+			</section>
+			<section class="rh-card space-y-4">
+				<h2 class="text-base font-semibold">Yield and measures</h2>
+				<div class="grid gap-3 grid-cols-2 sm:grid-cols-4">
+					<label class="rh-field">
+						<span class="rh-label">Servings</span>
+						<input class="rh-input" type="number" step="any" min="0" name="servings" value={ Num(e.Input.Servings) }/>
+					</label>
+					<label class="rh-field">
+						<span class="rh-label">Yield amount</span>
+						<input class="rh-input" type="number" step="any" min="0" name="yield_amount" value={ OptNum(e.Input.YieldAmount) } placeholder="optional"/>
+					</label>
+					<label class="rh-field">
+						<span class="rh-label">Default unit</span>
+						@unitSelect("default_unit", e.Input.DefaultUnit)
+					</label>
+					<label class="rh-field">
+						<span class="rh-label">Density (g/ml)</span>
+						<input class="rh-input" type="number" step="any" min="0" name="density" value={ OptNum(e.Input.Density) } placeholder="optional"/>
+					</label>
+				</div>
+				<div class="grid gap-3 grid-cols-2 sm:grid-cols-4">
+					<label class="rh-field">
+						<span class="rh-label">Prep (min)</span>
+						<input class="rh-input" type="number" min="0" name="prep_time" value={ I32(e.Input.PrepTimeMin) }/>
+					</label>
+					<label class="rh-field">
+						<span class="rh-label">Cook (min)</span>
+						<input class="rh-input" type="number" min="0" name="cook_time" value={ I32(e.Input.CookTimeMin) }/>
+					</label>
+				</div>
+				<p class="rh-label-hint">Density converts between volume and weight. Leave it empty if unknown; conversions that need it get flagged for review.</p>
+			</section>
+			<section class="rh-card space-y-4">
+				<div class="flex items-center justify-between">
+					<h2 class="text-base font-semibold">Components</h2>
+					<span class="text-xs text-slate-500">Quantities are for the servings above</span>
+				</div>
+				if len(e.Input.Components) == 0 {
+					<p class="text-sm text-slate-500">No components: this is an atomic ingredient.</p>
+				}
+				<div class="space-y-2">
+					for i, cp := range e.Input.Components {
+						<div class="mp-line flex-wrap">
+							<input type="hidden" name="comp_food" value={ cp.ChildID.String() }/>
+							<div class="min-w-[140px] flex-1">
+								<p class="font-semibold">{ e.Names[cp.ChildID] }</p>
+								if e.Recipes[cp.ChildID] {
+									<p class="text-xs text-slate-500">Recipe component</p>
+								}
+							</div>
+							<input class="rh-input w-20 py-1.5" type="number" step="any" min="0" name="comp_amount" value={ Num(cp.Amount) } aria-label="Amount"/>
+							@unitSelect("comp_unit", cp.Unit)
+							<input class="rh-input w-36 py-1.5" type="text" name="comp_variant" value={ cp.Variant } placeholder="variant, e.g. diced" aria-label="Variant"/>
+							<div class="flex">
+								if i > 0 {
+									<button class="rh-btn rh-btn-ghost rh-btn-sm" type="submit" name="op" value={ "up:" + Itoa(i) } aria-label="Move up">@Icon("arrow-up", 15)</button>
+								}
+								<button class="rh-btn rh-btn-ghost rh-btn-sm" type="submit" name="op" value={ "remove:" + Itoa(i) } aria-label="Remove">@Icon("x", 15)</button>
+							</div>
+						</div>
+					}
+				</div>
+				<div class="rounded-xl border border-dashed border-slate-300 p-3 space-y-3">
+					<p class="rh-overline">Add component</p>
+					<div class="flex flex-wrap items-end gap-2">
+						<label class="rh-field min-w-[180px] flex-1">
+							<span class="rh-label">Food or recipe</span>
+							<input class="rh-input" type="search" name="pick_name" value={ e.Pick.Name } list="food-options" placeholder="Search by name or alias" autocomplete="off"/>
+						</label>
+						<label class="rh-field w-24">
+							<span class="rh-label">Amount</span>
+							<input class="rh-input" type="text" inputmode="decimal" name="pick_amount" value={ e.Pick.Amount } placeholder="1 1/2"/>
+						</label>
+						<label class="rh-field">
+							<span class="rh-label">Unit</span>
+							@unitSelect("pick_unit", e.Pick.Unit)
+						</label>
+						<label class="rh-field w-36">
+							<span class="rh-label">Variant</span>
+							<input class="rh-input" type="text" name="pick_variant" value={ e.Pick.Variant } placeholder="chopped"/>
+						</label>
+						<button class="rh-btn rh-btn-secondary" type="submit" name="op" value="add">@Icon("plus", 16) Add</button>
+					</div>
+					if e.Missing != "" {
+						<div class="flex flex-wrap items-center gap-2 text-sm">
+							<span>No food named <strong>{ e.Missing }</strong>.</span>
+							<button class="rh-btn rh-btn-secondary rh-btn-sm" type="submit" name="op" value="create">Create "{ e.Missing }" as an ingredient</button>
+						</div>
+					}
+					@FoodDatalist("food-options", e.Options)
+				</div>
+			</section>
+			<section class="rh-card space-y-4">
+				<div class="flex items-center justify-between">
+					<h2 class="text-base font-semibold">Steps</h2>
+					<button class="rh-btn rh-btn-secondary rh-btn-sm" type="submit" name="op" value="add-step">@Icon("plus", 14) Add step</button>
+				</div>
+				if len(e.Input.Steps) == 0 {
+					<p class="text-sm text-slate-500">No steps.</p>
+				}
+				for i, st := range e.Input.Steps {
+					<div class="flex items-start gap-2">
+						<span class="mt-2 w-6 shrink-0 text-right font-display font-bold text-slate-400">{ Itoa(i + 1) }</span>
+						<textarea class="rh-textarea flex-1" name="step" rows="2">{ st }</textarea>
+						<button class="rh-btn rh-btn-ghost rh-btn-sm mt-1" type="submit" name="op" value={ "remove-step:" + Itoa(i) } aria-label="Remove step">@Icon("x", 15)</button>
+					</div>
+				}
+			</section>
+			<div class="flex flex-wrap gap-2">
+				<button class="rh-btn rh-btn-primary" type="submit" name="op" value="save">@Icon("check", 16) Save food</button>
+				<a class="rh-btn rh-btn-ghost" href={ URL(If(e.Input.ID == uuid.Nil, "/foods", "/foods/"+e.Input.ID.String())) }>Cancel</a>
+			</div>
+		</form>
+	}
+}
+
+type ImportPage struct {
+	URL    string
+	Errors []string
+}
+
+templ ImportURLPage(p ImportPage) {
+	@Shell(Meta{Title: "Import recipe", Active: "foods"}) {
+		@PageHeader("Foods", "Import a recipe", "Paste a public recipe page. You'll review everything before it's saved.") {
+		}
+		@Errors(p.Errors)
+		<form method="post" action={ URL("/foods/import") } class="rh-card max-w-2xl space-y-4">
+			@CSRFField()
+			<label class="rh-field">
+				<span class="rh-label">Recipe URL</span>
+				<input class="rh-input" type="url" name="url" value={ p.URL } placeholder="https://example.com/recipes/lasagna" required/>
+			</label>
+			<p class="rh-label-hint">Works with pages that publish schema.org Recipe data, which most recipe sites do.</p>
+			<div class="flex gap-2">
+				<button class="rh-btn rh-btn-primary" type="submit">@Icon("download", 16) Fetch recipe</button>
+				<a class="rh-btn rh-btn-ghost" href={ URL("/foods") }>Cancel</a>
+			</div>
+		</form>
+		<section class="rh-card max-w-2xl space-y-2">
+			<p class="rh-overline">Moving data between households?</p>
+			<p class="text-sm text-slate-600">Use <a class="font-semibold text-primary hover:underline" href={ URL("/data") }>Data</a> to import or export JSON files.</p>
+		</section>
+	}
+}
+
+type ImportReview struct {
+	Draft   service.ImportDraft
+	Current *service.ImportDraft // set on re-import
+	Errors  []string
+}
+
+templ ImportReviewPage(r ImportReview) {
+	@Shell(Meta{Title: "Review import", Active: "foods"}) {
+		@PageHeader(If(r.Current != nil, "Re-import", "Import"), "Review recipe", r.Draft.URL) {
+		}
+		@Errors(r.Errors)
+		@Warnings(r.Draft.Warnings)
+		if r.Current != nil {
+			<section class="rh-card space-y-2">
+				<p class="rh-overline">Currently saved</p>
+				<p class="text-sm"><strong>{ r.Current.Name }</strong> · { Num(r.Current.Servings) } servings · { Plural(len(r.Current.Lines), "ingredient", "ingredients") } · { Plural(len(r.Current.Steps), "step", "steps") }</p>
+				<details class="text-sm">
+					<summary class="cursor-pointer font-semibold text-primary">Show current ingredients</summary>
+					<ul class="mt-2 list-disc pl-5 text-slate-600">
+						for _, l := range r.Current.Lines {
+							<li>{ l.Amount } { l.Unit } { l.Name }{ If(l.Variant != "", ", "+l.Variant, "") }</li>
+						}
+					</ul>
+				</details>
+				<p class="rh-label-hint">Saving replaces the saved ingredients and steps with the reviewed version below.</p>
+			</section>
+		}
+		<form method="post" action={ URL("/foods/import/save") } class="space-y-4">
+			@CSRFField()
+			<button class="mp-default-submit" type="submit" name="op" value="refresh" tabindex="-1" aria-hidden="true">Refresh</button>
+			<input type="hidden" name="url" value={ r.Draft.URL }/>
+			if r.Draft.FoodID != uuid.Nil {
+				<input type="hidden" name="food_id" value={ r.Draft.FoodID.String() }/>
+				<input type="hidden" name="version" value={ I32(r.Draft.Version) }/>
+			}
+			<section class="rh-card space-y-4">
+				<label class="rh-field">
+					<span class="rh-label">Name</span>
+					<input class="rh-input" type="text" name="name" value={ r.Draft.Name } required/>
+				</label>
+				<label class="rh-field">
+					<span class="rh-label">Description</span>
+					<textarea class="rh-textarea" name="description" rows="2">{ r.Draft.Description }</textarea>
+				</label>
+				<div class="grid gap-3 grid-cols-2 sm:grid-cols-4">
+					<label class="rh-field">
+						<span class="rh-label">Servings</span>
+						<input class="rh-input" type="number" step="any" min="0" name="servings" value={ Num(r.Draft.Servings) }/>
+					</label>
+					<label class="rh-field">
+						<span class="rh-label">Prep (min)</span>
+						<input class="rh-input" type="number" min="0" name="prep_time" value={ I32(r.Draft.PrepMin) }/>
+					</label>
+					<label class="rh-field">
+						<span class="rh-label">Cook (min)</span>
+						<input class="rh-input" type="number" min="0" name="cook_time" value={ I32(r.Draft.CookMin) }/>
+					</label>
+					<label class="rh-field">
+						<span class="rh-label">Tags</span>
+						<input class="rh-input" type="text" name="tags" value={ Join(r.Draft.Tags, ", ") }/>
+					</label>
+				</div>
+			</section>
+			<section class="rh-card space-y-3">
+				<div class="flex items-center justify-between">
+					<h2 class="text-base font-semibold">Ingredients</h2>
+					<button class="rh-btn rh-btn-secondary rh-btn-sm" type="submit" name="op" value="add-line">@Icon("plus", 14) Add line</button>
+				</div>
+				<p class="rh-label-hint">Each line is matched to a food by name or alias; unmatched names become new ingredients. Clear a name to drop the line.</p>
+				for i, l := range r.Draft.Lines {
+					<div class="mp-line flex-wrap">
+						<input class="rh-input w-20 py-1.5" type="text" name="line_amount" value={ l.Amount } placeholder="Amt" aria-label="Amount"/>
+						<input class="rh-input w-24 py-1.5" type="text" name="line_unit" value={ l.Unit } list="unit-options" placeholder="Unit" aria-label="Unit"/>
+						<input class="rh-input min-w-[140px] flex-1 py-1.5" type="text" name="line_name" value={ l.Name } placeholder="Ingredient" aria-label="Ingredient"/>
+						<input class="rh-input w-36 py-1.5" type="text" name="line_variant" value={ l.Variant } placeholder="Variant" aria-label="Variant"/>
+						<input type="hidden" name="line_raw" value={ l.Raw }/>
+						<button class="rh-btn rh-btn-ghost rh-btn-sm" type="submit" name="op" value={ "remove-line:" + Itoa(i) } aria-label="Remove">@Icon("x", 15)</button>
+						if l.Raw != "" {
+							<p class="w-full text-xs text-slate-400">Source: { l.Raw }</p>
+						}
+					</div>
+				}
+				<datalist id="unit-options">
+					for _, u := range UnitOptions {
+						<option value={ u }></option>
+					}
+				</datalist>
+			</section>
+			<section class="rh-card space-y-3">
+				<h2 class="text-base font-semibold">Steps</h2>
+				<textarea class="rh-textarea w-full" name="steps" rows="8" placeholder="One step per line">{ Join(r.Draft.Steps, "\n") }</textarea>
+			</section>
+			<div class="flex flex-wrap gap-2">
+				<button class="rh-btn rh-btn-primary" type="submit" name="op" value="save">@Icon("check", 16) Save recipe</button>
+				<a class="rh-btn rh-btn-ghost" href={ URL("/foods") }>Cancel</a>
+			</div>
+		</form>
+	}
+}

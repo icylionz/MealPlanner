@@ -1,1 +1,0 @@
-ALTER TABLE foods DROP COLUMN version;
