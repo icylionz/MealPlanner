@@ -130,6 +130,20 @@ func OptDateTime(t *time.Time) string {
 	return DateTime(*t)
 }
 
+// Until renders a minute count as "now", "in 45 min", or "in 2 h 5 min".
+func Until(mins int) string {
+	switch {
+	case mins <= 0:
+		return "now"
+	case mins < 60:
+		return fmt.Sprintf("in %d min", mins)
+	case mins%60 == 0:
+		return fmt.Sprintf("in %d h", mins/60)
+	default:
+		return fmt.Sprintf("in %d h %d min", mins/60, mins%60)
+	}
+}
+
 // Clock renders "18:30" as "6:30 PM".
 func Clock(hhmm string) string {
 	t, err := time.Parse("15:04", hhmm)

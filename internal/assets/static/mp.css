@@ -138,6 +138,72 @@
 	border-color: var(--accent-tint-2);
 	box-shadow: inset 3px 0 0 var(--accent), var(--shadow-sm);
 }
+.mp-meal.is-done {
+	background: var(--bg-sunken);
+	box-shadow: none;
+}
+.mp-meal.is-done .mp-meal-time,
+.mp-meal.is-done .text-slate-900 {
+	color: var(--fg-muted);
+}
+.mp-meal-done {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--fg-subtle);
+}
+
+/* Today: up-next hero and coming-up rows */
+.mp-next {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+	padding: 20px;
+	background: var(--accent-tint);
+	border: 1px solid var(--accent-tint-2);
+	border-radius: 16px;
+	box-shadow: inset 4px 0 0 var(--accent), var(--shadow-sm);
+}
+.mp-next.is-clear {
+	flex-direction: row;
+	align-items: center;
+	background: var(--bg-elevated);
+	border-color: var(--border);
+	box-shadow: var(--shadow-sm);
+}
+.mp-next.is-clear .mp-empty-icon {
+	flex-shrink: 0;
+	margin-bottom: 0;
+}
+.mp-upcoming {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	padding: 10px 0;
+}
+.mp-upcoming-date {
+	display: flex;
+	flex-direction: column;
+	width: 3.5rem;
+	flex-shrink: 0;
+	text-decoration: none;
+}
+.mp-upcoming-date:hover .font-display {
+	color: var(--accent);
+}
+.mp-upcoming-meal {
+	display: flex;
+	gap: 8px;
+	min-width: 0;
+	border-radius: 6px;
+	text-decoration: none;
+}
+.mp-upcoming-meal:hover .font-medium {
+	text-decoration: underline;
+}
+
 .mp-meal-time {
 	display: flex;
 	flex-direction: column;

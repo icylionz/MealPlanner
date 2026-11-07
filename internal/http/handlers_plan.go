@@ -85,11 +85,38 @@ func (s *Server) today(c echo.Context) error {
 		k := view.ISODate(m.Meal.PlanDate)
 		byDay[k] = append(byDay[k], m)
 	}
+	now := time.Now().In(s.cfg.Timezone)
 	d.Meals = byDay[view.ISODate(day)]
-	d.Next = service.NextIndex(d.Meals, time.Now().In(s.cfg.Timezone))
+	d.Next = service.NextIndex(d.Meals, now)
+	if d.Next >= 0 {
+		if t, err := time.ParseInLocation("15:04", d.Meals[d.Next].Meal.PlanTime, now.Location()); err == nil {
+			at := time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
+			d.NextIn = int(at.Sub(now).Minutes())
+		}
+	}
+	d.WeekMeals = len(meals)
 	for i := 1; i <= 6; i++ {
 		dd := day.AddDate(0, 0, i)
 		d.Upcoming = append(d.Upcoming, view.DayMeals{Date: dd, Meals: byDay[view.ISODate(dd)]})
+	}
+	lists, err := s.svc.Grocery.Lists(c.Request().Context(), actor(c).HouseholdID)
+	if err != nil {
+		return err
+	}
+	for _, l := range lists {
+		if l.CheckedCount < l.ItemCount && len(d.Lists) < 3 {
+			d.Lists = append(d.Lists, l)
+		}
+	}
+	sessions, err := s.svc.Prep.Sessions(c.Request().Context(), actor(c).HouseholdID)
+	if err != nil {
+		return err
+	}
+	// Sessions arrive newest first; keep the soonest upcoming ones in date order.
+	for i := len(sessions) - 1; i >= 0 && len(d.Prep) < 2; i-- {
+		if !sessions[i].SessionDate.Before(day) {
+			d.Prep = append(d.Prep, sessions[i])
+		}
 	}
 	return s.ok(c, view.TodayPage(d))
 }
