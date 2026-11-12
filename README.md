@@ -34,13 +34,42 @@ The UI is built from the Household design system, vendored under
 
 - `tokens.css` and `components.css` are copied verbatim from the system
   (colour, type, spacing, radius tokens and the `hh-*` components).
-- `dark.css` applies the system's dark values when the device prefers dark.
+- `dark.css` applies the system's dark values when the device prefers dark,
+  unless light or dark is pinned (`data-theme` on `<html>`).
 - `app.css` is this app's layout (`mp-*`), written only with those tokens.
 
 Form inputs, selects and the segmented control are not components in the
 design system yet; `app.css` builds them from its tokens and usage rules.
-Themes other than Oat and olive, seasonal suggestions and the Softness dial
-belong to the Household gateway app and are not implemented here.
+Picking a theme, seasonal suggestions and the Softness dial belong to the
+Household gateway app; this app only applies the theme the gateway hands it.
+
+### Household theme
+
+On each full page load the server asks the Household gateway for the signed-in
+user's theme and applies it; if `HOUSEHOLD_THEME_URL` is unset, the gateway is
+unreachable, or it answers with anything other than a valid theme, the built-in
+"Oat and olive" theme is used. Results are cached for 5 minutes per user
+(failures retried after 1 minute, keeping the last good theme), and a stale
+theme is refreshed in the background.
+
+- `HOUSEHOLD_THEME_URL`: http(s) URL. Called as `GET <url>?user=<sign-in email>`
+  with a 1.5 s timeout.
+- Response (200, JSON, up to 64 KB). Every key is optional, but it must set
+  something:
+
+  ```json
+  {
+    "mode": "system",
+    "light": { "primary": "#2563EB", "surface-ground": "#F3F4F6" },
+    "dark": { "primary": "#5B93F7" }
+  }
+  ```
+
+  `mode` is `system`, `light` or `dark`; a light/dark pick in Settings →
+  Appearance on the device wins. `light`/`dark` map Household token names (the
+  list is `core.HouseholdThemeTokens`) to `#rrggbb` values; tokens left out keep
+  the built-in value, unknown names are ignored, and a bad value or mode rejects
+  the whole response.
 
 ## Run it
 
@@ -73,6 +102,7 @@ Seed the Starter Template once, before households are created:
 | `APP_TIMEZONE` | Decides what "today" and "up next" mean (default UTC). |
 | `LOGIN_THROTTLE_THRESHOLD`, `LOGIN_THROTTLE_WINDOW`, `LOGIN_THROTTLE_BLOCK_DURATION` | Failed-login throttle per IP and per email. |
 | `TRUSTED_PROXY_CIDRS` | Proxies allowed to supply `X-Forwarded-For`. |
+| `HOUSEHOLD_THEME_URL` | Household gateway theme endpoint; empty keeps the built-in theme. |
 
 ## Operations
 

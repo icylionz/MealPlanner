@@ -349,6 +349,7 @@ templ Settings(s Shell, d SettingsPage) {
 				</div>
 			</section>
 		</div>
+		@settingsAppearance()
 		<section class="hh-card">
 			<div class="hh-card__body" style="padding-top: var(--space-2)">
 				<a class="hh-row" href={ s.URL("/household") }>
@@ -373,7 +374,7 @@ templ Settings(s Shell, d SettingsPage) {
 				</a>
 			</div>
 		</section>
-		<form method="post" action={ s.URL("/logout") }>
+		<form method="post" action={ s.URL("/logout") } hx-boost="false">
 			@csrf(s)
 			<button type="submit" class="hh-btn hh-btn--secondary">
 				@Icon("sign-out", 18)
@@ -381,4 +382,24 @@ templ Settings(s Shell, d SettingsPage) {
 			</button>
 		</form>
 	}
+}
+
+// settingsAppearance picks light, dark or the default (household mode, else
+// the device). The choice is kept per device in localStorage and applied before
+// paint by theme.js; the control stays hidden until app.js is running.
+templ settingsAppearance() {
+	<section class="hh-card">
+		<header class="hh-card__head">
+			<h3 class="heading">Appearance</h3>
+		</header>
+		<div class="hh-card__body mp-stack" style="padding-top: var(--space-3); gap: var(--space-3)">
+			<p class="body hh-muted">Colours come from your household theme, or Oat and olive until your household sets one. Light or dark is saved on this device.</p>
+			<div class="mp-seg" role="radiogroup" aria-label="Light or dark" data-theme-choice hidden>
+				<button type="button" class="label" role="radio" aria-checked="false" data-theme-value="system">Default</button>
+				<button type="button" class="label" role="radio" aria-checked="false" data-theme-value="light">Light</button>
+				<button type="button" class="label" role="radio" aria-checked="false" data-theme-value="dark">Dark</button>
+			</div>
+			<p class="caption hh-muted">Default follows your household, then your device.</p>
+		</div>
+	</section>
 }

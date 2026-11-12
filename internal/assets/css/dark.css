@@ -1,4 +1,5 @@
-/* Dark follows the device unless a theme is pinned. Values mirror [data-theme="dark"] in tokens.css. */
+/* Dark follows the device unless a theme is pinned (data-theme on <html>, set
+   by static/theme.js from Settings or the household mode). Values mirror [data-theme="dark"] in tokens.css. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --surface-ground: #1F1C17;

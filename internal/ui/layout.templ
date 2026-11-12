@@ -36,7 +36,13 @@ templ head(s Shell) {
 	<link rel="manifest" href={ s.Base + "/manifest.webmanifest" }/>
 	<link rel="icon" type="image/svg+xml" href={ s.asset("icon.svg") }/>
 	<link rel="apple-touch-icon" href={ s.asset("icon-192.png") }/>
+	<meta name="household-theme-mode" content={ HouseholdThemeMode(ctx) }/>
+	<script src={ s.asset("theme.js") }></script>
 	<link rel="stylesheet" href={ s.asset("app.css") }/>
+	if css := HouseholdThemeCSS(ctx); css != "" {
+		<!-- Household gateway theme. Token names and #rrggbb values are validated in core.ParseHouseholdTheme, so the CSS is safe to inline. -->
+		@templ.Raw("<style id=\"household-theme\">" + css + "</style>")
+	}
 	<script src={ s.asset("htmx.min.js") } defer></script>
 	<script src={ s.asset("app.js") } defer data-sw={ s.Base + "/sw.js" }></script>
 }
@@ -68,7 +74,7 @@ templ Layout(s Shell) {
 					<div class="mp-side__foot">
 						@Avatar(s.User, s.Member, "s")
 						<span class="body-strong mp-trunc" style="flex: 1">{ s.User }</span>
-						<form method="post" action={ s.URL("/logout") }>
+						<form method="post" action={ s.URL("/logout") } hx-boost="false">
 							@csrf(s)
 							<button type="submit" class="hh-btn hh-btn--text hh-btn--icon" aria-label="Sign out" title="Sign out">
 								@Icon("sign-out", 18)
@@ -154,7 +160,8 @@ templ AuthLayout(s Shell, lead string) {
 		<head>
 			@head(s)
 		</head>
-		<body hx-boost="true">
+		<!-- Not boosted: signing in must be a full load so the head picks up that person's household theme. -->
+		<body>
 			<main class="mp-auth">
 				<div class="mp-auth__brand">
 					<span class="hh-appicon hh-appicon--l hh-appicon--meals" role="img" aria-label="Meals">

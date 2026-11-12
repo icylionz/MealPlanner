@@ -58,7 +58,11 @@ func run() error {
 		Transfer:   core.NewTransfer(database, metrics),
 		Importer:   core.NewRecipeImport(metrics),
 		Metrics:    metrics,
+		Themes:     core.NewThemes(cfg.HouseholdThemeURL),
 	})
+	if cfg.HouseholdThemeURL != "" {
+		slog.Info("household theme source", "url", cfg.HouseholdThemeURL)
+	}
 
 	httpSrv := &http.Server{
 		Addr: ":" + cfg.Port, Handler: srv.Handler(),

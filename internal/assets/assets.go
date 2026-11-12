@@ -24,7 +24,7 @@ func FS() fs.FS {
 // Version is a short content hash used to bust browser caches.
 func Version() string {
 	h := sha256.New()
-	for _, name := range []string{"static/app.css", "static/app.js"} {
+	for _, name := range []string{"static/app.css", "static/app.js", "static/theme.js"} {
 		b, _ := files.ReadFile(name)
 		h.Write(b)
 	}

@@ -34,6 +34,9 @@ type Services struct {
 	Transfer   *core.Transfer
 	Importer   *core.RecipeImport
 	Metrics    *core.Metrics
+	// Themes supplies the household theme on page loads; nil keeps the
+	// built-in theme.
+	Themes HouseholdThemeLoader
 }
 
 type Server struct {
@@ -73,7 +76,7 @@ func (s *Server) routes() {
 	root.GET("/manifest.webmanifest", s.manifest)
 	root.GET("/sw.js", s.serviceWorker)
 
-	app := root.Group("", s.csrf, s.session)
+	app := root.Group("", s.csrf, s.session, householdTheme(s.Themes))
 	app.GET("/login", s.loginPage)
 	app.POST("/login", s.login)
 	app.GET("/signup", s.signupPage)

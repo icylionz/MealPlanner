@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -24,6 +25,11 @@ type Config struct {
 	LoginThrottleThreshold int
 	LoginThrottleWindow    time.Duration
 	LoginThrottleBlock     time.Duration
+
+	// HouseholdThemeURL is the Household gateway endpoint the app reads the
+	// household theme from on page loads. Empty, unreachable or invalid: the
+	// built-in Oat and olive theme is used.
+	HouseholdThemeURL string
 }
 
 func (c Config) Production() bool { return c.AppEnv == "production" }
@@ -96,7 +102,24 @@ func Load() (Config, error) {
 	if c.LoginThrottleBlock, err = time.ParseDuration(env("LOGIN_THROTTLE_BLOCK_DURATION", "15m")); err != nil {
 		return c, fmt.Errorf("LOGIN_THROTTLE_BLOCK_DURATION: %w", err)
 	}
+	if c.HouseholdThemeURL, err = parseHouseholdThemeURL(os.Getenv("HOUSEHOLD_THEME_URL")); err != nil {
+		return c, err
+	}
 	return c, nil
+}
+
+// parseHouseholdThemeURL accepts http as well as https: the gateway may sit on
+// the internal container network, and a theme carries no secrets.
+func parseHouseholdThemeURL(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "", nil
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+		return "", fmt.Errorf("HOUSEHOLD_THEME_URL must be an http(s) URL")
+	}
+	return value, nil
 }
 
 // normalizeBasePath returns "" for root or "/segment" with no trailing slash.
