@@ -1,89 +1,85 @@
-# MealPlanner (Backbone Plate)
+# Meals
 
-Mobile-first household meal planner: schedule meals, keep a unified foods
-catalog (ingredients and nested recipes), generate live grocery lists, plan prep
-sessions, and move data in and out as JSON. Requirements live in
-`docs/doc.md`; architecture in `docs/architecture.md`.
+A mobile-first meal planner for shared households: plan meals, keep one food
+catalog of recipes and ingredients, build live grocery lists from the plan,
+organise prep sessions, and move data in and out as JSON. It is the Meals app
+of the **Household** design system and ships as a server-rendered PWA.
 
-Go monolith: Echo, templ, PostgreSQL, sqlc, golang-migrate, HTMX (`hx-boost`
-only — every flow works without JavaScript), Tailwind built ahead of time. The
-UI reuses the Backbone design system shell from RHWallet (`shell.css`, fonts,
-Lucide icons) plus `mp.css` for planner-specific pieces.
+- Product requirements: [`docs/doc.md`](docs/doc.md)
+- Architecture: [`docs/architecture.md`](docs/architecture.md)
+
+## Stack
+
+Go · Echo · templ · PostgreSQL · sqlc · golang-migrate · Tailwind (standalone
+CLI) · HTMX (`hx-boost` only; every flow works without JavaScript).
 
 ## Layout
 
-```
-cmd/server            web app entrypoint (manual DI, migrations on boot)
-cmd/seed-foods        optional CoFID 2021 seeder for the Starter Template
-internal/config       .env-driven settings
-internal/platform/database  pool, embedded migrations, transactions
-sql/queries           sqlc query sources → internal/repo/db (generated)
-internal/service      business logic: auth, households, foods catalog/graph,
-                      planner, grocery, prep, URL import, JSON transfer
-internal/units        unit normalization and volume↔weight conversion
-internal/http         thin Echo handlers, middleware (CSRF, sessions, logs)
-internal/view         templ pages (generated *_templ.go is not committed)
-internal/assets       static files; app.css is built by build-css.sh
-```
+| Path | What |
+| --- | --- |
+| `cmd/server` | The web app. Wires dependencies, runs migrations on boot. |
+| `cmd/seed-foods` | Optional: adds CoFID 2021 raw ingredients to the Starter Template. |
+| `internal/web` | Routing, middleware (sessions, CSRF, roles), thin handlers. |
+| `internal/core` | Business logic and transactions. The only caller of the queries. |
+| `internal/units` | Unit conversion, including volume to weight by density. |
+| `internal/db` | Pool, migrations (`migrations/`), generated queries (`sqlc/`, not committed). |
+| `db/queries` | SQL for sqlc. |
+| `internal/ui` | templ views and Phosphor icons. |
+| `internal/assets` | Design-system CSS, fonts and static files, embedded in the binary. |
 
-## Develop
+## Design system
 
-Requires Go 1.26, `templ` v0.3.1020, `sqlc` v1.31, and Postgres.
+The UI is built from the Household design system, vendored under
+`internal/assets/css/`:
+
+- `tokens.css` and `components.css` are copied verbatim from the system
+  (colour, type, spacing, radius tokens and the `hh-*` components).
+- `dark.css` applies the system's dark values when the device prefers dark.
+- `app.css` is this app's layout (`mp-*`), written only with those tokens.
+
+Form inputs, selects and the segmented control are not components in the
+design system yet; `app.css` builds them from its tokens and usage rules.
+Themes other than Oat and olive, seasonal suggestions and the Softness dial
+belong to the Household gateway app and are not implemented here.
+
+## Run it
 
 ```sh
-cp .env.example .env        # then edit DATABASE_URL / SESSION_SECRET
-make gen                    # Tailwind CSS + templ + sqlc
-make run                    # http://localhost:8080
-make check                  # gen + vet + test
+cp .env.example .env      # then set DATABASE_URL and SESSION_SECRET
+make run                  # generates CSS, templ and sqlc code, builds, runs
 ```
 
-Generated code (templ, sqlc, `app.css`) is gitignored and rebuilt by `make gen`
-and the Dockerfile.
+Or the whole stack in containers: `make up` (Podman Compose, app on `:8080`).
 
-## Run with Compose (Podman)
+`make check` regenerates, vets and tests. Generated files (`*_templ.go`,
+`internal/db/sqlc/`, `internal/assets/static/app.css`) are not committed.
+
+Seed the Starter Template once, before households are created:
 
 ```sh
-SESSION_SECRET=$(openssl rand -hex 32) podman compose up -d --build
+./bin/seed-foods            # or: -file cofid.xlsx, -dry-run
 ```
-
-Set `BASE_PATH=/mealplanner` to mount under a sub-path; links, redirects,
-assets, cookies and the PWA manifest all honour it. Set `TRUSTED_PROXY_CIDRS`
-when running behind a reverse proxy so client IPs (for login throttling) come
-from `X-Forwarded-For`.
 
 ## Configuration
 
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `PORT` | `8080` | |
-| `BASE_PATH` | empty | e.g. `/mealplanner` |
-| `DATABASE_URL` | — | required |
-| `SESSION_COOKIE_NAME` | `mealplanner_session` | |
-| `SESSION_SECRET` | dev value | required when `APP_ENV=production` |
-| `APP_ENV` | `development` | `production` marks cookies `Secure` |
-| `APP_TIMEZONE` | `UTC` | decides what "today" is |
-| `TRUSTED_PROXY_CIDRS` | empty | comma-separated CIDRs |
-| `LOGIN_THROTTLE_THRESHOLD` / `_WINDOW` / `_BLOCK_DURATION` | `5` / `10m` / `15m` | per IP and per email |
+| Variable | Purpose |
+| --- | --- |
+| `PORT` | Listen port (default 8080). |
+| `BASE_PATH` | Mount path such as `/meals`; empty for root. |
+| `DATABASE_URL` | PostgreSQL connection string. Required. |
+| `SESSION_COOKIE_NAME` | Session cookie name; CSRF and flash cookies derive from it. |
+| `SESSION_SECRET` | Signs CSRF tokens. Required in production. |
+| `APP_ENV` | `production` turns on Secure cookies. |
+| `APP_TIMEZONE` | Decides what "today" and "up next" mean (default UTC). |
+| `LOGIN_THROTTLE_THRESHOLD`, `LOGIN_THROTTLE_WINDOW`, `LOGIN_THROTTLE_BLOCK_DURATION` | Failed-login throttle per IP and per email. |
+| `TRUSTED_PROXY_CIDRS` | Proxies allowed to supply `X-Forwarded-For`. |
 
 ## Operations
 
-- `GET /healthz` — database ping. `GET /metrics` — Prometheus text: login
-  attempts, import failures, grocery generation duration/failures, conflicts,
-  invite acceptances.
-- Logs are JSON with a `request_id` (also returned as `X-Request-ID`).
-- Migrations run on boot and are reversible (`*.down.sql`).
-- `seed-foods [-file cofid.xlsx] [-dry-run]` adds CoFID raw ingredients to the
-  Starter Template; households created afterwards get them.
-
-## Behaviour notes
-
-- New households clone the Starter Template catalog (40 staples with densities).
-- Volume↔weight conversions use a food's density; without one the grocery line
-  is kept separate and flagged "Needs review" rather than guessed.
-- Grocery generation merges into unchecked, unpriced lines of the same food and
-  variant; every contribution is recorded for "why is this here".
-- Food cost estimates use the latest recorded grocery cost per food and roll up
-  through nested recipes with an "N of M ingredients priced" coverage note.
-- JSON import merge rules: an ID already in this household is kept (reported as
-  existing); an ID owned by another household is skipped and reported; records
-  referencing missing foods are skipped.
+- `GET /healthz` answers `ok`.
+- `GET /metrics` exposes counters: login attempts, import failures, grocery
+  generation duration, edit conflicts and invite acceptances.
+- Logs are structured JSON with a request id per request.
+- Migrations: `0001_init` is the schema in `docs/doc.md` section 6;
+  `0002_member_colour` stores each member's design-system colour index.
+  Both have down migrations.

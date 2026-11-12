@@ -1,0 +1,478 @@
+package ui
+
+import (
+	"github.com/icylionz/mealplanner/internal/core"
+	"github.com/icylionz/mealplanner/internal/db/sqlc"
+)
+
+templ GroceryIndex(s Shell, lists []sqlc.ListGroceryListsRow, errText string) {
+	@Layout(s) {
+		if errText != "" {
+			@Banner("danger", "", errText)
+		}
+		if len(lists) == 0 {
+			<section class="hh-card">
+				@Empty("shopping-cart", "Start your first list", "Add the ingredients for a meal, a recipe or a whole week, and shop from it together.") {
+					if s.Owner {
+						<a class="hh-btn hh-btn--secondary" href={ s.URL("/grocery/generate") }>Add ingredients</a>
+					}
+				}
+			</section>
+		} else {
+			<div class="mp-cols mp-cols--even" style="gap: var(--space-3)">
+				for _, l := range lists {
+					<a class="hh-card" href={ s.URL("/grocery/" + l.ID.String()) }>
+						<div class="mp-card-pad mp-stack" style="gap: var(--space-2)">
+							<div class="mp-between">
+								<h3 class="heading mp-trunc">{ l.Name }</h3>
+								if l.Total > 0 && l.Checked == l.Total {
+									<span class="caption mp-tag mp-tag--ok">
+										@Icon("check", 16)
+										All done
+									</span>
+								}
+							</div>
+							<div class="mp-between">
+								<span class="caption hh-muted hh-num">
+									if l.Total == 0 {
+										Nothing on it yet
+									} else {
+										{ num(float64(l.Checked)) } of { count(int(l.Total), "item", "items") } in the basket
+									}
+								</span>
+								if l.Cost > 0 {
+									<span class="amount hh-num">{ money(l.Cost) }</span>
+								}
+							</div>
+							@Track(l.Name+" progress", listPct(l))
+						</div>
+					</a>
+				}
+			</div>
+		}
+		if s.Owner {
+			<section class="hh-card">
+				<div class="mp-card-pad">
+					<form method="post" action={ s.URL("/grocery") } class="mp-inline">
+						@csrf(s)
+						<label class="mp-field">
+							<span class="label">Start an empty list</span>
+							<input class="mp-input" type="text" name="name" placeholder="Weekend shop" required/>
+						</label>
+						<button type="submit" class="hh-btn hh-btn--secondary">Create</button>
+					</form>
+				</div>
+			</section>
+		}
+	}
+}
+
+type GroceryListData struct {
+	List  sqlc.GroceryList
+	Open  []sqlc.ListGroceryItemsRow
+	Done  []sqlc.ListGroceryItemsRow
+	Cost  float64
+	Foods []*core.Food
+	Error string
+}
+
+func itemDetail(it sqlc.ListGroceryItemsRow) string {
+	out := qty(it.Amount, it.Unit)
+	switch {
+	case it.SourceCount == 1:
+		out = join(out, "from 1 recipe line")
+	case it.SourceCount > 1:
+		out = join(out, "from "+num(float64(it.SourceCount))+" recipe lines")
+	}
+	return out
+}
+
+func join(a, b string) string {
+	if a == "" {
+		return b
+	}
+	if b == "" {
+		return a
+	}
+	return a + " · " + b
+}
+
+templ groceryRow(s Shell, it sqlc.ListGroceryItemsRow) {
+	<div class={ "hh-row", templ.KV("hh-row--done", it.Checked) }>
+		<form method="post" action={ s.URL("/grocery/items/" + it.ID.String() + "/toggle") } hx-swap="innerHTML show:none">
+			@csrf(s)
+			if it.Checked {
+				<button type="submit" class="hh-check hh-check--on" role="checkbox" aria-checked="true" aria-label={ "Take out of the basket: " + it.Name }>
+					@Icon("check", 16)
+				</button>
+			} else {
+				<input type="hidden" name="checked" value="1"/>
+				<button type="submit" class="hh-check" role="checkbox" aria-checked="false" aria-label={ "In the basket: " + it.Name }></button>
+			}
+		</form>
+		<a class="hh-row__text" href={ s.URL("/grocery/items/" + it.ID.String()) }>
+			<div class="body-strong hh-row__title">{ it.Name }{ variantSuffix(it.VariantText) }</div>
+			if itemDetail(it) != "" {
+				<div class="caption hh-muted">{ itemDetail(it) }</div>
+			}
+			if it.Note != "" {
+				<div class="caption" style="color: var(--status-warning); display: flex; gap: var(--space-1); align-items: center">
+					@Icon("warning", 16)
+					<span>{ it.Note }</span>
+				</div>
+			}
+		</a>
+		if it.Cost != nil {
+			<span class="amount hh-num">{ money(*it.Cost) }</span>
+		}
+		<a class="hh-row__go" href={ s.URL("/grocery/items/" + it.ID.String()) } aria-label={ "Details for " + it.Name }>
+			@Icon("caret-right", 18)
+		</a>
+	</div>
+}
+
+templ GroceryList(s Shell, d GroceryListData) {
+	@Layout(s) {
+		if d.Error != "" {
+			@Banner("danger", "", d.Error)
+		}
+		<div class="mp-cols mp-cols--split">
+			<div class="mp-stack" style="gap: var(--space-6)">
+				<section class="hh-card">
+					<header class="hh-card__head">
+						<h3 class="heading">To get</h3>
+					</header>
+					<div class="hh-card__body">
+						if len(d.Open) == 0 && len(d.Done) == 0 {
+							@Empty("basket", "Nothing on this list yet", "Add ingredients from your plan, or type items in by hand.") {
+								if s.Owner {
+									<a class="hh-btn hh-btn--secondary" href={ templ.SafeURL(s.Path("/grocery/generate?list=" + d.List.ID.String())) }>Add ingredients</a>
+								}
+							}
+						} else if len(d.Open) == 0 {
+							<p class="note hh-note hh-note--meals" style="padding: var(--space-3) 0">all in the basket, nice work</p>
+						}
+						for _, it := range d.Open {
+							@groceryRow(s, it)
+						}
+					</div>
+				</section>
+				if len(d.Done) > 0 {
+					<section class="hh-card">
+						<header class="hh-card__head">
+							<h3 class="heading">In the basket</h3>
+						</header>
+						<div class="hh-card__body">
+							for _, it := range d.Done {
+								@groceryRow(s, it)
+							}
+						</div>
+					</section>
+				}
+			</div>
+			<div class="mp-stack" style="gap: var(--space-6)">
+				if d.Cost > 0 {
+					<section class="hh-card">
+						<div class="mp-card-pad">
+							<div class="hh-budget__top">
+								<span class="label hh-muted">Recorded so far</span>
+								<span class="amount hh-num">{ money(d.Cost) }</span>
+							</div>
+						</div>
+					</section>
+				}
+				if s.Owner {
+					<section class="hh-card">
+						<header class="hh-card__head">
+							<h3 class="heading">Add an item</h3>
+						</header>
+						<div class="hh-card__body" style="padding-top: var(--space-3)">
+							<form method="post" action={ s.URL("/grocery/" + d.List.ID.String() + "/items") } class="mp-form">
+								@csrf(s)
+								@foodOptions("foods", d.Foods)
+								<label class="mp-field">
+									<span class="label">Item</span>
+									<input class="mp-input" type="text" name="name" list="foods" autocomplete="off" placeholder="Kitchen roll" required/>
+								</label>
+								<div class="mp-row2">
+									<label class="mp-field">
+										<span class="label">Amount</span>
+										<input class="mp-input" type="text" inputmode="decimal" name="amount" placeholder="1"/>
+									</label>
+									<label class="mp-field">
+										<span class="label">Unit</span>
+										<input class="mp-input" type="text" name="unit" placeholder="pack" autocapitalize="none"/>
+									</label>
+								</div>
+								<div>
+									<button type="submit" class="hh-btn hh-btn--secondary">Add item</button>
+								</div>
+							</form>
+						</div>
+					</section>
+					<details class="mp-disclose">
+						<summary class="hh-btn hh-btn--text">List settings</summary>
+						<div class="mp-stack">
+							<form method="post" action={ s.URL("/grocery/" + d.List.ID.String()) } class="mp-inline">
+								@csrf(s)
+								<label class="mp-field">
+									<span class="label">List name</span>
+									<input class="mp-input" type="text" name="name" value={ d.List.Name } required/>
+								</label>
+								<button type="submit" class="hh-btn hh-btn--secondary">Rename</button>
+							</form>
+							<form method="post" action={ s.URL("/grocery/" + d.List.ID.String() + "/delete") }>
+								@csrf(s)
+								<button type="submit" class="hh-btn hh-btn--danger">Remove this list</button>
+							</form>
+						</div>
+					</details>
+				}
+			</div>
+		</div>
+	}
+}
+
+type GroceryItemData struct {
+	Item    sqlc.GetGroceryItemRow
+	Sources []core.Source
+	Targets []string
+	Error   string
+}
+
+func sourceTitle(src core.Source) string {
+	if src.Meal != "" {
+		return src.Meal
+	}
+	return src.Recipe
+}
+
+func sourceDetail(src core.Source) string {
+	out := ""
+	if src.MealDate != nil {
+		out = shortDate(*src.MealDate)
+	}
+	if src.Meal != "" && src.Recipe != "" && src.Recipe != src.Meal {
+		out = join(out, "in "+src.Recipe)
+	}
+	if src.Variant != "" {
+		out = join(out, src.Variant)
+	}
+	return out
+}
+
+templ GroceryItem(s Shell, d GroceryItemData) {
+	@Layout(s) {
+		if d.Error != "" {
+			@Banner("danger", "", d.Error)
+		}
+		<div class="mp-cols mp-cols--even">
+			<section class="hh-card">
+				<header class="hh-card__head">
+					<h3 class="heading">Why this is here</h3>
+				</header>
+				<div class="hh-card__body">
+					if len(d.Sources) == 0 {
+						<p class="body hh-muted">
+							if d.Item.SourceType == "generated" {
+								Added from your plan. The details of where from are no longer kept.
+							} else {
+								Added by hand, not from a meal or recipe.
+							}
+						</p>
+					}
+					for _, src := range d.Sources {
+						<div class="hh-row">
+							<div class="hh-row__text">
+								<div class="body-strong hh-row__title">{ sourceTitle(src) }</div>
+								if sourceDetail(src) != "" {
+									<div class="caption hh-muted">{ sourceDetail(src) }</div>
+								}
+							</div>
+							<span class="body-strong hh-num">{ qty(src.Amount, src.Unit) }</span>
+						</div>
+					}
+					if d.Item.Note != "" {
+						<p class="caption" style="color: var(--status-warning); display: flex; gap: var(--space-1); padding-top: var(--space-2)">
+							@Icon("warning", 16)
+							<span>{ d.Item.Note }</span>
+						</p>
+					}
+				</div>
+			</section>
+			if s.Owner {
+				<div class="mp-stack" style="gap: var(--space-6)">
+					<section class="hh-card">
+						<header class="hh-card__head">
+							<h3 class="heading">On this list</h3>
+						</header>
+						<div class="hh-card__body" style="padding-top: var(--space-3)">
+							<form method="post" action={ s.URL("/grocery/items/" + d.Item.ID.String()) } class="mp-form">
+								@csrf(s)
+								<div class="mp-row2">
+									<label class="mp-field">
+										<span class="label">Amount</span>
+										<input class="mp-input" type="text" inputmode="decimal" name="amount" value={ num(d.Item.Amount) }/>
+									</label>
+									<label class="mp-field">
+										<span class="label">Unit</span>
+										<input class="mp-input" type="text" name="unit" value={ d.Item.Unit } autocapitalize="none"/>
+									</label>
+								</div>
+								<label class="mp-field">
+									<span class="label">What it cost</span>
+									<input class="mp-input" type="text" inputmode="decimal" name="cost" value={ moneyPtr(d.Item.Cost) } placeholder="0.00"/>
+									<span class="caption mp-hint">The total paid for this line. It feeds the cost estimates on foods and meals.</span>
+								</label>
+								<label class="mp-field">
+									<span class="label">Note</span>
+									<input class="mp-input" type="text" name="note" value={ d.Item.Note }/>
+								</label>
+								<p class="caption mp-hint">Changes here stay on this list. Your recipes and plan aren't touched.</p>
+								<div>
+									<button type="submit" class="hh-btn hh-btn--primary">Save item</button>
+								</div>
+							</form>
+						</div>
+					</section>
+					if len(d.Targets) > 0 {
+						<section class="hh-card">
+							<div class="mp-card-pad">
+								<form method="post" action={ s.URL("/grocery/items/" + d.Item.ID.String() + "/convert") } class="mp-inline">
+									@csrf(s)
+									<label class="mp-field">
+										<span class="label">Show in another unit</span>
+										<select class="mp-input" name="unit">
+											for _, u := range d.Targets {
+												<option value={ u }>{ u }</option>
+											}
+										</select>
+									</label>
+									<button type="submit" class="hh-btn hh-btn--secondary">Convert</button>
+								</form>
+							</div>
+						</section>
+					}
+					<form method="post" action={ s.URL("/grocery/items/" + d.Item.ID.String() + "/delete") }>
+						@csrf(s)
+						<button type="submit" class="hh-btn hh-btn--danger">Take off the list</button>
+					</form>
+				</div>
+			} else {
+				<section class="hh-card">
+					<div class="mp-card-pad">
+						<dl class="mp-dl">
+							<dt class="label">Amount</dt>
+							<dd class="hh-num">{ qty(d.Item.Amount, d.Item.Unit) }</dd>
+							if d.Item.Cost != nil {
+								<dt class="label">Cost</dt>
+								<dd class="hh-num">{ money(*d.Item.Cost) }</dd>
+							}
+						</dl>
+					</div>
+				</section>
+			}
+		</div>
+	}
+}
+
+type GenerateData struct {
+	Mode     string
+	From     string
+	To       string
+	MealID   string
+	Food     string
+	Servings string
+	ListID   string
+	Meals    []core.Meal
+	Foods    []*core.Food
+	Lists    []sqlc.ListGroceryListsRow
+	Cat      *core.Catalog
+	Error    string
+}
+
+templ GroceryGenerate(s Shell, d GenerateData) {
+	@Layout(s) {
+		<form method="post" action={ s.URL("/grocery/generate") } class="mp-form">
+			@csrf(s)
+			if d.Error != "" {
+				@Banner("danger", "", d.Error)
+			}
+			<section class="hh-card">
+				<div class="mp-card-pad mp-form">
+					<h2 class="heading">What to shop for</h2>
+					@foodOptions("foods", d.Foods)
+					<div class="mp-group">
+						<label class="mp-choice">
+							<input type="radio" name="mode" value="range" checked?={ d.Mode == "range" }/>
+							<span class="body-strong">Every meal between two dates</span>
+						</label>
+						<div class="mp-row2">
+							<label class="mp-field">
+								<span class="label">From</span>
+								<input class="mp-input" type="date" name="from" value={ d.From }/>
+							</label>
+							<label class="mp-field">
+								<span class="label">To</span>
+								<input class="mp-input" type="date" name="to" value={ d.To }/>
+							</label>
+						</div>
+					</div>
+					<div class="mp-group">
+						<label class="mp-choice">
+							<input type="radio" name="mode" value="meal" checked?={ d.Mode == "meal" }/>
+							<span class="body-strong">One planned meal</span>
+						</label>
+						if len(d.Meals) == 0 {
+							<p class="caption mp-hint">Nothing is planned from today on.</p>
+						} else {
+							<label class="mp-field">
+								<span class="mp-sr">Planned meal</span>
+								<select class="mp-input" name="meal">
+									for _, m := range d.Meals {
+										<option value={ m.ID.String() } selected?={ m.ID.String() == d.MealID }>{ shortDate(m.Date) }, { clock(m.Time) } · { m.Name(d.Cat) }</option>
+									}
+								</select>
+							</label>
+						}
+					</div>
+					<div class="mp-group">
+						<label class="mp-choice">
+							<input type="radio" name="mode" value="food" checked?={ d.Mode == "food" }/>
+							<span class="body-strong">One recipe or food</span>
+						</label>
+						<div class="mp-row2">
+							<label class="mp-field">
+								<span class="label">Food</span>
+								<input class="mp-input" type="text" name="food" value={ d.Food } list="foods" autocomplete="off" placeholder="Start typing to search"/>
+							</label>
+							<label class="mp-field">
+								<span class="label">Servings</span>
+								<input class="mp-input" type="text" inputmode="decimal" name="servings" value={ d.Servings }/>
+							</label>
+						</div>
+					</div>
+				</div>
+			</section>
+			<section class="hh-card">
+				<div class="mp-card-pad mp-form">
+					<h2 class="heading">Where to put it</h2>
+					<label class="mp-field">
+						<span class="label">List</span>
+						<select class="mp-input" name="list">
+							<option value="">A new list</option>
+							for _, l := range d.Lists {
+								<option value={ l.ID.String() } selected?={ l.ID.String() == d.ListID }>{ l.Name }</option>
+							}
+						</select>
+						<span class="caption mp-hint">Adding to a list you already have tops up matching items that aren't in the basket yet.</span>
+					</label>
+				</div>
+			</section>
+			<div class="mp-actions">
+				<button type="submit" class="hh-btn hh-btn--primary hh-btn--l">Add to list</button>
+				<a class="hh-btn hh-btn--text" href={ s.URL("/grocery") }>Cancel</a>
+			</div>
+		</form>
+	}
+}

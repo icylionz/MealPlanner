@@ -1,0 +1,66 @@
+/* Dark follows the device unless a theme is pinned. Values mirror [data-theme="dark"] in tokens.css. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface-ground: #1F1C17;
+    --surface-card: #2B2721;
+    --surface-sunk: #17150F;
+    --surface-raised: #35302A;
+    --ink: #EEE7DA;
+    --ink-muted: #B5AC9C;
+    --ink-subtle: #8A8274;
+    --line-hair: #3E3830;
+    --line-strong: #82796A;
+    --primary: #B4BA8C;
+    --on-primary: #1F1C17;
+    --primary-hover: #C3C89E;
+    --primary-soft: #34362A;
+    --primary-ink: #B4BA8C;
+    --focus-ring: #93AEC4;
+    --app-budget: #A3A976;
+    --on-app-budget: #1F1C17;
+    --app-budget-soft: #33352A;
+    --app-budget-ink: #A3A976;
+    --app-meals: #D49477;
+    --on-app-meals: #1F1C17;
+    --app-meals-soft: #3D2C23;
+    --app-meals-ink: #D49477;
+    --app-chores: #DDB867;
+    --on-app-chores: #1F1C17;
+    --app-chores-soft: #3B321F;
+    --app-chores-ink: #DDB867;
+    --app-reminders: #C3A6AE;
+    --on-app-reminders: #1F1C17;
+    --app-reminders-soft: #392F31;
+    --app-reminders-ink: #C3A6AE;
+    --app-trips: #98AABB;
+    --on-app-trips: #1F1C17;
+    --app-trips-soft: #2A3138;
+    --app-trips-ink: #98AABB;
+    --member-1: #D98D76;
+    --on-member-1: #1F1C17;
+    --member-2: #7FB5AE;
+    --on-member-2: #1F1C17;
+    --member-3: #B992AE;
+    --on-member-3: #1F1C17;
+    --member-4: #DDB15A;
+    --on-member-4: #1F1C17;
+    --member-5: #93A7C8;
+    --on-member-5: #1F1C17;
+    --member-6: #9DBB83;
+    --on-member-6: #1F1C17;
+    --member-7: #DDA1A2;
+    --on-member-7: #1F1C17;
+    --member-8: #BC9C7E;
+    --on-member-8: #1F1C17;
+    --status-success: #9DBB86;
+    --status-success-soft: #2C3526;
+    --status-danger: #E59683;
+    --status-danger-soft: #3E2620;
+    --status-warning: #E2B45E;
+    --status-warning-soft: #3B3020;
+    --status-info: #93AEC4;
+    --status-info-soft: #263039;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.30), 0 4px 14px rgba(0, 0, 0, 0.22);
+    --shadow-float: 0 2px 6px rgba(0, 0, 0, 0.35), 0 12px 32px rgba(0, 0, 0, 0.35);
+  }
+}

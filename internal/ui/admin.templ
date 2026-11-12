@@ -1,0 +1,384 @@
+package ui
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/icylionz/mealplanner/internal/core"
+	"github.com/icylionz/mealplanner/internal/db/sqlc"
+)
+
+type DataPage struct {
+	Report *core.Report
+	Error  string
+}
+
+templ sectionChecks() {
+	<fieldset class="mp-fieldset" style="gap: 0">
+		<legend class="label">Sections</legend>
+		for _, sec := range core.Sections {
+			<label class="mp-choice"><input type="checkbox" name="section" value={ sec } checked/><span>{ sectionName(sec) }</span></label>
+		}
+	</fieldset>
+}
+
+templ Data(s Shell, d DataPage) {
+	@Layout(s) {
+		if d.Error != "" {
+			@Banner("danger", "Nothing was imported", d.Error)
+		}
+		if d.Report != nil {
+			@Banner("success", "Import finished", "") {
+				for _, sr := range d.Report.Sections {
+					<div class="body">
+						{ sectionName(sr.Section) }: { count(sr.Imported, "saved", "saved") }
+						if sr.Skipped > 0 {
+							, { count(sr.Skipped, "skipped", "skipped") }
+						}
+					</div>
+				}
+				for _, n := range d.Report.Notes {
+					<div class="caption hh-muted">{ n }</div>
+				}
+			}
+		}
+		if !s.Owner {
+			@Banner("info", "", "Only the household owner can export or import data.")
+		} else {
+			<div class="mp-cols mp-cols--even">
+				<section class="hh-card">
+					<header class="hh-card__head">
+						<h3 class="heading">Export</h3>
+					</header>
+					<div class="hh-card__body" style="padding-top: var(--space-2)">
+						<form method="get" action={ s.URL("/data/export") } class="mp-form" hx-boost="false">
+							<p class="body hh-muted">One JSON file with everything you choose, to keep as a backup or bring back later.</p>
+							@sectionChecks()
+							<div>
+								<button type="submit" class="hh-btn hh-btn--primary">
+									@Icon("download-simple", 18)
+									<span>Download export</span>
+								</button>
+							</div>
+						</form>
+					</div>
+				</section>
+				<section class="hh-card">
+					<header class="hh-card__head">
+						<h3 class="heading">Import</h3>
+					</header>
+					<div class="hh-card__body" style="padding-top: var(--space-2)">
+						<form method="post" action={ s.URL("/data/import") } enctype="multipart/form-data" class="mp-form" hx-boost="false">
+							@csrf(s)
+							<p class="body hh-muted">Merges an export into this household. Anything with the same id is replaced by the file; anything new is added; nothing else is removed.</p>
+							<label class="mp-field">
+								<span class="label">Export file</span>
+								<input class="mp-input" type="file" name="file" accept="application/json,.json" required/>
+							</label>
+							@sectionChecks()
+							<div>
+								<button type="submit" class="hh-btn hh-btn--secondary">
+									@Icon("upload-simple", 18)
+									<span>Import file</span>
+								</button>
+							</div>
+						</form>
+					</div>
+				</section>
+			</div>
+		}
+	}
+}
+
+type HouseholdPage struct {
+	Current    uuid.UUID
+	Me         uuid.UUID // the viewer's account id
+	Households []core.HouseholdRef
+	Members    []sqlc.ListMembersRow
+	Invites    []sqlc.Invite
+	JoinBase   string // absolute URL prefix for invite links
+	Error      string
+}
+
+func inviteUses(inv sqlc.Invite) string {
+	if inv.MaxUses == nil {
+		return count(int(inv.UseCount), "use", "uses") + " so far"
+	}
+	return num(float64(inv.UseCount)) + " of " + count(int(*inv.MaxUses), "use", "uses")
+}
+
+func untilText(t time.Time) string { return "until " + t.Format("2 Jan") }
+
+templ Household(s Shell, d HouseholdPage) {
+	@Layout(s) {
+		if d.Error != "" {
+			@Banner("danger", "", d.Error)
+		}
+		<div class="mp-cols mp-cols--even">
+			<div class="mp-stack" style="gap: var(--space-6)">
+				<section class="hh-card">
+					<header class="hh-card__head">
+						<h3 class="heading">Members</h3>
+					</header>
+					<div class="hh-card__body">
+						for _, m := range d.Members {
+							<div class="hh-row">
+								@Avatar(m.Name, MemberIndex(m.Color), "s")
+								<div class="hh-row__text">
+									<div class="body-strong hh-row__title">
+										{ m.Name }
+										if m.AccountID == d.Me {
+											<span class="caption hh-muted">(you)</span>
+										}
+									</div>
+									<div class="caption hh-muted">{ m.Email }</div>
+								</div>
+								if m.Role == "owner" {
+									<span class="caption mp-tag mp-tag--info">
+										@Icon("crown", 16)
+										Owner
+									</span>
+								} else if s.Owner {
+									<details class="mp-disclose">
+										<summary class="hh-btn hh-btn--text">Manage</summary>
+										<div class="mp-group">
+											<form method="post" action={ s.URL("/household/members/" + m.ID.String() + "/owner") }>
+												@csrf(s)
+												<input type="hidden" name="account" value={ m.AccountID.String() }/>
+												<button type="submit" class="hh-btn hh-btn--secondary">Make owner</button>
+											</form>
+											<form method="post" action={ s.URL("/household/members/" + m.ID.String() + "/remove") }>
+												@csrf(s)
+												<button type="submit" class="hh-btn hh-btn--danger">Remove</button>
+											</form>
+										</div>
+									</details>
+								}
+							</div>
+						}
+						if s.Owner {
+							<p class="caption hh-muted" style="padding-top: var(--space-3)">Making someone else the owner hands over editing and makes you a member.</p>
+						}
+					</div>
+				</section>
+				if s.Owner {
+					<section class="hh-card">
+						<header class="hh-card__head">
+							<h3 class="heading">Invites</h3>
+						</header>
+						<div class="hh-card__body">
+							if len(d.Invites) == 0 {
+								<p class="body hh-muted">No open invites. Make one and share the code or link.</p>
+							}
+							for _, inv := range d.Invites {
+								<div class="hh-row">
+									<div class="hh-row__text">
+										<div class="body-strong mp-code">{ inv.Code }</div>
+										<div class="caption hh-muted" style="overflow-wrap: anywhere">{ d.JoinBase + inv.Code }</div>
+										<div class="caption hh-muted">{ inviteUses(inv) } · good { untilText(inv.ExpiresAt) }</div>
+									</div>
+									<form method="post" action={ s.URL("/household/invites/" + inv.ID.String() + "/revoke") }>
+										@csrf(s)
+										<button type="submit" class="hh-btn hh-btn--text">Revoke</button>
+									</form>
+								</div>
+							}
+							<form method="post" action={ s.URL("/household/invites") } class="mp-form" style="padding-top: var(--space-4)">
+								@csrf(s)
+								<div class="mp-row2">
+									<label class="mp-field">
+										<span class="label">Good for</span>
+										<select class="mp-input" name="days">
+											<option value="1">1 day</option>
+											<option value="7" selected>7 days</option>
+											<option value="30">30 days</option>
+										</select>
+									</label>
+									<label class="mp-field">
+										<span class="label">Uses</span>
+										<select class="mp-input" name="max_uses">
+											<option value="1">One person</option>
+											<option value="5">Up to 5 people</option>
+											<option value="0">No limit</option>
+										</select>
+									</label>
+								</div>
+								<div>
+									<button type="submit" class="hh-btn hh-btn--primary">
+										@Icon("user-plus", 18)
+										<span>Make an invite</span>
+									</button>
+								</div>
+							</form>
+						</div>
+					</section>
+				}
+			</div>
+			<div class="mp-stack" style="gap: var(--space-6)">
+				if s.Owner {
+					<section class="hh-card">
+						<div class="mp-card-pad">
+							<form method="post" action={ s.URL("/household/rename") } class="mp-inline">
+								@csrf(s)
+								<label class="mp-field">
+									<span class="label">Household name</span>
+									<input class="mp-input" type="text" name="name" value={ s.Household } required/>
+								</label>
+								<button type="submit" class="hh-btn hh-btn--secondary">Rename</button>
+							</form>
+						</div>
+					</section>
+				}
+				<section class="hh-card">
+					<header class="hh-card__head">
+						<h3 class="heading">Your households</h3>
+					</header>
+					<div class="hh-card__body">
+						for _, h := range d.Households {
+							<div class="hh-row">
+								<div class="hh-row__text">
+									<div class="body-strong hh-row__title">{ h.Name }</div>
+									<div class="caption hh-muted">
+										if h.Role == "owner" {
+											You own this one
+										} else {
+											You're a member
+										}
+									</div>
+								</div>
+								if h.ID == d.Current {
+									<span class="caption mp-tag mp-tag--ok">
+										@Icon("check", 16)
+										Open now
+									</span>
+								} else {
+									<form method="post" action={ s.URL("/household/switch") }>
+										@csrf(s)
+										<input type="hidden" name="household" value={ h.ID.String() }/>
+										<button type="submit" class="hh-btn hh-btn--secondary">Switch</button>
+									</form>
+								}
+							</div>
+						}
+						<details class="mp-disclose" style="padding-top: var(--space-3)">
+							<summary class="hh-btn hh-btn--text">Start or join another</summary>
+							<div class="mp-stack">
+								<form method="post" action={ s.URL("/household/new") } class="mp-inline">
+									@csrf(s)
+									<label class="mp-field">
+										<span class="label">New household name</span>
+										<input class="mp-input" type="text" name="name" required/>
+									</label>
+									<button type="submit" class="hh-btn hh-btn--secondary">Create</button>
+								</form>
+								<form method="post" action={ s.URL("/household/join") } class="mp-inline">
+									@csrf(s)
+									<label class="mp-field">
+										<span class="label">Invite code or link</span>
+										<input class="mp-input" type="text" name="code" autocomplete="off" required/>
+									</label>
+									<button type="submit" class="hh-btn hh-btn--secondary">Join</button>
+								</form>
+							</div>
+						</details>
+					</div>
+				</section>
+			</div>
+		</div>
+	}
+}
+
+type SettingsPage struct {
+	Name        string
+	Email       string
+	ProfileErr  string
+	PasswordErr string
+}
+
+templ Settings(s Shell, d SettingsPage) {
+	@Layout(s) {
+		<div class="mp-cols mp-cols--even">
+			<section class="hh-card">
+				<header class="hh-card__head">
+					<h3 class="heading">Your profile</h3>
+				</header>
+				<div class="hh-card__body" style="padding-top: var(--space-3)">
+					<form method="post" action={ s.URL("/settings/profile") } class="mp-form">
+						@csrf(s)
+						if d.ProfileErr != "" {
+							@Banner("danger", "", d.ProfileErr)
+						}
+						<label class="mp-field">
+							<span class="label">Display name</span>
+							<input class="mp-input" type="text" name="name" value={ d.Name } autocomplete="name" required/>
+						</label>
+						<label class="mp-field">
+							<span class="label">Sign-in email</span>
+							<input class="mp-input" type="email" name="email" value={ d.Email } autocomplete="email" required/>
+						</label>
+						<div>
+							<button type="submit" class="hh-btn hh-btn--primary">Save profile</button>
+						</div>
+					</form>
+				</div>
+			</section>
+			<section class="hh-card">
+				<header class="hh-card__head">
+					<h3 class="heading">Password</h3>
+				</header>
+				<div class="hh-card__body" style="padding-top: var(--space-3)">
+					<form method="post" action={ s.URL("/settings/password") } class="mp-form">
+						@csrf(s)
+						if d.PasswordErr != "" {
+							@Banner("danger", "", d.PasswordErr)
+						}
+						<label class="mp-field">
+							<span class="label">Current password</span>
+							<input class="mp-input" type="password" name="current" autocomplete="current-password" required/>
+						</label>
+						<label class="mp-field">
+							<span class="label">New password</span>
+							<input class="mp-input" type="password" name="next" autocomplete="new-password" minlength="8" required/>
+							<span class="caption mp-hint">At least eight characters. Other devices are signed out.</span>
+						</label>
+						<div>
+							<button type="submit" class="hh-btn hh-btn--secondary">Change password</button>
+						</div>
+					</form>
+				</div>
+			</section>
+		</div>
+		<section class="hh-card">
+			<div class="hh-card__body" style="padding-top: var(--space-2)">
+				<a class="hh-row" href={ s.URL("/household") }>
+					@Icon("users-three", 22)
+					<div class="hh-row__text">
+						<div class="body-strong hh-row__title">Household</div>
+						<div class="caption hh-muted">{ s.Household }: members, invites and switching</div>
+					</div>
+					<span class="hh-row__go">
+						@Icon("caret-right", 18)
+					</span>
+				</a>
+				<a class="hh-row" href={ s.URL("/data") }>
+					@Icon("database", 22)
+					<div class="hh-row__text">
+						<div class="body-strong hh-row__title">Data</div>
+						<div class="caption hh-muted">Export a backup or import one</div>
+					</div>
+					<span class="hh-row__go">
+						@Icon("caret-right", 18)
+					</span>
+				</a>
+			</div>
+		</section>
+		<form method="post" action={ s.URL("/logout") }>
+			@csrf(s)
+			<button type="submit" class="hh-btn hh-btn--secondary">
+				@Icon("sign-out", 18)
+				<span>Sign out</span>
+			</button>
+		</form>
+	}
+}

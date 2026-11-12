@@ -1,0 +1,587 @@
+package ui
+
+import (
+	"strconv"
+
+	"github.com/icylionz/mealplanner/internal/core"
+)
+
+type FoodsData struct {
+	Filter core.FoodFilter
+	Foods  []*core.Food
+	Tags   []string
+	Total  int
+	Page   int
+	Pages  int
+}
+
+func (d FoodsData) link(kind, tag string, page int) string {
+	p := ""
+	if page > 1 {
+		p = strconv.Itoa(page)
+	}
+	return query("/foods", "q", d.Filter.Query, "kind", kind, "tag", tag, "page", p)
+}
+
+templ kindChip(s Shell, d FoodsData, kind, label string) {
+	<a
+		class={ "hh-chip", templ.KV("hh-chip--on", d.Filter.Kind == kind) }
+		href={ templ.SafeURL(s.Path(d.link(kind, d.Filter.Tag, 1))) }
+		if d.Filter.Kind == kind {
+			aria-current="true"
+		}
+	>{ label }</a>
+}
+
+templ Foods(s Shell, d FoodsData) {
+	@Layout(s) {
+		<section class="mp-section">
+			<form method="get" action={ s.URL("/foods") } class="mp-inline" role="search">
+				<input type="hidden" name="kind" value={ d.Filter.Kind }/>
+				<input type="hidden" name="tag" value={ d.Filter.Tag }/>
+				<label class="mp-field">
+					<span class="mp-sr">Search foods</span>
+					<input class="mp-input mp-input--sunk" type="search" name="q" value={ d.Filter.Query } placeholder="Search by name or another name it goes by"/>
+				</label>
+				<button type="submit" class="hh-btn hh-btn--secondary hh-btn--icon" aria-label="Search">
+					@Icon("magnifying-glass", 18)
+				</button>
+			</form>
+			<div class="mp-chips">
+				@kindChip(s, d, "", "Everything")
+				@kindChip(s, d, "recipe", "Recipes")
+				@kindChip(s, d, "ingredient", "Ingredients")
+			</div>
+			if len(d.Tags) > 0 {
+				<div class="mp-chips" aria-label="Tags">
+					for _, t := range d.Tags {
+						if t == d.Filter.Tag {
+							<a class="hh-chip hh-chip--on" aria-current="true" href={ templ.SafeURL(s.Path(d.link(d.Filter.Kind, "", 1))) }>
+								@Icon("tag", 16)
+								<span>{ t }</span>
+								@Icon("x", 16)
+							</a>
+						} else {
+							<a class="hh-chip" href={ templ.SafeURL(s.Path(d.link(d.Filter.Kind, t, 1))) }>
+								@Icon("tag", 16)
+								<span>{ t }</span>
+							</a>
+						}
+					}
+				</div>
+			}
+		</section>
+		<section class="hh-card">
+			if d.Total == 0 {
+				if d.Filter.Query != "" || d.Filter.Tag != "" || d.Filter.Kind != "" {
+					@Empty("magnifying-glass", "Nothing matches", "Try a shorter search, or clear the filters.") {
+						<a class="hh-btn hh-btn--secondary" href={ s.URL("/foods") }>Clear filters</a>
+					}
+				} else {
+					@Empty("bowl-food", "Add your first food", "Recipes and the ingredients that go into them all live here.") {
+						if s.Owner {
+							<a class="hh-btn hh-btn--secondary" href={ s.URL("/foods/new") }>Add a food</a>
+						}
+					}
+				}
+			} else {
+				<div class="hh-card__body" style="padding-top: var(--space-2)">
+					for _, f := range d.Foods {
+						<a class="hh-row" href={ s.URL("/foods/" + f.ID.String()) }>
+							<div class="hh-row__text">
+								<div class="body-strong hh-row__title">{ f.Name }</div>
+								<div class="caption hh-muted">{ foodMeta(f) }</div>
+							</div>
+							for i, t := range f.Tags {
+								if i < 2 {
+									<span class="caption mp-tag">{ t }</span>
+								}
+							}
+							<span class="hh-row__go">
+								@Icon("caret-right", 18)
+							</span>
+						</a>
+					}
+				</div>
+			}
+		</section>
+		if d.Pages > 1 {
+			<nav class="mp-between" aria-label="Pages">
+				if d.Page > 1 {
+					<a class="hh-btn hh-btn--secondary" href={ templ.SafeURL(s.Path(d.link(d.Filter.Kind, d.Filter.Tag, d.Page-1))) }>
+						@Icon("caret-left", 18)
+						<span>Previous</span>
+					</a>
+				} else {
+					<span></span>
+				}
+				<span class="caption hh-muted hh-num">Page { strconv.Itoa(d.Page) } of { strconv.Itoa(d.Pages) } · { count(d.Total, "food", "foods") }</span>
+				if d.Page < d.Pages {
+					<a class="hh-btn hh-btn--secondary" href={ templ.SafeURL(s.Path(d.link(d.Filter.Kind, d.Filter.Tag, d.Page+1))) }>
+						<span>Next</span>
+						@Icon("caret-right", 18)
+					</a>
+				} else {
+					<span></span>
+				}
+			</nav>
+		}
+		if s.Owner {
+			<div class="mp-actions">
+				<a class="hh-btn hh-btn--secondary" href={ s.URL("/foods/import") }>
+					@Icon("link-simple", 18)
+					<span>Import from a link</span>
+				</a>
+			</div>
+		}
+	}
+}
+
+type FoodDetailData struct {
+	Food     *core.Food
+	Servings float64
+	Lines    []core.Line
+	Steps    []string
+	Estimate core.Estimate
+	Cost     *core.Cost
+	UsedIn   []*core.Food
+}
+
+templ FoodDetail(s Shell, d FoodDetailData) {
+	@Layout(s) {
+		<div class="mp-cols mp-cols--split">
+			<div class="mp-stack" style="gap: var(--space-6)">
+				if d.Food.Description != "" || len(d.Food.Tags) > 0 || len(d.Food.Aliases) > 0 {
+					<section class="mp-section">
+						if d.Food.Description != "" {
+							<p class="body-l mp-pre">{ d.Food.Description }</p>
+						}
+						if len(d.Food.Tags) > 0 {
+							<div class="mp-chips">
+								for _, t := range d.Food.Tags {
+									<a class="hh-chip" href={ templ.SafeURL(s.Path(query("/foods", "tag", t))) }>
+										@Icon("tag", 16)
+										<span>{ t }</span>
+									</a>
+								}
+							</div>
+						}
+						if len(d.Food.Aliases) > 0 {
+							<p class="caption hh-muted">
+								Also called
+								for i, a := range d.Food.Aliases {
+									if i > 0 {
+										,
+									}
+									{ " " + a }
+								}
+							</p>
+						}
+					</section>
+				}
+				if d.Food.IsRecipe() {
+					<section class="hh-card">
+						<header class="hh-card__head">
+							<h3 class="heading">Ingredients</h3>
+						</header>
+						<div class="hh-card__body">
+							<form method="get" action={ s.URL("/foods/" + d.Food.ID.String()) } class="mp-inline" style="max-width: 280px; padding: var(--space-2) 0 var(--space-3)">
+								<label class="mp-field">
+									<span class="label">Servings</span>
+									<input class="mp-input mp-input--sunk" type="text" inputmode="decimal" name="servings" value={ num(d.Servings) }/>
+								</label>
+								<button type="submit" class="hh-btn hh-btn--secondary">Scale</button>
+							</form>
+							for _, l := range d.Lines {
+								if l.Deleted {
+									<div class="hh-row hh-row--quiet">
+										<span class="body-strong mp-time" style="width: 96px">{ qty(l.Amount, l.Unit) }</span>
+										<div class="hh-row__text">
+											<div class="body-strong hh-row__title">{ l.Name }{ variantSuffix(l.Variant) }</div>
+											<div class="caption hh-muted">No longer in Foods</div>
+										</div>
+									</div>
+								} else {
+									<a class="hh-row" href={ s.URL("/foods/" + l.FoodID.String()) }>
+										<span class="body-strong mp-time" style="width: 96px">{ qty(l.Amount, l.Unit) }</span>
+										<div class="hh-row__text">
+											<div class="body-strong hh-row__title">{ l.Name }{ variantSuffix(l.Variant) }</div>
+											if l.IsRecipe {
+												<div class="caption hh-muted">A recipe of its own</div>
+											}
+										</div>
+										<span class="hh-row__go">
+											@Icon("caret-right", 18)
+										</span>
+									</a>
+								}
+							}
+						</div>
+					</section>
+				}
+				if len(d.Steps) > 0 {
+					<section class="hh-card">
+						<header class="hh-card__head">
+							<h3 class="heading">Method</h3>
+						</header>
+						<div class="hh-card__body" style="padding-top: var(--space-3)">
+							<ol class="mp-steps">
+								for _, st := range d.Steps {
+									<li><span class="body-l">{ st }</span></li>
+								}
+							</ol>
+						</div>
+					</section>
+				}
+				if s.Owner {
+					<div class="mp-actions">
+						<a class="hh-btn hh-btn--secondary" href={ templ.SafeURL(s.Path("/meals/new?food=" + d.Food.ID.String())) }>
+							@Icon("calendar-blank", 18)
+							<span>Plan this</span>
+						</a>
+						<a class="hh-btn hh-btn--secondary" href={ templ.SafeURL(s.Path("/grocery/generate?mode=food&food=" + d.Food.ID.String() + "&servings=" + num(d.Servings))) }>
+							@Icon("shopping-cart", 18)
+							<span>Add to a list</span>
+						</a>
+						if d.Food.SourceURL != "" {
+							<form method="post" action={ s.URL("/foods/" + d.Food.ID.String() + "/reimport") }>
+								@csrf(s)
+								<button type="submit" class="hh-btn hh-btn--secondary">
+									@Icon("arrows-clockwise", 18)
+									<span>Import again</span>
+								</button>
+							</form>
+						}
+						<details class="mp-disclose">
+							<summary class="hh-btn hh-btn--danger">Remove food</summary>
+							<form method="post" action={ s.URL("/foods/" + d.Food.ID.String() + "/delete") } class="mp-group">
+								@csrf(s)
+								<p class="body">Meals and lists that already use { d.Food.Name } keep showing it. It just won't be offered for new ones.</p>
+								<div>
+									<button type="submit" class="hh-btn hh-btn--secondary">Remove from Foods</button>
+								</div>
+							</form>
+						</details>
+					</div>
+				}
+			</div>
+			<div class="mp-stack" style="gap: var(--space-6)">
+				<section class="hh-card">
+					<header class="hh-card__head">
+						<h3 class="heading">About</h3>
+					</header>
+					<div class="hh-card__body">
+						<dl class="mp-dl" style="padding-top: var(--space-2)">
+							if d.Food.IsRecipe() {
+								<dt class="label">Makes</dt>
+								<dd>
+									{ qty(d.Food.Servings, "serving") }
+									if d.Food.Yield != nil {
+										· { qty(*d.Food.Yield, d.Food.Unit) }
+									}
+								</dd>
+							} else if d.Food.Unit != "" {
+								<dt class="label">Measured in</dt>
+								<dd>{ d.Food.Unit }</dd>
+							}
+							if d.Food.PrepMin > 0 {
+								<dt class="label">Prep</dt>
+								<dd>{ minutes(d.Food.PrepMin) }</dd>
+							}
+							if d.Food.CookMin > 0 {
+								<dt class="label">Cook</dt>
+								<dd>{ minutes(d.Food.CookMin) }</dd>
+							}
+							<dt class="label">Density</dt>
+							<dd>
+								if d.Food.Density != nil {
+									<span class="hh-num">{ num(*d.Food.Density) } g per ml</span>
+									if d.Food.DensitySource == "custom" {
+										<span class="caption mp-tag mp-tag--info" style="margin-left: var(--space-2)">Custom</span>
+									} else {
+										<span class="caption mp-tag" style="margin-left: var(--space-2)">Starter value</span>
+									}
+								} else {
+									<span class="hh-muted">Not set, so cups and grams stay separate</span>
+								}
+							</dd>
+							if d.Cost != nil {
+								<dt class="label">Last paid</dt>
+								<dd class="hh-num">{ money(d.Cost.Total) + " for " + qty(d.Cost.Amount, d.Cost.Unit) }</dd>
+							}
+							if d.Food.SourceURL != "" {
+								<dt class="label">Source</dt>
+								<dd>
+									<a class="mp-link" href={ templ.SafeURL(d.Food.SourceURL) } target="_blank" rel="noopener noreferrer nofollow">{ d.Food.SourceURL }</a>
+									if d.Food.ImportedAt != nil {
+										<div class="caption hh-muted">Imported { d.Food.ImportedAt.Format("2 Jan 2006") }</div>
+									}
+								</dd>
+							}
+						</dl>
+					</div>
+				</section>
+				@costCard(d.Estimate, servesText(d.Servings))
+				if len(d.UsedIn) > 0 {
+					<section class="hh-card">
+						<header class="hh-card__head">
+							<h3 class="heading">Used in</h3>
+						</header>
+						<div class="hh-card__body">
+							for _, f := range d.UsedIn {
+								<a class="hh-row" href={ s.URL("/foods/" + f.ID.String()) }>
+									<div class="hh-row__text">
+										<div class="body-strong hh-row__title">{ f.Name }</div>
+									</div>
+									<span class="hh-row__go">
+										@Icon("caret-right", 18)
+									</span>
+								</a>
+							}
+						</div>
+					</section>
+				}
+			</div>
+		</div>
+	}
+}
+
+type LineRow struct {
+	Amount  string
+	Unit    string
+	Name    string
+	Variant string
+}
+
+// FoodConflict is the saved version shown beside a stale edit.
+type FoodConflict struct {
+	Food  *core.Food
+	Lines []core.Line
+	Steps []string
+}
+
+type FoodForm struct {
+	ID          string // empty for a new food
+	Version     int32
+	Name        string
+	Description string
+	Tags        string
+	Aliases     string
+	Servings    string
+	Prep        string
+	Cook        string
+	Yield       string
+	Unit        string
+	Density     string
+	SourceURL   string
+	Imported    bool // an import review: saving stamps the import time
+	Lines       []LineRow
+	Steps       []string
+	Error       string
+	Conflict    *FoodConflict
+}
+
+func (f FoodForm) action() string {
+	if f.ID == "" {
+		return "/foods"
+	}
+	return "/foods/" + f.ID
+}
+
+var unitOptions = []string{"g", "kg", "ml", "l", "tsp", "tbsp", "cup", "oz", "lb", "each", "clove", "pinch", "serving", "batch"}
+
+func boolStr(b bool) string {
+	if b {
+		return "1"
+	}
+	return ""
+}
+
+templ FoodEditor(s Shell, f FoodForm, foods []*core.Food) {
+	@Layout(s) {
+		if f.Conflict != nil {
+			@Banner("warning", "Someone saved this food while you were editing", "Your changes are still in the form below. Compare them with the saved version, adjust if you need to, then save again.")
+			<section class="hh-card">
+				<header class="hh-card__head">
+					<h3 class="heading">Saved version</h3>
+				</header>
+				<div class="hh-card__body">
+					<dl class="mp-dl" style="padding-top: var(--space-2)">
+						<dt class="label">Name</dt>
+						<dd>{ f.Conflict.Food.Name }</dd>
+						<dt class="label">Makes</dt>
+						<dd>{ qty(f.Conflict.Food.Servings, "serving") }</dd>
+						if f.Conflict.Food.Description != "" {
+							<dt class="label">Description</dt>
+							<dd class="mp-pre">{ f.Conflict.Food.Description }</dd>
+						}
+						if len(f.Conflict.Lines) > 0 {
+							<dt class="label">Ingredients</dt>
+							<dd>
+								for _, l := range f.Conflict.Lines {
+									<div>{ qty(l.Amount, l.Unit) } { l.Name }{ variantSuffix(l.Variant) }</div>
+								}
+							</dd>
+						}
+						if len(f.Conflict.Steps) > 0 {
+							<dt class="label">Method</dt>
+							<dd>
+								for i, st := range f.Conflict.Steps {
+									<div>{ strconv.Itoa(i+1) }. { st }</div>
+								}
+							</dd>
+						}
+					</dl>
+				</div>
+			</section>
+		} else if f.Imported {
+			@Banner("info", "Check what was found", "This came from the page's recipe details. Fix anything that looks off, then save. Ingredients that aren't in Foods yet are added for you.")
+		}
+		<form method="post" action={ s.URL(f.action()) } class="mp-form">
+			@csrf(s)
+			<input type="hidden" name="version" value={ strconv.Itoa(int(f.Version)) }/>
+			<input type="hidden" name="source_url" value={ f.SourceURL }/>
+			<input type="hidden" name="imported" value={ boolStr(f.Imported) }/>
+			<button type="submit" name="op" value="save" class="mp-sr" tabindex="-1" aria-hidden="true">Save</button>
+			if f.Error != "" {
+				@Banner("danger", "", f.Error)
+			}
+			<section class="hh-card">
+				<div class="mp-card-pad mp-form">
+					if f.Conflict != nil {
+						<h2 class="heading">Your changes</h2>
+					} else {
+						<h2 class="heading">The basics</h2>
+					}
+					<label class="mp-field">
+						<span class="label">Name</span>
+						<input class="mp-input" type="text" name="name" value={ f.Name } required/>
+					</label>
+					<label class="mp-field">
+						<span class="label">Description (optional)</span>
+						<textarea class="mp-input" name="description">{ f.Description }</textarea>
+					</label>
+					<div class="mp-row2">
+						<label class="mp-field">
+							<span class="label">Tags</span>
+							<input class="mp-input" type="text" name="tags" value={ f.Tags } placeholder="weeknight, vegetarian"/>
+							<span class="caption mp-hint">Separate with commas.</span>
+						</label>
+						<label class="mp-field">
+							<span class="label">Also called</span>
+							<input class="mp-input" type="text" name="aliases" value={ f.Aliases } placeholder="scallions, green onions"/>
+							<span class="caption mp-hint">Other names that should find this food.</span>
+						</label>
+					</div>
+				</div>
+			</section>
+			<section class="hh-card">
+				<div class="mp-card-pad mp-form">
+					<h2 class="heading">Ingredients</h2>
+					<p class="caption mp-hint">Leave these empty for a plain ingredient. Each line is an amount, a unit, a food, and how it's prepared. Use "serving" as the unit to add part of another recipe.</p>
+					@foodOptions("foods", foods)
+					<div>
+						for _, l := range f.Lines {
+							<div class="mp-line">
+								<input class="mp-input" type="text" inputmode="decimal" name="line_amount" value={ l.Amount } placeholder="Amt" aria-label="Amount"/>
+								<input class="mp-input" type="text" name="line_unit" value={ l.Unit } placeholder="Unit" aria-label="Unit" list="units" autocapitalize="none"/>
+								<input class="mp-input" type="text" name="line_name" value={ l.Name } placeholder="Food" aria-label="Food" list="foods" autocomplete="off"/>
+								<input class="mp-input" type="text" name="line_variant" value={ l.Variant } placeholder="How (diced, melted)" aria-label="How it's prepared"/>
+							</div>
+						}
+					</div>
+					<datalist id="units">
+						for _, u := range unitOptions {
+							<option value={ u }></option>
+						}
+					</datalist>
+					<div>
+						<button type="submit" name="op" value="more" class="hh-btn hh-btn--text">
+							@Icon("plus", 18)
+							<span>More rows</span>
+						</button>
+					</div>
+				</div>
+			</section>
+			<section class="hh-card">
+				<div class="mp-card-pad mp-form">
+					<h2 class="heading">Method</h2>
+					for i, st := range f.Steps {
+						<label class="mp-field">
+							<span class="label">Step { strconv.Itoa(i+1) }</span>
+							<textarea class="mp-input" name="step" style="min-height: 72px">{ st }</textarea>
+						</label>
+					}
+					<p class="caption mp-hint">Empty steps are skipped. "More rows" above adds steps too.</p>
+				</div>
+			</section>
+			<section class="hh-card">
+				<div class="mp-card-pad mp-form">
+					<h2 class="heading">Amounts and conversion</h2>
+					<div class="mp-row3">
+						<label class="mp-field">
+							<span class="label">Servings</span>
+							<input class="mp-input" type="text" inputmode="decimal" name="servings" value={ f.Servings }/>
+						</label>
+						<label class="mp-field">
+							<span class="label">Prep, min</span>
+							<input class="mp-input" type="text" inputmode="numeric" name="prep" value={ f.Prep }/>
+						</label>
+						<label class="mp-field">
+							<span class="label">Cook, min</span>
+							<input class="mp-input" type="text" inputmode="numeric" name="cook" value={ f.Cook }/>
+						</label>
+					</div>
+					<div class="mp-row3">
+						<label class="mp-field">
+							<span class="label">Yield</span>
+							<input class="mp-input" type="text" inputmode="decimal" name="yield" value={ f.Yield } placeholder="500"/>
+						</label>
+						<label class="mp-field">
+							<span class="label">Unit</span>
+							<input class="mp-input" type="text" name="unit" value={ f.Unit } placeholder="ml" list="units" autocapitalize="none"/>
+						</label>
+						<label class="mp-field">
+							<span class="label">Density, g/ml</span>
+							<input class="mp-input" type="text" inputmode="decimal" name="density" value={ f.Density } placeholder="0.53"/>
+						</label>
+					</div>
+					<p class="caption mp-hint">Yield is how much one batch makes, so other recipes can use it by weight or volume. Density lets cups and grams of this food add up on a grocery list.</p>
+				</div>
+			</section>
+			<div class="mp-actions">
+				<button type="submit" name="op" value="save" class="hh-btn hh-btn--primary hh-btn--l">Save food</button>
+				if f.ID == "" {
+					<a class="hh-btn hh-btn--text" href={ s.URL("/foods") }>Cancel</a>
+				} else {
+					<a class="hh-btn hh-btn--text" href={ s.URL("/foods/" + f.ID) }>Cancel</a>
+				}
+			</div>
+		</form>
+	}
+}
+
+templ FoodImport(s Shell, link, errText string) {
+	@Layout(s) {
+		<section class="hh-card">
+			<div class="mp-card-pad">
+				<form method="post" action={ s.URL("/foods/import") } class="mp-form">
+					@csrf(s)
+					<h2 class="heading">Bring in a recipe from the web</h2>
+					<p class="body hh-muted">Paste a link to a recipe page. You'll get to check everything before it's saved.</p>
+					if errText != "" {
+						@Banner("danger", "", errText)
+					}
+					<label class="mp-field">
+						<span class="label">Recipe link</span>
+						<input class="mp-input" type="url" name="url" value={ link } placeholder="https://" required autofocus/>
+					</label>
+					<div class="mp-actions">
+						<button type="submit" class="hh-btn hh-btn--primary hh-btn--l">Fetch recipe</button>
+						<a class="hh-btn hh-btn--text" href={ s.URL("/foods") }>Cancel</a>
+					</div>
+				</form>
+			</div>
+		</section>
+	}
+}

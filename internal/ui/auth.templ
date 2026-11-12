@@ -1,0 +1,121 @@
+package ui
+
+templ Login(s Shell, email, invite, errText string) {
+	@AuthLayout(s, "Plan the week, share the shopping, and know what's for dinner.") {
+		<section class="hh-card">
+			<div class="mp-card-pad">
+				<form method="post" action={ s.URL("/login") } class="mp-form">
+					@csrf(s)
+					<input type="hidden" name="invite" value={ invite }/>
+					<h2 class="title">Sign in</h2>
+					if errText != "" {
+						@Banner("danger", "", errText)
+					}
+					<label class="mp-field">
+						<span class="label">Email</span>
+						<input class="mp-input" type="email" name="email" value={ email } autocomplete="email" required autofocus/>
+					</label>
+					<label class="mp-field">
+						<span class="label">Password</span>
+						<input class="mp-input" type="password" name="password" autocomplete="current-password" required/>
+					</label>
+					<button type="submit" class="hh-btn hh-btn--primary hh-btn--l hh-btn--full">Sign in</button>
+				</form>
+			</div>
+		</section>
+		<p class="body hh-muted" style="text-align: center">
+			New here?
+			<a class="mp-link" href={ templ.SafeURL(s.Path(query("/signup", "invite", invite))) }>Create an account</a>
+		</p>
+	}
+}
+
+templ Signup(s Shell, name, email, invite, errText string) {
+	@AuthLayout(s, "Set up your account, then start or join a household.") {
+		<section class="hh-card">
+			<div class="mp-card-pad">
+				<form method="post" action={ s.URL("/signup") } class="mp-form">
+					@csrf(s)
+					<input type="hidden" name="invite" value={ invite }/>
+					<h2 class="title">Create an account</h2>
+					if invite != "" {
+						@Banner("info", "", "You've been invited to a household. Create your account to join it.")
+					}
+					if errText != "" {
+						@Banner("danger", "", errText)
+					}
+					<label class="mp-field">
+						<span class="label">Your name</span>
+						<input class="mp-input" type="text" name="name" value={ name } autocomplete="name" required autofocus/>
+						<span class="caption mp-hint">Shown to your household beside the meals you plan.</span>
+					</label>
+					<label class="mp-field">
+						<span class="label">Email</span>
+						<input class="mp-input" type="email" name="email" value={ email } autocomplete="email" required/>
+					</label>
+					<label class="mp-field">
+						<span class="label">Password</span>
+						<input class="mp-input" type="password" name="password" autocomplete="new-password" minlength="8" required/>
+						<span class="caption mp-hint">At least eight characters.</span>
+					</label>
+					<button type="submit" class="hh-btn hh-btn--primary hh-btn--l hh-btn--full">Create account</button>
+				</form>
+			</div>
+		</section>
+		<p class="body hh-muted" style="text-align: center">
+			Already have an account?
+			<a class="mp-link" href={ templ.SafeURL(s.Path(query("/login", "invite", invite))) }>Sign in</a>
+		</p>
+	}
+}
+
+// Welcome is onboarding: start a household or join one with an invite.
+templ Welcome(s Shell, invite, createErr, joinErr string) {
+	@AuthLayout(s, "One more step: every plan, food and list lives in a household you share.") {
+		<section class="hh-card">
+			<div class="mp-card-pad">
+				<form method="post" action={ s.URL("/welcome/join") } class="mp-form">
+					@csrf(s)
+					<h2 class="heading">Join with an invite</h2>
+					if joinErr != "" {
+						@Banner("danger", "", joinErr)
+					}
+					<label class="mp-field">
+						<span class="label">Invite code or link</span>
+						<input class="mp-input" type="text" name="code" value={ invite } autocomplete="off" autocapitalize="characters" required/>
+					</label>
+					if invite != "" {
+						<button type="submit" class="hh-btn hh-btn--primary hh-btn--l hh-btn--full">Join household</button>
+					} else {
+						<button type="submit" class="hh-btn hh-btn--secondary hh-btn--full">Join household</button>
+					}
+				</form>
+			</div>
+		</section>
+		<section class="hh-card">
+			<div class="mp-card-pad">
+				<form method="post" action={ s.URL("/welcome/create") } class="mp-form">
+					@csrf(s)
+					<h2 class="heading">Start a new household</h2>
+					if createErr != "" {
+						@Banner("danger", "", createErr)
+					}
+					<label class="mp-field">
+						<span class="label">Household name</span>
+						<input class="mp-input" type="text" name="name" placeholder="The Joneses" required/>
+						<span class="caption mp-hint">You'll be its owner, and can invite the others next.</span>
+					</label>
+					if invite != "" {
+						<button type="submit" class="hh-btn hh-btn--secondary hh-btn--full">Create household</button>
+					} else {
+						<button type="submit" class="hh-btn hh-btn--primary hh-btn--l hh-btn--full">Create household</button>
+					}
+				</form>
+			</div>
+		</section>
+		<form method="post" action={ s.URL("/logout") } style="text-align: center">
+			@csrf(s)
+			<button type="submit" class="hh-btn hh-btn--text">Sign out</button>
+		</form>
+	}
+}

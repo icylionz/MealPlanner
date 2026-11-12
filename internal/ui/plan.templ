@@ -1,0 +1,538 @@
+package ui
+
+import (
+	"time"
+
+	"github.com/icylionz/mealplanner/internal/core"
+)
+
+type PlanDay struct {
+	Date  time.Time
+	Meals []core.Meal
+}
+
+type PlanData struct {
+	View     string // "list" or "grid"
+	Start    time.Time
+	Selected time.Time
+	Today    time.Time
+	Days     []PlanDay
+	Cat      *core.Catalog
+	People   People
+}
+
+func (d PlanData) link(view string, date time.Time) string {
+	return query("/plan", "view", view, "date", isoDate(date))
+}
+
+func (d PlanData) meals() int {
+	n := 0
+	for _, day := range d.Days {
+		n += len(day.Meals)
+	}
+	return n
+}
+
+templ Plan(s Shell, d PlanData) {
+	@Layout(s) {
+		<div class="mp-actions" style="justify-content: space-between">
+			<div class="mp-actions">
+				<a class="hh-btn hh-btn--secondary hh-btn--icon" href={ templ.SafeURL(s.Path(d.link(d.View, d.Start.AddDate(0, 0, -7)))) } aria-label="Previous week">
+					@Icon("caret-left", 18)
+				</a>
+				<a class="hh-btn hh-btn--secondary hh-btn--icon" href={ templ.SafeURL(s.Path(d.link(d.View, d.Start.AddDate(0, 0, 7)))) } aria-label="Next week">
+					@Icon("caret-right", 18)
+				</a>
+				<a class="hh-btn hh-btn--text" href={ templ.SafeURL(s.Path(d.link(d.View, d.Today))) }>This week</a>
+			</div>
+			<div class="mp-seg" role="group" aria-label="Layout">
+				<a
+					class="label"
+					href={ templ.SafeURL(s.Path(d.link("list", d.Selected))) }
+					if d.View == "list" {
+						aria-current="true"
+					}
+				>
+					@Icon("rows", 16)
+					<span>Day list</span>
+				</a>
+				<a
+					class="label"
+					href={ templ.SafeURL(s.Path(d.link("grid", d.Selected))) }
+					if d.View == "grid" {
+						aria-current="true"
+					}
+				>
+					@Icon("squares-four", 16)
+					<span>Week grid</span>
+				</a>
+			</div>
+		</div>
+		<form method="get" action={ s.URL("/plan") } class="mp-inline" style="max-width: 320px">
+			<input type="hidden" name="view" value={ d.View }/>
+			<label class="mp-field">
+				<span class="label">Go to a date</span>
+				<input class="mp-input mp-input--sunk" type="date" name="date" value={ isoDate(d.Selected) }/>
+			</label>
+			<button type="submit" class="hh-btn hh-btn--secondary">Go</button>
+		</form>
+		if d.View == "grid" {
+			<div class="mp-week">
+				for _, day := range d.Days {
+					<section class={ "mp-day", templ.KV("mp-day--today", day.Date.Equal(d.Today)) } aria-label={ longDate(day.Date) }>
+						<div class="mp-day__head">
+							<span class="body-strong">{ dayName(day.Date) }</span>
+							<span class="caption hh-muted hh-num">{ day.Date.Format("2 Jan") }</span>
+						</div>
+						for _, m := range day.Meals {
+							<a class="mp-slot" href={ s.URL("/meals/" + m.ID.String()) }>
+								<span class="caption hh-muted hh-num">{ clock(m.Time) }</span>
+								<span class="label">{ m.Name(d.Cat) }</span>
+							</a>
+						}
+						if s.Owner {
+							<a class="mp-day__add" href={ templ.SafeURL(s.Path("/meals/new?date=" + isoDate(day.Date))) } aria-label={ "Add a meal on " + longDate(day.Date) }>
+								@Icon("plus", 18)
+							</a>
+						}
+					</section>
+				}
+			</div>
+		} else {
+			<div class="mp-stack">
+				for _, day := range d.Days {
+					<section class="hh-card" id={ "d" + isoDate(day.Date) }>
+						<header class="hh-card__head">
+							<h3 class="heading">
+								{ longDate(day.Date) }
+								if day.Date.Equal(d.Today) {
+									<span class="caption mp-tag mp-tag--info" style="margin-left: var(--space-2); vertical-align: middle">Today</span>
+								}
+							</h3>
+							if s.Owner {
+								<div class="hh-card__action">
+									<a class="hh-btn hh-btn--text" href={ templ.SafeURL(s.Path("/meals/new?date=" + isoDate(day.Date))) }>
+										@Icon("plus", 18)
+										<span>Add</span>
+									</a>
+								</div>
+							}
+						</header>
+						<div class="hh-card__body">
+							if len(day.Meals) == 0 {
+								<p class="body hh-muted">
+									Nothing planned.
+									if s.Owner {
+										<a class="mp-link" href={ templ.SafeURL(s.Path("/meals/new?date=" + isoDate(day.Date))) }>Add a meal</a>
+									}
+								</p>
+							}
+							for _, m := range day.Meals {
+								<a class="hh-row" href={ s.URL("/meals/" + m.ID.String()) }>
+									<span class="body-strong mp-time">{ clock(m.Time) }</span>
+									<div class="hh-row__text">
+										<div class="body-strong hh-row__title">{ m.Name(d.Cat) }</div>
+										<div class="caption hh-muted">{ mealMeta(m, d.Cat) }</div>
+									</div>
+									if m.SeriesID != nil {
+										<span class="hh-row__go" title="Repeats">
+											@Icon("repeat", 16)
+										</span>
+									}
+									if p, ok := d.People.of(m.CreatedBy); ok {
+										@Avatar(p.Name, p.Member, "xs")
+									}
+								</a>
+							}
+						</div>
+					</section>
+				}
+			</div>
+		}
+	}
+}
+
+type MealRecipe struct {
+	Food      *core.Food
+	Name      string
+	Servings  float64
+	Inherited bool
+}
+
+type MealData struct {
+	Meal     core.Meal
+	Cat      *core.Catalog
+	People   People
+	Recipes  []MealRecipe
+	Estimate core.Estimate
+}
+
+templ MealDetail(s Shell, d MealData) {
+	@Layout(s) {
+		<div class="mp-cols mp-cols--split">
+			<div class="mp-stack" style="gap: var(--space-6)">
+				<section class="hh-card">
+					<header class="hh-card__head">
+						<h3 class="heading">What's cooking</h3>
+					</header>
+					<div class="hh-card__body">
+						for _, r := range d.Recipes {
+							if r.Food != nil && !r.Food.Deleted {
+								<a class="hh-row" href={ s.URL("/foods/" + r.Food.ID.String() + "?servings=" + num(r.Servings)) }>
+									<div class="hh-row__text">
+										<div class="body-strong hh-row__title">{ r.Name }</div>
+										<div class="caption hh-muted">
+											{ servesText(r.Servings) }
+											if !r.Inherited {
+												· set for this recipe
+											}
+										</div>
+									</div>
+									<span class="hh-row__go">
+										@Icon("caret-right", 18)
+									</span>
+								</a>
+							} else {
+								<div class="hh-row hh-row--quiet">
+									<div class="hh-row__text">
+										<div class="body-strong hh-row__title">{ r.Name }</div>
+										<div class="caption hh-muted">{ servesText(r.Servings) } · no longer in Foods</div>
+									</div>
+								</div>
+							}
+						}
+						if d.Meal.Notes != "" {
+							<p class="note hh-note hh-note--meals mp-pre" style="margin-top: var(--space-3)">{ d.Meal.Notes }</p>
+						}
+					</div>
+				</section>
+				if s.Owner {
+					<div class="mp-actions">
+						<a class="hh-btn hh-btn--secondary" href={ templ.SafeURL(s.Path("/grocery/generate?mode=meal&meal=" + d.Meal.ID.String())) }>
+							@Icon("shopping-cart", 18)
+							<span>Add to a list</span>
+						</a>
+						<details class="mp-disclose">
+							<summary class="hh-btn hh-btn--danger">Remove meal</summary>
+							<form method="post" action={ s.URL("/meals/" + d.Meal.ID.String() + "/delete") } class="mp-group">
+								@csrf(s)
+								if d.Meal.SeriesID != nil {
+									@scopeChooser("Remove")
+								} else {
+									<p class="body">This takes the meal off the plan. Lists already made from it keep their items.</p>
+								}
+								<div>
+									<button type="submit" class="hh-btn hh-btn--secondary">Remove from plan</button>
+								</div>
+							</form>
+						</details>
+					</div>
+				}
+			</div>
+			<div class="mp-stack" style="gap: var(--space-6)">
+				<section class="hh-card">
+					<header class="hh-card__head">
+						<h3 class="heading">Details</h3>
+					</header>
+					<div class="hh-card__body">
+						<dl class="mp-dl" style="padding-top: var(--space-2)">
+							<dt class="label">When</dt>
+							<dd>{ longDate(d.Meal.Date) }, { clock(d.Meal.Time) }</dd>
+							<dt class="label">Servings</dt>
+							<dd class="hh-num">{ num(d.Meal.Servings) }</dd>
+							if d.Meal.SeriesID != nil {
+								<dt class="label">Repeats</dt>
+								<dd>Part of a repeating meal</dd>
+							}
+							if d.Meal.Link != "" {
+								<dt class="label">Link</dt>
+								<dd>
+									<a class="mp-link" href={ templ.SafeURL(d.Meal.Link) } target="_blank" rel="noopener noreferrer nofollow">{ d.Meal.Link }</a>
+								</dd>
+							}
+							if p, ok := d.People.of(d.Meal.CreatedBy); ok {
+								<dt class="label">Planned by</dt>
+								<dd style="display: flex; align-items: center; gap: var(--space-2)">
+									@Avatar(p.Name, p.Member, "xs")
+									{ p.Name }
+								</dd>
+							}
+						</dl>
+					</div>
+				</section>
+				@costCard(d.Estimate, "For this meal as planned.")
+			</div>
+		</div>
+	}
+}
+
+templ costCard(e core.Estimate, context string) {
+	<section class="hh-card">
+		<header class="hh-card__head">
+			<h3 class="heading">Estimated cost</h3>
+		</header>
+		<div class="hh-card__body">
+			if e.Known() {
+				<div class="hh-budget__top" style="padding-top: var(--space-2)">
+					<span class="label hh-muted">{ context }</span>
+					<span class="amount hh-num">{ money(e.Total) }</span>
+				</div>
+				@Track("Ingredients priced", e.Priced*100/e.Leaves)
+				<p class="caption hh-muted" style="margin-top: var(--space-2)">
+					{ estimateText(e) }
+				</p>
+			} else {
+				<p class="body hh-muted">No costs recorded yet. Add what you paid to a grocery item and estimates appear here.</p>
+			}
+		</div>
+	</section>
+}
+
+templ scopeChooser(verb string) {
+	<fieldset class="mp-fieldset" style="gap: 0">
+		<legend class="label">{ verb } which meals?</legend>
+		<label class="mp-choice"><input type="radio" name="scope" value="this" checked/><span>This occurrence</span></label>
+		<label class="mp-choice"><input type="radio" name="scope" value="future"/><span>This and future</span></label>
+		<label class="mp-choice"><input type="radio" name="scope" value="all"/><span>All occurrences</span></label>
+	</fieldset>
+}
+
+type ExtraRow struct {
+	Food     string
+	Servings string
+}
+
+// MealConflict is the saved version shown beside a stale edit.
+type MealConflict struct {
+	When     string
+	Food     string
+	Servings string
+	Title    string
+	Notes    string
+	Link     string
+	Extras   []string
+}
+
+type MealForm struct {
+	ID        string // empty for a new meal
+	Version   int32
+	Date      string
+	Time      string
+	Food      string
+	Servings  string
+	Title     string
+	Notes     string
+	Link      string
+	Extras    []ExtraRow
+	Repeat    string
+	Until     string
+	Weekdays  map[int]bool
+	Recurring bool // editing an occurrence of a series
+	Error     string
+	Conflict  *MealConflict
+}
+
+var weekdayOrder = []time.Weekday{time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday, time.Saturday, time.Sunday}
+
+func (f MealForm) action() string {
+	if f.ID == "" {
+		return "/meals"
+	}
+	return "/meals/" + f.ID
+}
+
+// MealWhen is step one of adding a meal: date and time come before recipes.
+templ MealWhen(s Shell, date, tm, food string) {
+	@Layout(s) {
+		<section class="hh-card">
+			<div class="mp-card-pad">
+				<form method="get" action={ s.URL("/meals/new") } class="mp-form">
+					<input type="hidden" name="food" value={ food }/>
+					<input type="hidden" name="step" value="2"/>
+					<h2 class="heading">When is it?</h2>
+					<div class="mp-row2">
+						<label class="mp-field">
+							<span class="label">Date</span>
+							<input class="mp-input" type="date" name="date" value={ date } required/>
+						</label>
+						<label class="mp-field">
+							<span class="label">Time</span>
+							<input class="mp-input" type="time" name="time" value={ tm } required/>
+						</label>
+					</div>
+					<div class="mp-actions">
+						<button type="submit" class="hh-btn hh-btn--primary hh-btn--l">Choose recipes</button>
+						<a class="hh-btn hh-btn--text" href={ s.URL("/plan") }>Cancel</a>
+					</div>
+				</form>
+			</div>
+		</section>
+	}
+}
+
+templ MealEditor(s Shell, f MealForm, foods []*core.Food) {
+	@Layout(s) {
+		if f.Conflict != nil {
+			@Banner("warning", "Someone saved this meal while you were editing", "Your changes are still in the form below. Compare them with the saved version, adjust if you need to, then save again.")
+			<section class="hh-card">
+				<header class="hh-card__head">
+					<h3 class="heading">Saved version</h3>
+				</header>
+				<div class="hh-card__body">
+					<dl class="mp-dl" style="padding-top: var(--space-2)">
+						<dt class="label">When</dt>
+						<dd>{ f.Conflict.When }</dd>
+						<dt class="label">Making</dt>
+						<dd>{ f.Conflict.Food }</dd>
+						<dt class="label">Servings</dt>
+						<dd>{ f.Conflict.Servings }</dd>
+						if f.Conflict.Title != "" {
+							<dt class="label">Title</dt>
+							<dd>{ f.Conflict.Title }</dd>
+						}
+						if len(f.Conflict.Extras) > 0 {
+							<dt class="label">Also</dt>
+							<dd>
+								for i, e := range f.Conflict.Extras {
+									if i > 0 {
+										,
+									}
+									{ e }
+								}
+							</dd>
+						}
+						if f.Conflict.Notes != "" {
+							<dt class="label">Notes</dt>
+							<dd class="mp-pre">{ f.Conflict.Notes }</dd>
+						}
+						if f.Conflict.Link != "" {
+							<dt class="label">Link</dt>
+							<dd style="overflow-wrap: anywhere">{ f.Conflict.Link }</dd>
+						}
+					</dl>
+				</div>
+			</section>
+		}
+		<form method="post" action={ s.URL(f.action()) } class="mp-form">
+			@csrf(s)
+			<input type="hidden" name="version" value={ num(float64(f.Version)) }/>
+			<!-- Enter in a text field saves rather than pressing "More rows". -->
+			<button type="submit" name="op" value="save" class="mp-sr" tabindex="-1" aria-hidden="true">Save</button>
+			if f.Error != "" {
+				@Banner("danger", "", f.Error)
+			}
+			<section class="hh-card">
+				<div class="mp-card-pad mp-form">
+					if f.Conflict != nil {
+						<h2 class="heading">Your changes</h2>
+					} else {
+						<h2 class="heading">When</h2>
+					}
+					<div class="mp-row2">
+						<label class="mp-field">
+							<span class="label">Date</span>
+							<input class="mp-input" type="date" name="date" value={ f.Date } required/>
+						</label>
+						<label class="mp-field">
+							<span class="label">Time</span>
+							<input class="mp-input" type="time" name="time" value={ f.Time } required/>
+						</label>
+					</div>
+				</div>
+			</section>
+			<section class="hh-card">
+				<div class="mp-card-pad mp-form">
+					<h2 class="heading">What you're making</h2>
+					@foodOptions("foods", foods)
+					<div class="mp-row2">
+						<label class="mp-field">
+							<span class="label">Recipe or food</span>
+							<input class="mp-input" type="text" name="food" value={ f.Food } list="foods" autocomplete="off" placeholder="Start typing to search" required/>
+						</label>
+						<label class="mp-field">
+							<span class="label">Servings</span>
+							<input class="mp-input" type="text" inputmode="decimal" name="servings" value={ f.Servings } required/>
+						</label>
+					</div>
+					<fieldset class="mp-fieldset">
+						<legend class="label">Anything else with it?</legend>
+						<p class="caption mp-hint">Sides and extras use the meal's servings unless you set their own.</p>
+						for _, e := range f.Extras {
+							<div class="mp-row2">
+								<input class="mp-input" type="text" name="extra_food" value={ e.Food } list="foods" autocomplete="off" placeholder="Another recipe" aria-label="Another recipe"/>
+								<input class="mp-input" type="text" inputmode="decimal" name="extra_servings" value={ e.Servings } placeholder="Servings (optional)" aria-label="Servings for this recipe"/>
+							</div>
+						}
+						<div>
+							<button type="submit" name="op" value="more" class="hh-btn hh-btn--text">
+								@Icon("plus", 18)
+								<span>More rows</span>
+							</button>
+						</div>
+					</fieldset>
+				</div>
+			</section>
+			<section class="hh-card">
+				<div class="mp-card-pad mp-form">
+					<h2 class="heading">Details</h2>
+					<label class="mp-field">
+						<span class="label">Title (optional)</span>
+						<input class="mp-input" type="text" name="title" value={ f.Title } placeholder="Taco night"/>
+					</label>
+					<label class="mp-field">
+						<span class="label">Notes (optional)</span>
+						<textarea class="mp-input" name="notes" placeholder="Don't forget the limes">{ f.Notes }</textarea>
+					</label>
+					<label class="mp-field">
+						<span class="label">Link (optional)</span>
+						<input class="mp-input" type="url" name="link" value={ f.Link } placeholder="https://"/>
+					</label>
+				</div>
+			</section>
+			if f.ID == "" {
+				<section class="hh-card">
+					<div class="mp-card-pad mp-form">
+						<h2 class="heading">Repeat</h2>
+						<fieldset class="mp-fieldset" style="gap: 0">
+							<legend class="mp-sr">How often</legend>
+							<label class="mp-choice"><input type="radio" name="repeat" value="" checked?={ f.Repeat == "" }/><span>Just this once</span></label>
+							<label class="mp-choice"><input type="radio" name="repeat" value="daily" checked?={ f.Repeat == "daily" }/><span>Every day</span></label>
+							<label class="mp-choice"><input type="radio" name="repeat" value="weekly" checked?={ f.Repeat == "weekly" }/><span>Every week on chosen days</span></label>
+						</fieldset>
+						<fieldset class="mp-fieldset">
+							<legend class="label">Days for a weekly repeat</legend>
+							<div class="mp-chips">
+								for _, wd := range weekdayOrder {
+									<label class="mp-choice" style="gap: var(--space-2)">
+										<input type="checkbox" name="weekday" value={ num(float64(wd)) } checked?={ f.Weekdays[int(wd)] }/>
+										<span>{ wd.String()[:3] }</span>
+									</label>
+								}
+							</div>
+							<p class="caption mp-hint">Leave these clear to repeat on the same weekday as the first meal.</p>
+						</fieldset>
+						<label class="mp-field" style="max-width: 240px">
+							<span class="label">Repeat until</span>
+							<input class="mp-input" type="date" name="until" value={ f.Until }/>
+						</label>
+					</div>
+				</section>
+			} else if f.Recurring {
+				<section class="hh-card">
+					<div class="mp-card-pad">
+						@scopeChooser("Change")
+						<p class="caption mp-hint">Changes to future or all occurrences keep each meal on its own date.</p>
+					</div>
+				</section>
+			}
+			<div class="mp-actions">
+				<button type="submit" name="op" value="save" class="hh-btn hh-btn--primary hh-btn--l">Save meal</button>
+				if f.ID == "" {
+					<a class="hh-btn hh-btn--text" href={ s.URL("/plan") }>Cancel</a>
+				} else {
+					<a class="hh-btn hh-btn--text" href={ s.URL("/meals/" + f.ID) }>Cancel</a>
+				}
+			</div>
+		</form>
+	}
+}

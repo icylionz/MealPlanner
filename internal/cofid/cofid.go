@@ -1,7 +1,6 @@
-// Package cofid reads McCance and Widdowson's Composition of Foods Integrated
-// Dataset (CoFID 2021) and selects raw ingredients for the Starter Template.
-// The workbook is read with the standard library: shared strings plus the
-// "1.3 Proximates" worksheet (code, name, food-group code in columns A, B, D).
+// Package cofid reads the UK Composition of Foods Integrated Dataset (CoFID
+// 2021) workbook and picks out raw ingredients for the Starter Template. It
+// reads the .xlsx with the standard library only.
 package cofid
 
 import (
@@ -12,8 +11,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -23,72 +22,74 @@ const DatasetURL = "https://assets.publishing.service.gov.uk/media/60538b91e90e0
 
 const sheetName = "1.3 Proximates"
 
-// Food is one raw ingredient ready to seed.
+// Food is one row of the dataset: code, name and food-group code.
 type Food struct {
-	Code    string
-	Name    string
-	Group   string
-	Unit    string
-	Density *float64
+	Code  string
+	Name  string
+	Group string
 }
 
+// Seed is a raw ingredient ready for the catalog.
+type Seed struct {
+	Name  string
+	Alias string // the dataset's own name, kept searchable
+	Tag   string
+}
+
+// Fetch downloads the workbook.
 func Fetch(ctx context.Context, url string) ([]byte, error) {
-	if url == "" {
-		url = DatasetURL
-	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := (&http.Client{Timeout: 2 * time.Minute}).Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch CoFID: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetch CoFID: %s", resp.Status)
+		return nil, fmt.Errorf("download: %s", resp.Status)
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 }
 
-// Parse returns every row of the Proximates sheet that has a code and name.
+var codeRe = regexp.MustCompile(`^\d{2}-\d{3,5}$`)
+
+// Parse returns every food row of the Proximates sheet (columns A, B and D).
 func Parse(xlsx []byte) ([]Food, error) {
 	zr, err := zip.NewReader(bytes.NewReader(xlsx), int64(len(xlsx)))
 	if err != nil {
-		return nil, fmt.Errorf("open xlsx: %w", err)
+		return nil, fmt.Errorf("not an xlsx file: %w", err)
 	}
 	read := func(name string) ([]byte, error) {
-		for _, f := range zr.File {
-			if f.Name == name {
-				rc, err := f.Open()
-				if err != nil {
-					return nil, err
-				}
-				defer rc.Close()
-				return io.ReadAll(rc)
-			}
+		f, err := zr.Open(name)
+		if err != nil {
+			return nil, err
 		}
-		return nil, fmt.Errorf("%s missing from workbook", name)
-	}
-	sheet, err := sheetPath(read)
-	if err != nil {
-		return nil, err
+		defer f.Close()
+		return io.ReadAll(f)
 	}
 	shared, err := sharedStrings(read)
 	if err != nil {
 		return nil, err
 	}
-	raw, err := read(sheet)
+	path, err := sheetPath(read)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := read(path)
 	if err != nil {
 		return nil, err
 	}
 	var ws struct {
 		Rows []struct {
 			Cells []struct {
-				Ref  string `xml:"r,attr"`
-				Type string `xml:"t,attr"`
-				V    string `xml:"v"`
-				IS   string `xml:"is>t"`
+				Ref    string `xml:"r,attr"`
+				Type   string `xml:"t,attr"`
+				Value  string `xml:"v"`
+				Inline string `xml:"is>t"`
 			} `xml:"c"`
 		} `xml:"sheetData>row"`
 	}
@@ -96,33 +97,32 @@ func Parse(xlsx []byte) ([]Food, error) {
 		return nil, fmt.Errorf("parse sheet: %w", err)
 	}
 	var out []Food
-	for _, r := range ws.Rows {
+	for _, row := range ws.Rows {
 		cols := map[string]string{}
-		for _, c := range r.Cells {
-			col := strings.TrimRight(c.Ref, "0123456789")
-			v := c.V
+		for _, c := range row.Cells {
+			v := c.Value
 			switch c.Type {
 			case "s":
-				var i int
-				if _, err := fmt.Sscan(v, &i); err == nil && i >= 0 && i < len(shared) {
+				if i, err := strconv.Atoi(v); err == nil && i >= 0 && i < len(shared) {
 					v = shared[i]
 				}
 			case "inlineStr":
-				v = c.IS
+				v = c.Inline
 			}
-			cols[col] = strings.TrimSpace(v)
+			cols[strings.TrimRight(c.Ref, "0123456789")] = strings.TrimSpace(v)
 		}
 		if codeRe.MatchString(cols["A"]) && cols["B"] != "" {
 			out = append(out, Food{Code: cols["A"], Name: cols["B"], Group: cols["D"]})
 		}
 	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("sheet %q has no food rows", sheetName)
+	}
 	return out, nil
 }
 
-var codeRe = regexp.MustCompile(`^\d{2}-\d{1,4}$`)
-
 func sheetPath(read func(string) ([]byte, error)) (string, error) {
-	wbXML, err := read("xl/workbook.xml")
+	raw, err := read("xl/workbook.xml")
 	if err != nil {
 		return "", err
 	}
@@ -132,33 +132,33 @@ func sheetPath(read func(string) ([]byte, error)) (string, error) {
 			RID  string `xml:"http://schemas.openxmlformats.org/officeDocument/2006/relationships id,attr"`
 		} `xml:"sheets>sheet"`
 	}
-	if err := xml.Unmarshal(wbXML, &wb); err != nil {
-		return "", err
+	if err := xml.Unmarshal(raw, &wb); err != nil {
+		return "", fmt.Errorf("parse workbook: %w", err)
 	}
-	relsXML, err := read("xl/_rels/workbook.xml.rels")
+	raw, err = read("xl/_rels/workbook.xml.rels")
 	if err != nil {
 		return "", err
 	}
 	var rels struct {
-		Rels []struct {
+		Rel []struct {
 			ID     string `xml:"Id,attr"`
 			Target string `xml:"Target,attr"`
 		} `xml:"Relationship"`
 	}
-	if err := xml.Unmarshal(relsXML, &rels); err != nil {
-		return "", err
+	if err := xml.Unmarshal(raw, &rels); err != nil {
+		return "", fmt.Errorf("parse workbook rels: %w", err)
 	}
 	for _, s := range wb.Sheets {
-		if s.Name != sheetName {
+		if strings.TrimSpace(s.Name) != sheetName {
 			continue
 		}
-		for _, r := range rels.Rels {
+		for _, r := range rels.Rel {
 			if r.ID == s.RID {
-				t := strings.TrimPrefix(r.Target, "/")
-				if !strings.HasPrefix(t, "xl/") {
-					t = path.Join("xl", t)
+				target := strings.TrimPrefix(r.Target, "/")
+				if !strings.HasPrefix(target, "xl/") {
+					target = "xl/" + target
 				}
-				return t, nil
+				return target, nil
 			}
 		}
 	}
@@ -168,79 +168,60 @@ func sheetPath(read func(string) ([]byte, error)) (string, error) {
 func sharedStrings(read func(string) ([]byte, error)) ([]string, error) {
 	raw, err := read("xl/sharedStrings.xml")
 	if err != nil {
-		return nil, nil // workbooks with only inline strings have none
+		return nil, err
 	}
 	var sst struct {
-		SI []struct {
-			T string `xml:"t"`
-			R []struct {
-				T string `xml:"t"`
-			} `xml:"r"`
+		Items []struct {
+			Text string   `xml:"t"`
+			Runs []string `xml:"r>t"`
 		} `xml:"si"`
 	}
 	if err := xml.Unmarshal(raw, &sst); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse shared strings: %w", err)
 	}
-	out := make([]string, len(sst.SI))
-	for i, si := range sst.SI {
-		s := si.T
-		for _, r := range si.R {
-			s += r.T
-		}
-		out[i] = s
+	out := make([]string, len(sst.Items))
+	for i, it := range sst.Items {
+		out[i] = it.Text + strings.Join(it.Runs, "")
 	}
 	return out, nil
 }
 
-// Select keeps raw ingredients (names ending in ", raw" or flours/dried
-// staples), tidies their names and assigns a unit and density.
-func Select(all []Food) []Food {
+var groupTags = map[byte]string{
+	'A': "cereals", 'B': "dairy", 'C': "eggs", 'D': "vegetables", 'F': "fruit", 'G': "nuts and seeds",
+	'H': "herbs and spices", 'J': "fish", 'M': "meat", 'O': "fats and oils", 'S': "sugars",
+}
+
+// Select keeps raw ingredients and tidies their names: "Onions, raw" becomes
+// "Onions", with the dataset name kept as an alias. Names repeat after
+// tidying; the first wins.
+func Select(all []Food) []Seed {
 	seen := map[string]bool{}
-	var out []Food
+	var out []Seed
 	for _, f := range all {
 		lower := strings.ToLower(f.Name)
-		if !(strings.Contains(lower, ", raw") || strings.HasSuffix(lower, " raw") || strings.Contains(lower, "flour")) {
+		if !strings.Contains(lower, ", raw") && !strings.HasSuffix(lower, " raw") {
 			continue
 		}
-		if strings.Contains(lower, "cooked") || strings.Contains(lower, "boiled") || strings.Contains(lower, "fried") {
+		name := f.Name
+		for _, cut := range []string{", raw", " raw"} {
+			if i := strings.Index(strings.ToLower(name), cut); i >= 0 {
+				name = name[:i] + name[i+len(cut):]
+			}
+		}
+		name = strings.Trim(strings.Join(strings.Fields(name), " "), " ,")
+		key := strings.ToLower(name)
+		if name == "" || seen[key] {
 			continue
 		}
-		name := tidy(f.Name)
-		k := strings.ToLower(name)
-		if name == "" || seen[k] {
-			continue
+		seen[key] = true
+		s := Seed{Name: name}
+		if !strings.EqualFold(name, f.Name) {
+			s.Alias = f.Name
 		}
-		seen[k] = true
-		f.Name = name
-		f.Unit, f.Density = measure(lower)
-		out = append(out, f)
+		if f.Group != "" {
+			s.Tag = groupTags[strings.ToUpper(f.Group)[0]]
+		}
+		out = append(out, s)
 	}
 	return out
-}
-
-func tidy(name string) string {
-	name = strings.TrimSpace(name)
-	for _, suf := range []string{", raw", " raw"} {
-		if strings.HasSuffix(strings.ToLower(name), suf) {
-			name = name[:len(name)-len(suf)]
-		}
-	}
-	name = strings.TrimSpace(strings.TrimSuffix(name, ","))
-	if name == "" {
-		return ""
-	}
-	return strings.ToUpper(name[:1]) + name[1:]
-}
-
-func measure(lower string) (string, *float64) {
-	d := func(v float64) *float64 { return &v }
-	switch {
-	case strings.Contains(lower, "oil"):
-		return "ml", d(0.92)
-	case strings.Contains(lower, "milk") && !strings.Contains(lower, "powder"):
-		return "ml", d(1.03)
-	case strings.Contains(lower, "flour"):
-		return "g", d(0.53)
-	}
-	return "g", nil
 }

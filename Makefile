@@ -6,7 +6,7 @@ css:
 	./internal/assets/build-css.sh
 
 templ:
-	templ generate ./internal/view
+	templ generate ./internal/ui
 
 sqlc:
 	sqlc generate
@@ -15,8 +15,8 @@ build: gen
 	go build -o bin/server ./cmd/server
 	go build -o bin/seed-foods ./cmd/seed-foods
 
-run: gen
-	go run ./cmd/server
+run: build
+	./bin/server
 
 test:
 	go test ./...

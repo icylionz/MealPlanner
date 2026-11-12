@@ -57,7 +57,7 @@ func LoadDotEnv(path string) {
 func Load() (Config, error) {
 	c := Config{
 		Port:              env("PORT", "8080"),
-		BasePath:          NormalizeBasePath(os.Getenv("BASE_PATH")),
+		BasePath:          normalizeBasePath(os.Getenv("BASE_PATH")),
 		DatabaseURL:       os.Getenv("DATABASE_URL"),
 		SessionCookieName: env("SESSION_COOKIE_NAME", "mealplanner_session"),
 		SessionSecret:     os.Getenv("SESSION_SECRET"),
@@ -77,8 +77,15 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("APP_TIMEZONE: %w", err)
 	}
 	c.Timezone = loc
-	if c.TrustedProxies, err = ParseCIDRs(os.Getenv("TRUSTED_PROXY_CIDRS")); err != nil {
-		return c, err
+	for _, part := range strings.Split(os.Getenv("TRUSTED_PROXY_CIDRS"), ",") {
+		if part = strings.TrimSpace(part); part == "" {
+			continue
+		}
+		_, n, err := net.ParseCIDR(part)
+		if err != nil {
+			return c, fmt.Errorf("TRUSTED_PROXY_CIDRS: %w", err)
+		}
+		c.TrustedProxies = append(c.TrustedProxies, n)
 	}
 	if c.LoginThrottleThreshold, err = strconv.Atoi(env("LOGIN_THROTTLE_THRESHOLD", "5")); err != nil {
 		return c, fmt.Errorf("LOGIN_THROTTLE_THRESHOLD: %w", err)
@@ -92,30 +99,13 @@ func Load() (Config, error) {
 	return c, nil
 }
 
-// NormalizeBasePath returns "" for root or "/segment" with no trailing slash.
-func NormalizeBasePath(p string) string {
-	p = strings.TrimSpace(p)
-	p = strings.Trim(p, "/")
+// normalizeBasePath returns "" for root or "/segment" with no trailing slash.
+func normalizeBasePath(p string) string {
+	p = strings.Trim(strings.TrimSpace(p), "/")
 	if p == "" {
 		return ""
 	}
 	return "/" + p
-}
-
-func ParseCIDRs(raw string) ([]*net.IPNet, error) {
-	var out []*net.IPNet
-	for _, part := range strings.Split(raw, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		_, n, err := net.ParseCIDR(part)
-		if err != nil {
-			return nil, fmt.Errorf("TRUSTED_PROXY_CIDRS: %w", err)
-		}
-		out = append(out, n)
-	}
-	return out, nil
 }
 
 func env(k, def string) string {

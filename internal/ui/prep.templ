@@ -1,0 +1,272 @@
+package ui
+
+import (
+	"strconv"
+
+	"github.com/icylionz/mealplanner/internal/core"
+	"github.com/icylionz/mealplanner/internal/db/sqlc"
+)
+
+templ PrepIndex(s Shell, sessions []sqlc.ListPrepSessionsRow, today, errText string) {
+	@Layout(s) {
+		if errText != "" {
+			@Banner("danger", "", errText)
+		}
+		<section class="hh-card">
+			if len(sessions) == 0 {
+				@Empty("knife", "Plan a prep session", "Group the recipes you'll cook ahead, and get one list of everything to chop, weigh and cook.")
+			} else {
+				<div class="hh-card__body" style="padding-top: var(--space-2)">
+					for _, p := range sessions {
+						<a class="hh-row" href={ s.URL("/prep/" + p.ID.String()) }>
+							<div class="hh-row__text">
+								<div class="body-strong hh-row__title">{ p.Name }</div>
+								<div class="caption hh-muted">{ longDate(p.SessionDate) } · { count(int(p.FoodCount), "food", "foods") }</div>
+							</div>
+							<span class="hh-row__go">
+								@Icon("caret-right", 18)
+							</span>
+						</a>
+					}
+				</div>
+			}
+		</section>
+		if s.Owner {
+			<section class="hh-card">
+				<header class="hh-card__head">
+					<h3 class="heading">New session</h3>
+				</header>
+				<div class="hh-card__body" style="padding-top: var(--space-3)">
+					<form method="post" action={ s.URL("/prep") } class="mp-form">
+						@csrf(s)
+						<div class="mp-row2">
+							<label class="mp-field">
+								<span class="label">Name</span>
+								<input class="mp-input" type="text" name="name" placeholder="Sunday batch cook" required/>
+							</label>
+							<label class="mp-field">
+								<span class="label">Date</span>
+								<input class="mp-input" type="date" name="date" value={ today } required/>
+							</label>
+						</div>
+						<div>
+							<button type="submit" class="hh-btn hh-btn--primary">Create session</button>
+						</div>
+					</form>
+				</div>
+			</section>
+		}
+	}
+}
+
+type PrepData struct {
+	View  core.PrepView
+	Foods []*core.Food
+	Error string
+}
+
+templ aggRows(totals []core.Agg) {
+	for _, a := range totals {
+		<div class="hh-row">
+			<span class="body-strong mp-time" style="width: 96px">{ qty(a.Amount, a.Unit) }</span>
+			<div class="hh-row__text">
+				<div class="body-strong hh-row__title">{ a.Name }{ variantSuffix(a.Variant) }</div>
+				if a.Review != "" {
+					<div class="caption" style="color: var(--status-warning); display: flex; gap: var(--space-1); align-items: center">
+						@Icon("warning", 16)
+						<span>{ a.Review }</span>
+					</div>
+				}
+			</div>
+		</div>
+	}
+}
+
+templ PrepDetail(s Shell, d PrepData) {
+	@Layout(s) {
+		if d.Error != "" {
+			@Banner("danger", "", d.Error)
+		}
+		<div class="mp-cols mp-cols--split">
+			<div class="mp-stack" style="gap: var(--space-6)">
+				if len(d.View.Foods) == 0 {
+					<section class="hh-card">
+						@Empty("knife", "Nothing to prep yet", "Add the recipes you're cooking in this session.")
+					</section>
+				}
+				for _, pf := range d.View.Foods {
+					<section class="hh-card">
+						<header class="hh-card__head">
+							<h3 class="heading">{ pf.Food.Name }</h3>
+							if s.Owner {
+								<div class="hh-card__action">
+									<form method="post" action={ s.URL("/prep/" + d.View.Session.ID.String() + "/foods/" + pf.Food.ID.String() + "/delete") }>
+										@csrf(s)
+										<button type="submit" class="hh-btn hh-btn--text hh-btn--icon" aria-label={ "Take " + pf.Food.Name + " out of this session" }>
+											@Icon("x", 18)
+										</button>
+									</form>
+								</div>
+							}
+						</header>
+						<div class="hh-card__body">
+							if s.Owner {
+								<form method="post" action={ s.URL("/prep/" + d.View.Session.ID.String() + "/foods") } class="mp-inline" style="max-width: 280px; padding-bottom: var(--space-3)">
+									@csrf(s)
+									<input type="hidden" name="food_id" value={ pf.Food.ID.String() }/>
+									<label class="mp-field">
+										<span class="label">Servings</span>
+										<input class="mp-input mp-input--sunk" type="text" inputmode="decimal" name="servings" value={ num(pf.Servings) }/>
+									</label>
+									<button type="submit" class="hh-btn hh-btn--secondary">Update</button>
+								</form>
+							} else {
+								<p class="caption hh-muted" style="padding-bottom: var(--space-2)">{ servesText(pf.Servings) }</p>
+							}
+							for _, l := range pf.Lines {
+								<div class="hh-row">
+									<span class="body-strong mp-time" style="width: 96px">{ qty(l.Amount, l.Unit) }</span>
+									<div class="hh-row__text">
+										<div class="body-strong hh-row__title">{ l.Name }{ variantSuffix(l.Variant) }</div>
+									</div>
+								</div>
+							}
+							if len(pf.Steps) > 0 {
+								<ol class="mp-steps" style="padding-top: var(--space-4)">
+									for _, st := range pf.Steps {
+										<li><span class="body-l">{ st }</span></li>
+									}
+								</ol>
+							}
+						</div>
+					</section>
+				}
+			</div>
+			<div class="mp-stack" style="gap: var(--space-6)">
+				<section class="hh-card">
+					<header class="hh-card__head">
+						<h3 class="heading">Everything you need</h3>
+					</header>
+					<div class="hh-card__body">
+						if len(d.View.Totals) == 0 {
+							<p class="body hh-muted">Ingredients add up here once the session has recipes.</p>
+						}
+						@aggRows(d.View.Totals)
+					</div>
+				</section>
+				if s.Owner {
+					<section class="hh-card">
+						<header class="hh-card__head">
+							<h3 class="heading">Add a food</h3>
+						</header>
+						<div class="hh-card__body" style="padding-top: var(--space-3)">
+							<form method="post" action={ s.URL("/prep/" + d.View.Session.ID.String() + "/foods") } class="mp-form">
+								@csrf(s)
+								@foodOptions("foods", d.Foods)
+								<div class="mp-row2">
+									<label class="mp-field">
+										<span class="label">Recipe or food</span>
+										<input class="mp-input" type="text" name="food" list="foods" autocomplete="off" placeholder="Start typing to search" required/>
+									</label>
+									<label class="mp-field">
+										<span class="label">Servings</span>
+										<input class="mp-input" type="text" inputmode="decimal" name="servings" value="4"/>
+									</label>
+								</div>
+								<div>
+									<button type="submit" class="hh-btn hh-btn--secondary">Add to session</button>
+								</div>
+							</form>
+						</div>
+					</section>
+					<details class="mp-disclose">
+						<summary class="hh-btn hh-btn--text">Session settings</summary>
+						<div class="mp-stack">
+							<form method="post" action={ s.URL("/prep/" + d.View.Session.ID.String()) } class="mp-form">
+								@csrf(s)
+								<div class="mp-row2">
+									<label class="mp-field">
+										<span class="label">Name</span>
+										<input class="mp-input" type="text" name="name" value={ d.View.Session.Name } required/>
+									</label>
+									<label class="mp-field">
+										<span class="label">Date</span>
+										<input class="mp-input" type="date" name="date" value={ isoDate(d.View.Session.SessionDate) } required/>
+									</label>
+								</div>
+								<div>
+									<button type="submit" class="hh-btn hh-btn--secondary">Save changes</button>
+								</div>
+							</form>
+							<form method="post" action={ s.URL("/prep/" + d.View.Session.ID.String() + "/delete") }>
+								@csrf(s)
+								<button type="submit" class="hh-btn hh-btn--danger">Remove this session</button>
+							</form>
+						</div>
+					</details>
+				}
+			</div>
+		</div>
+	}
+}
+
+// PrepPrint is a standalone printable view of a session.
+templ PrepPrint(s Shell, v core.PrepView) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ v.Session.Name } · Prep</title>
+			<link rel="stylesheet" href={ s.asset("app.css") }/>
+		</head>
+		<body>
+			<div class="mp-print">
+				<header>
+					<h1 class="display-l">{ v.Session.Name }</h1>
+					<p class="body hh-muted">{ longDate(v.Session.SessionDate) } · { s.Household }</p>
+					<div class="mp-actions mp-noprint" style="margin-top: var(--space-4)">
+						<button type="button" class="hh-btn hh-btn--primary" data-print>
+							@Icon("printer", 18)
+							<span>Print</span>
+						</button>
+						<a class="hh-btn hh-btn--text" href={ s.URL("/prep/" + v.Session.ID.String()) }>Back to session</a>
+					</div>
+				</header>
+				<section>
+					<h2 class="title" style="margin-bottom: var(--space-2)">Everything you need</h2>
+					<table class="body">
+						for _, a := range v.Totals {
+							<tr>
+								<td class="body-strong">{ qty(a.Amount, a.Unit) }</td>
+								<td>{ a.Name }{ variantSuffix(a.Variant) }</td>
+							</tr>
+						}
+					</table>
+				</section>
+				for _, pf := range v.Foods {
+					<section>
+						<h2 class="title">{ pf.Food.Name }</h2>
+						<p class="caption hh-muted" style="margin-bottom: var(--space-2)">{ servesText(pf.Servings) }</p>
+						<table class="body">
+							for _, l := range pf.Lines {
+								<tr>
+									<td class="body-strong">{ qty(l.Amount, l.Unit) }</td>
+									<td>{ l.Name }{ variantSuffix(l.Variant) }</td>
+								</tr>
+							}
+						</table>
+						if len(pf.Steps) > 0 {
+							<ol style="margin-top: var(--space-4)" class="mp-stack">
+								for i, st := range pf.Steps {
+									<li class="body-l">{ strconv.Itoa(i+1) }. { st }</li>
+								}
+							</ol>
+						}
+					</section>
+				}
+			</div>
+			<script src={ s.asset("app.js") } defer></script>
+		</body>
+	</html>
+}

@@ -1,0 +1,176 @@
+package ui
+
+import (
+	"time"
+
+	"github.com/icylionz/mealplanner/internal/core"
+	"github.com/icylionz/mealplanner/internal/db/sqlc"
+)
+
+type TodayMeal struct {
+	Meal  core.Meal
+	State string // "earlier", "next", "later"
+}
+
+type DayGlance struct {
+	Date  time.Time
+	Meals int
+}
+
+type TodayData struct {
+	Date   time.Time
+	Meals  []TodayMeal
+	Next   *core.Meal
+	Cat    *core.Catalog
+	People People
+	Week   []DayGlance // the six days after today
+	Lists  []sqlc.ListGroceryListsRow
+	Prep   *sqlc.ListPrepSessionsRow
+}
+
+func listPct(l sqlc.ListGroceryListsRow) int {
+	if l.Total == 0 {
+		return 0
+	}
+	return int(l.Checked * 100 / l.Total)
+}
+
+func stateLabel(state string) string {
+	switch state {
+	case "earlier":
+		return "Earlier"
+	case "next":
+		return "Up next"
+	}
+	return ""
+}
+
+templ Today(s Shell, d TodayData) {
+	@Layout(s) {
+		<div class="mp-cols mp-cols--split">
+			<div class="mp-stack" style="gap: var(--space-6)">
+				if d.Next != nil {
+					<section class="mp-hero" aria-label="Up next">
+						<div class="mp-hero__meta label">
+							@Icon("clock", 16)
+							<span>Up next at { clock(d.Next.Time) }</span>
+						</div>
+						<h2 class="title">{ d.Next.Name(d.Cat) }</h2>
+						<p class="body hh-muted">{ mealMeta(*d.Next, d.Cat) }</p>
+						if d.Next.Notes != "" {
+							<p class="note hh-note hh-note--meals">{ d.Next.Notes }</p>
+						}
+						<div class="mp-between" style="margin-top: var(--space-2)">
+							<a class="hh-btn hh-btn--secondary" href={ s.URL("/meals/" + d.Next.ID.String()) }>View meal</a>
+							if p, ok := d.People.of(d.Next.CreatedBy); ok {
+								<span class="caption hh-muted" style="display: inline-flex; align-items: center; gap: var(--space-2)">
+									Planned by { p.Name }
+									@Avatar(p.Name, p.Member, "xs")
+								</span>
+							}
+						</div>
+					</section>
+				}
+				<section class="hh-card hh-today">
+					<header class="hh-card__head">
+						<h3 class="heading">Today</h3>
+					</header>
+					<div class="hh-card__body">
+						if len(d.Meals) == 0 {
+							@Empty("cooking-pot", "Nothing planned today", "Plan a meal and it shows up here for everyone.") {
+								if s.Owner {
+									<a class="hh-btn hh-btn--secondary" href={ templ.SafeURL(s.Path("/meals/new?date=" + isoDate(d.Date))) }>Add a meal</a>
+								}
+							}
+						}
+						for _, tm := range d.Meals {
+							<a class={ "hh-row", templ.KV("hh-row--quiet", tm.State == "earlier") } href={ s.URL("/meals/" + tm.Meal.ID.String()) }>
+								<span class="body-strong mp-time">{ clock(tm.Meal.Time) }</span>
+								<div class="hh-row__text">
+									<div class="body-strong hh-row__title">{ tm.Meal.Name(d.Cat) }</div>
+									<div class="caption hh-muted">{ mealMeta(tm.Meal, d.Cat) }</div>
+								</div>
+								if stateLabel(tm.State) != "" {
+									<span class={ "caption", "mp-tag", templ.KV("mp-tag--info", tm.State == "next") }>{ stateLabel(tm.State) }</span>
+								}
+								<span class="hh-dot hh-dot--meals" title="Meals"></span>
+								if p, ok := d.People.of(tm.Meal.CreatedBy); ok {
+									@Avatar(p.Name, p.Member, "xs")
+								}
+							</a>
+						}
+					</div>
+				</section>
+			</div>
+			<div class="mp-stack" style="gap: var(--space-6)">
+				<section class="hh-card">
+					<header class="hh-card__head">
+						<h3 class="heading">The week ahead</h3>
+						<div class="hh-card__action">
+							<a class="hh-btn hh-btn--text" href={ s.URL("/plan") }>Open plan</a>
+						</div>
+					</header>
+					<div class="hh-card__body">
+						for _, g := range d.Week {
+							<a class="hh-row" href={ templ.SafeURL(s.Path("/plan?date=" + isoDate(g.Date))) }>
+								<div class="hh-row__text">
+									<div class="body-strong hh-row__title">{ longDate(g.Date) }</div>
+								</div>
+								if g.Meals == 0 {
+									<span class="caption hh-muted">Nothing yet</span>
+								} else {
+									<span class="caption hh-muted">{ count(g.Meals, "meal", "meals") }</span>
+								}
+								<span class="hh-row__go">
+									@Icon("caret-right", 18)
+								</span>
+							</a>
+						}
+					</div>
+				</section>
+				<section class="hh-card">
+					<header class="hh-card__head">
+						<h3 class="heading">Shopping</h3>
+						<div class="hh-card__action">
+							<a class="hh-btn hh-btn--text" href={ s.URL("/grocery") }>All lists</a>
+						</div>
+					</header>
+					<div class="hh-card__body">
+						if len(d.Lists) == 0 {
+							<p class="body hh-muted">No lists on the go. Add ingredients from a meal or a week of meals.</p>
+						}
+						for _, l := range d.Lists {
+							<a class="hh-row" href={ s.URL("/grocery/" + l.ID.String()) }>
+								<div class="hh-row__text">
+									<div class="mp-between">
+										<span class="body-strong hh-row__title">{ l.Name }</span>
+										<span class="caption hh-muted hh-num">{ num(float64(l.Checked)) } of { num(float64(l.Total)) }</span>
+									</div>
+									@Track(l.Name+" progress", listPct(l))
+								</div>
+							</a>
+						}
+					</div>
+				</section>
+				if d.Prep != nil {
+					<section class="hh-card">
+						<header class="hh-card__head">
+							<h3 class="heading">Next prep</h3>
+						</header>
+						<div class="hh-card__body">
+							<a class="hh-row" href={ s.URL("/prep/" + d.Prep.ID.String()) }>
+								<div class="hh-row__text">
+									<div class="body-strong hh-row__title">{ d.Prep.Name }</div>
+									<div class="caption hh-muted">{ longDate(d.Prep.SessionDate) } · { count(int(d.Prep.FoodCount), "food", "foods") }</div>
+								</div>
+								<span class="hh-row__go">
+									@Icon("caret-right", 18)
+								</span>
+							</a>
+						</div>
+					</section>
+				}
+			</div>
+		</div>
+	}
+}

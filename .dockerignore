@@ -3,6 +3,6 @@
 .cache
 bin
 tmp
-internal/repo/db
+internal/db/sqlc
 **/*_templ.go
 internal/assets/static/app.css

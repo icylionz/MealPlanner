@@ -1,0 +1,277 @@
+package ui
+
+import "github.com/icylionz/mealplanner/internal/core"
+
+// AssetVersion busts caches for the embedded static files; set at startup.
+var AssetVersion = "dev"
+
+func (s Shell) asset(name string) string { return s.Base + "/static/" + name + "?v=" + AssetVersion }
+
+type navItem struct {
+	ID, Label, Icon, Path string
+}
+
+var tabs = []navItem{
+	{"today", "Today", "house", "/today"},
+	{"plan", "Plan", "calendar-blank", "/plan"},
+	{"foods", "Foods", "bowl-food", "/foods"},
+	{"grocery", "Grocery", "shopping-cart", "/grocery"},
+	{"prep", "Prep", "knife", "/prep"},
+}
+
+var sideExtras = []navItem{
+	{"data", "Data", "database", "/data"},
+	{"household", "Household", "users-three", "/household"},
+	{"settings", "Settings", "gear", "/settings"},
+}
+
+templ head(s Shell) {
+	<meta charset="utf-8"/>
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+	<title>{ s.pageTitle() }</title>
+	<!-- Boosted forms must show validation and conflict pages, which answer 4xx. -->
+	<meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":".*","swap":true}],"includeIndicatorStyles":false}'/>
+	<meta name="theme-color" content="#F3E1D6" media="(prefers-color-scheme: light)"/>
+	<meta name="theme-color" content="#3D2C23" media="(prefers-color-scheme: dark)"/>
+	<link rel="manifest" href={ s.Base + "/manifest.webmanifest" }/>
+	<link rel="icon" type="image/svg+xml" href={ s.asset("icon.svg") }/>
+	<link rel="apple-touch-icon" href={ s.asset("icon-192.png") }/>
+	<link rel="stylesheet" href={ s.asset("app.css") }/>
+	<script src={ s.asset("htmx.min.js") } defer></script>
+	<script src={ s.asset("app.js") } defer data-sw={ s.Base + "/sw.js" }></script>
+}
+
+// Layout is the signed-in shell: sidebar on wide screens, header band, content
+// and the five-tab bar on phones.
+templ Layout(s Shell) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			@head(s)
+		</head>
+		<body hx-boost="true">
+			<div class="mp-shell">
+				<aside class="mp-side" aria-label="Meals">
+					<div class="mp-side__home">
+						<span class="heading mp-trunc">{ s.Household }</span>
+						<span class="caption hh-muted">Meals</span>
+					</div>
+					<nav class="mp-stack" style="gap: var(--space-1)" aria-label="Sections">
+						for _, n := range tabs {
+							@sideLink(s, n)
+						}
+						<div class="mp-side__rule"></div>
+						for _, n := range sideExtras {
+							@sideLink(s, n)
+						}
+					</nav>
+					<div class="mp-side__foot">
+						@Avatar(s.User, s.Member, "s")
+						<span class="body-strong mp-trunc" style="flex: 1">{ s.User }</span>
+						<form method="post" action={ s.URL("/logout") }>
+							@csrf(s)
+							<button type="submit" class="hh-btn hh-btn--text hh-btn--icon" aria-label="Sign out" title="Sign out">
+								@Icon("sign-out", 18)
+							</button>
+						</form>
+					</div>
+				</aside>
+				<div class="mp-main">
+					<div class="mp-band">
+						<div class="mp-band__in">
+							<header class="hh-apphead">
+								<span class="hh-appicon hh-appicon--m hh-appicon--meals" role="img" aria-label="Meals">
+									@Icon("cooking-pot", 22)
+								</span>
+								<div class="hh-apphead__text">
+									<h1 class="display-l">{ s.Title }</h1>
+									if s.Subtitle != "" {
+										<p class="caption hh-muted">{ s.Subtitle }</p>
+									}
+								</div>
+								if s.Action != nil {
+									@s.Action
+								}
+								<a class="mp-me" href={ s.URL("/settings") } aria-label="Settings, household and data">
+									@Avatar(s.User, s.Member, "s")
+								</a>
+							</header>
+						</div>
+					</div>
+					<main class={ "mp-page", templ.KV("mp-page--narrow", s.Narrow) }>
+						if s.Back != "" {
+							<div>
+								<a class="hh-btn hh-btn--text label" style="margin-left: calc(var(--space-3) * -1)" href={ s.URL(s.Back) }>
+									@Icon("caret-left", 18)
+									<span>{ s.BackLabel }</span>
+								</a>
+							</div>
+						}
+						if s.Flash != nil {
+							@Banner(s.Flash.Tone, "", s.Flash.Text)
+						}
+						{ children... }
+					</main>
+				</div>
+				<nav class="hh-tabs mp-tabs" aria-label="Sections">
+					for _, n := range tabs {
+						<a
+							class={ "hh-tab", templ.KV("hh-tab--on", s.Active == n.ID) }
+							href={ s.URL(n.Path) }
+							if s.Active == n.ID {
+								aria-current="page"
+							}
+						>
+							<span class="hh-tab__pill">
+								@Icon(n.Icon, 22)
+							</span>
+							<span class="caption">{ n.Label }</span>
+						</a>
+					}
+				</nav>
+			</div>
+		</body>
+	</html>
+}
+
+templ sideLink(s Shell, n navItem) {
+	<a
+		class="mp-nav label"
+		href={ s.URL(n.Path) }
+		if s.Active == n.ID {
+			aria-current="page"
+		}
+	>
+		@Icon(n.Icon, 22)
+		<span>{ n.Label }</span>
+	</a>
+}
+
+// AuthLayout is the signed-out and onboarding frame.
+templ AuthLayout(s Shell, lead string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			@head(s)
+		</head>
+		<body hx-boost="true">
+			<main class="mp-auth">
+				<div class="mp-auth__brand">
+					<span class="hh-appicon hh-appicon--l hh-appicon--meals" role="img" aria-label="Meals">
+						@Icon("cooking-pot", 28)
+					</span>
+					<h1 class="display-l">{ s.Title }</h1>
+					if lead != "" {
+						<p class="body hh-muted" style="max-width: 34ch">{ lead }</p>
+					}
+				</div>
+				<div class="mp-auth__card mp-stack">
+					if s.Flash != nil {
+						@Banner(s.Flash.Tone, "", s.Flash.Text)
+					}
+					{ children... }
+				</div>
+			</main>
+		</body>
+	</html>
+}
+
+templ csrf(s Shell) {
+	<input type="hidden" name="_csrf" value={ s.CSRF }/>
+}
+
+templ Avatar(name string, member int, size string) {
+	<span class={ "hh-avatar", "hh-avatar--" + size, memberClass(member) } title={ name } role="img" aria-label={ name }>
+		{ core.Initials(name) }
+	</span>
+}
+
+func bannerIcon(tone string) string {
+	switch tone {
+	case "success":
+		return "check-circle"
+	case "warning":
+		return "warning"
+	case "danger":
+		return "warning-circle"
+	}
+	return "info"
+}
+
+func bannerRole(tone string) string {
+	if tone == "danger" {
+		return "alert"
+	}
+	return "status"
+}
+
+// Banner is a status message; tone always comes with an icon and words.
+templ Banner(tone, title, text string) {
+	<div class={ "hh-banner", "hh-banner--" + tone } role={ bannerRole(tone) }>
+		<span>
+			@Icon(bannerIcon(tone), 22)
+		</span>
+		<div class="hh-banner__text">
+			if title != "" {
+				<div class="body-strong">{ title }</div>
+			}
+			if text != "" {
+				<div class="body">{ text }</div>
+			}
+			{ children... }
+		</div>
+	</div>
+}
+
+// Empty invites a next step; children hold the action.
+templ Empty(icon, title, body string) {
+	<div class="hh-empty">
+		<span class="hh-empty__icon hh-empty__icon--meals">
+			@Icon(icon, 28)
+		</span>
+		<h3 class="title">{ title }</h3>
+		if body != "" {
+			<p class="body hh-muted">{ body }</p>
+		}
+		{ children... }
+	</div>
+}
+
+// PrimaryAction is the screen's one filled button, as a link.
+templ PrimaryAction(s Shell, path, icon, label string) {
+	<a class="hh-btn hh-btn--primary mp-fab" href={ s.URL(path) }>
+		@Icon(icon, 18)
+		<span>{ label }</span>
+	</a>
+}
+
+// ErrorPage is the friendly face of a failed request.
+templ ErrorPage(s Shell, signedIn bool, title, text string) {
+	if signedIn {
+		@Layout(s) {
+			@Empty("warning-circle", title, text) {
+				<a class="hh-btn hh-btn--secondary" href={ s.URL("/today") }>Back to today</a>
+			}
+		}
+	} else {
+		@AuthLayout(s, "") {
+			<section class="hh-card">
+				@Empty("warning-circle", title, text) {
+					<a class="hh-btn hh-btn--secondary" href={ s.URL("/login") }>Go to sign in</a>
+				}
+			</section>
+		}
+	}
+}
+
+// foodOptions is the shared picker list: names plus aliases.
+templ foodOptions(id string, foods []*core.Food) {
+	<datalist id={ id }>
+		for _, f := range foods {
+			<option value={ f.Name }></option>
+			for _, a := range f.Aliases {
+				<option value={ a }>{ f.Name }</option>
+			}
+		}
+	</datalist>
+}

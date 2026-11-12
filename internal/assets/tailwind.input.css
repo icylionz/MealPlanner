@@ -1,3 +1,7 @@
-@tailwind base;
-@tailwind components;
+/* Order matters: design-system tokens and components first, then the app's
+   own layout built from the same tokens, then Tailwind utilities. */
+@import "./css/tokens.css";
+@import "./css/dark.css";
+@import "./css/components.css";
+@import "./css/app.css";
 @tailwind utilities;

@@ -1,0 +1,168 @@
+/* Household — generated from tokens.json */
+:root, [data-theme="light"] {
+  --surface-ground: #F4EEE3;
+  --surface-card: #FBF8F2;
+  --surface-sunk: #E9E2D5;
+  --surface-raised: #FFFDF9;
+  --ink: #33302A;
+  --ink-muted: #635E55;
+  --ink-subtle: #8A8377;
+  --line-hair: #DDD4C4;
+  --line-strong: #928774;
+  --primary: #6B7046;
+  --on-primary: #FFFFFF;
+  --primary-hover: #5B5F3A;
+  --primary-soft: #E3E4D0;
+  --primary-ink: #5B5F3A;
+  --focus-ring: #4F6A80;
+  --app-budget: #7D8350;
+  --on-app-budget: #FFFFFF;
+  --app-budget-soft: #E7E7D6;
+  --app-budget-ink: #656A3D;
+  --app-meals: #B8714F;
+  --on-app-meals: #FFFFFF;
+  --app-meals-soft: #F3E1D6;
+  --app-meals-ink: #935739;
+  --app-chores: #CFA54E;
+  --on-app-chores: #33302A;
+  --app-chores-soft: #F4E8CC;
+  --app-chores-ink: #826321;
+  --app-reminders: #A88A93;
+  --on-app-reminders: #33302A;
+  --app-reminders-soft: #EEE3E5;
+  --app-reminders-ink: #796168;
+  --app-trips: #75899C;
+  --on-app-trips: #33302A;
+  --app-trips-soft: #E1E7EC;
+  --app-trips-ink: #586878;
+  --member-1: #B0604A;
+  --on-member-1: #FFFFFF;
+  --member-2: #3F7A74;
+  --on-member-2: #FFFFFF;
+  --member-3: #7E5A73;
+  --on-member-3: #FFFFFF;
+  --member-4: #8A6620;
+  --on-member-4: #FFFFFF;
+  --member-5: #56698A;
+  --on-member-5: #FFFFFF;
+  --member-6: #5F7D45;
+  --on-member-6: #FFFFFF;
+  --member-7: #9C5A5C;
+  --on-member-7: #FFFFFF;
+  --member-8: #85664A;
+  --on-member-8: #FFFFFF;
+  --status-success: #4E7140;
+  --status-success-soft: #E2EAD8;
+  --status-danger: #A6452F;
+  --status-danger-soft: #F5DED6;
+  --status-warning: #8C5F12;
+  --status-warning-soft: #F5E6C4;
+  --status-info: #4A6680;
+  --status-info-soft: #DFE6EC;
+  --shadow-card: 0 1px 2px rgba(51, 48, 42, 0.06), 0 4px 14px rgba(51, 48, 42, 0.05);
+  --shadow-float: 0 2px 6px rgba(51, 48, 42, 0.08), 0 12px 32px rgba(51, 48, 42, 0.10);
+}
+[data-theme="dark"] {
+  --surface-ground: #1F1C17;
+  --surface-card: #2B2721;
+  --surface-sunk: #17150F;
+  --surface-raised: #35302A;
+  --ink: #EEE7DA;
+  --ink-muted: #B5AC9C;
+  --ink-subtle: #8A8274;
+  --line-hair: #3E3830;
+  --line-strong: #82796A;
+  --primary: #B4BA8C;
+  --on-primary: #1F1C17;
+  --primary-hover: #C3C89E;
+  --primary-soft: #34362A;
+  --primary-ink: #B4BA8C;
+  --focus-ring: #93AEC4;
+  --app-budget: #A3A976;
+  --on-app-budget: #1F1C17;
+  --app-budget-soft: #33352A;
+  --app-budget-ink: #A3A976;
+  --app-meals: #D49477;
+  --on-app-meals: #1F1C17;
+  --app-meals-soft: #3D2C23;
+  --app-meals-ink: #D49477;
+  --app-chores: #DDB867;
+  --on-app-chores: #1F1C17;
+  --app-chores-soft: #3B321F;
+  --app-chores-ink: #DDB867;
+  --app-reminders: #C3A6AE;
+  --on-app-reminders: #1F1C17;
+  --app-reminders-soft: #392F31;
+  --app-reminders-ink: #C3A6AE;
+  --app-trips: #98AABB;
+  --on-app-trips: #1F1C17;
+  --app-trips-soft: #2A3138;
+  --app-trips-ink: #98AABB;
+  --member-1: #D98D76;
+  --on-member-1: #1F1C17;
+  --member-2: #7FB5AE;
+  --on-member-2: #1F1C17;
+  --member-3: #B992AE;
+  --on-member-3: #1F1C17;
+  --member-4: #DDB15A;
+  --on-member-4: #1F1C17;
+  --member-5: #93A7C8;
+  --on-member-5: #1F1C17;
+  --member-6: #9DBB83;
+  --on-member-6: #1F1C17;
+  --member-7: #DDA1A2;
+  --on-member-7: #1F1C17;
+  --member-8: #BC9C7E;
+  --on-member-8: #1F1C17;
+  --status-success: #9DBB86;
+  --status-success-soft: #2C3526;
+  --status-danger: #E59683;
+  --status-danger-soft: #3E2620;
+  --status-warning: #E2B45E;
+  --status-warning-soft: #3B3020;
+  --status-info: #93AEC4;
+  --status-info-soft: #263039;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.30), 0 4px 14px rgba(0, 0, 0, 0.22);
+  --shadow-float: 0 2px 6px rgba(0, 0, 0, 0.35), 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --radius-s: 8px;
+  --radius-m: 14px;
+  --radius-l: 20px;
+  --radius-xl: 28px;
+  --radius-app: 30%;
+  --radius-pill: 999px;
+  --tap-min: 44px;
+  --tap-comfy: 52px;
+  --icon-s: 16px;
+  --icon-m: 22px;
+  --app-tile: 56px;
+  --avatar: 32px;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "Figtree", system-ui, sans-serif;
+  --font-hand: "Caveat", "Segoe Print", cursive;
+}
+.display-xl { font-family: var(--font-display); font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.01em; font-variation-settings: 'opsz' 72; }
+.display-l { font-family: var(--font-display); font-size: 32px; line-height: 38px; font-weight: 500; letter-spacing: -0.01em; font-variation-settings: 'opsz' 48; }
+.title { font-family: var(--font-display); font-size: 24px; line-height: 30px; font-weight: 500; font-variation-settings: 'opsz' 32; }
+.heading { font-family: var(--font-display); font-size: 19px; line-height: 26px; font-weight: 500; font-variation-settings: 'opsz' 24; }
+.body-l { font-family: var(--font-body); font-size: 17px; line-height: 26px; font-weight: 400; }
+.body { font-family: var(--font-body); font-size: 15px; line-height: 22px; font-weight: 400; }
+.body-strong { font-family: var(--font-body); font-size: 15px; line-height: 22px; font-weight: 600; }
+.label { font-family: var(--font-body); font-size: 13px; line-height: 18px; font-weight: 500; }
+.caption { font-family: var(--font-body); font-size: 12px; line-height: 16px; font-weight: 400; }
+.amount-l { font-family: var(--font-body); font-size: 32px; line-height: 36px; font-weight: 600; letter-spacing: -0.01em; }
+.amount { font-family: var(--font-body); font-size: 17px; line-height: 22px; font-weight: 600; }
+.note { font-family: var(--font-hand); font-size: 22px; line-height: 24px; font-weight: 600; }
+.note-s { font-family: var(--font-hand); font-size: 18px; line-height: 20px; font-weight: 600; }
+@font-face { font-family: "Fraunces"; src: url("fonts/Fraunces-Variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Figtree"; src: url("fonts/Figtree-Variable.woff2") format("woff2"); font-weight: 300 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Caveat"; src: url("fonts/Caveat-Variable.woff2") format("woff2"); font-weight: 400 700; font-style: normal; font-display: swap; }

@@ -1,10 +1,8 @@
 .env
 tmp
 .cache/
-*_templ.go
-internal/repo/db/
-internal/assets/static/app.css
 bin/
-*.exe
+*_templ.go
+internal/db/sqlc/
+internal/assets/static/app.css
 *.out
-.server.log

@@ -1,78 +1,79 @@
-// Command seed-foods enriches the Starter Template household with raw
-// ingredients from CoFID 2021. It is optional and idempotent: foods already in
-// the template (by case-insensitive name) are left alone. Households created
-// afterwards clone the enriched catalog.
+// Command seed-foods enriches the Starter Template with raw ingredients from
+// the UK CoFID 2021 dataset. Households created afterwards start with them.
+// It is idempotent: foods already in the template, by name, are left alone.
 //
-//	seed-foods                 # download the workbook from gov.uk
+//	seed-foods                 download from gov.uk and seed
 //	seed-foods -file cofid.xlsx
+//	seed-foods -dry-run        parse and report without writing
 package main
 
 import (
 	"context"
 	"flag"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 
-	"github.com/google/uuid"
-
 	"github.com/icylionz/mealplanner/internal/cofid"
 	"github.com/icylionz/mealplanner/internal/config"
-	"github.com/icylionz/mealplanner/internal/platform/database"
-	"github.com/icylionz/mealplanner/internal/repo/db"
+	"github.com/icylionz/mealplanner/internal/db"
+	"github.com/icylionz/mealplanner/internal/db/sqlc"
 )
 
 func main() {
-	file := flag.String("file", "", "local CoFID .xlsx (default: download from gov.uk)")
-	url := flag.String("url", "", "override the download URL")
-	dry := flag.Bool("dry-run", false, "parse and report without writing")
-	flag.Parse()
-	if err := run(*file, *url, *dry); err != nil {
-		slog.Error("seed-foods failed", "err", err)
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "seed-foods:", err)
 		os.Exit(1)
 	}
 }
 
-func run(file, url string, dry bool) error {
+func run() error {
+	file := flag.String("file", "", "local CoFID .xlsx (default: download from gov.uk)")
+	url := flag.String("url", cofid.DatasetURL, "download URL")
+	dry := flag.Bool("dry-run", false, "parse and report without writing")
+	flag.Parse()
+
 	ctx := context.Background()
-	var raw []byte
+	var data []byte
 	var err error
-	if file != "" {
-		raw, err = os.ReadFile(file)
+	if *file != "" {
+		data, err = os.ReadFile(*file)
 	} else {
-		raw, err = cofid.Fetch(ctx, url)
+		fmt.Println("downloading", *url)
+		data, err = cofid.Fetch(ctx, *url)
 	}
 	if err != nil {
 		return err
 	}
-	all, err := cofid.Parse(raw)
+	all, err := cofid.Parse(data)
 	if err != nil {
 		return err
 	}
-	foods := cofid.Select(all)
-	fmt.Printf("parsed %d CoFID rows, selected %d raw ingredients\n", len(all), len(foods))
-	if dry {
+	seeds := cofid.Select(all)
+	fmt.Printf("parsed %d foods, %d raw ingredients\n", len(all), len(seeds))
+	if *dry {
 		return nil
 	}
+
 	config.LoadDotEnv(".env")
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		return fmt.Errorf("DATABASE_URL is required")
 	}
-	if err := database.Migrate(dsn); err != nil {
+	if err := db.Migrate(dsn); err != nil {
 		return err
 	}
-	d, err := database.Open(ctx, dsn)
+	database, err := db.Open(ctx, dsn)
 	if err != nil {
 		return err
 	}
-	defer d.Close()
+	defer database.Close()
+
 	added := 0
-	err = d.Tx(ctx, func(q *db.Queries) error {
-		tpl, err := q.TemplateHouseholdID(ctx)
+	err = database.Tx(ctx, func(q *sqlc.Queries) error {
+		tpl, err := q.GetTemplateHousehold(ctx)
 		if err != nil {
-			return fmt.Errorf("starter template missing: %w", err)
+			return fmt.Errorf("starter template not found: %w", err)
 		}
 		existing, err := q.ListFoods(ctx, tpl)
 		if err != nil {
@@ -82,25 +83,26 @@ func run(file, url string, dry bool) error {
 		for _, f := range existing {
 			have[strings.ToLower(f.Name)] = true
 		}
-		for _, f := range foods {
-			if have[strings.ToLower(f.Name)] {
+		for _, s := range seeds {
+			if have[strings.ToLower(s.Name)] {
 				continue
 			}
-			src := "none"
-			if f.Density != nil {
-				src = "starter"
-			}
-			id := uuid.New()
-			if _, err := q.InsertFood(ctx, db.InsertFoodParams{
-				ID: id, HouseholdID: tpl, Name: f.Name, Description: "CoFID " + f.Code, Servings: 1,
-				DefaultUnit: f.Unit, DensityGPerMl: f.Density, DensitySource: src,
-			}); err != nil {
+			id, err := q.CreateFood(ctx, sqlc.CreateFoodParams{
+				HouseholdID: tpl, Name: s.Name, Servings: 1, DefaultUnit: "g", DensitySource: "none",
+			})
+			if err != nil {
 				return err
 			}
-			if err := q.InsertFoodTag(ctx, db.InsertFoodTagParams{FoodID: id, Tag: "cofid"}); err != nil {
-				return err
+			if s.Alias != "" {
+				if err := q.InsertAlias(ctx, sqlc.InsertAliasParams{FoodID: id, Alias: s.Alias}); err != nil {
+					return err
+				}
 			}
-			have[strings.ToLower(f.Name)] = true
+			if s.Tag != "" {
+				if err := q.InsertTag(ctx, sqlc.InsertTagParams{FoodID: id, Tag: s.Tag}); err != nil {
+					return err
+				}
+			}
 			added++
 		}
 		return nil
@@ -108,6 +110,6 @@ func run(file, url string, dry bool) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("added %d foods to the Starter Template\n", added)
+	fmt.Printf("added %d foods to the Starter Template (%d already there)\n", added, len(seeds)-added)
 	return nil
 }
